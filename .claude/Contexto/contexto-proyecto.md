@@ -462,3 +462,20 @@ Plan: `docs/superpowers/plans/2026-07-03-fase3-aprobaciones-novedades-ausencias.
   (ids ~11/12 en K5) para poblar `/aprobaciones` con el admin.
 
 **Pendiente global:** rediseño visual (§16, tras Fase 3) y provisión de logins read-only de operarios.
+
+---
+
+## 18. Seed de prueba Fase 3 aplicado (2026-07-03)
+
+Usuarios de prueba (todos los roles), password entre paréntesis:
+- `admin@test.local` (admin1234) — Admin
+- `jefecuadrilla@test.local` (jdc12345) — JefeCuadrilla (cuil 20169331708)
+- `operario@test.local` (oper1234) — Operario (cuil 20163079845)
+- `jefecontrato@test.local` (jfc12345) — JefeContrato (cuil 20407714076), **jefe de K5**
+- `supervisor@test.local` (sup12345) — Supervisor (cuil 20349930618)
+- `hys@test.local` (hys12345) — HyS (cuil 20252110470)
+
+Otros: `sth_contratos` K5 (id 1) con `jefeContratoCuil` = jefecontrato. Tipos de novedad:
+Ausencia (id 1, requiere HyS), Accidente (id 2, requiere HyS), Franco (id 3, no). Hay 1
+novedad Ausencia pendiente y 2 registros de horas pendientes en K5 (para /aprobaciones).
+Todo seed de prueba, reversible.
