@@ -59,12 +59,12 @@ export class RegistrosHorasController {
     @Body() dto: ResolverRegistroDto,
     @Request() req,
   ) {
-    return this.service.resolver(id, dto, req.user.cuil);
+    return this.service.resolver(id, dto, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/reabrir')
   @Roles('JefeContrato', 'Admin')
   reabrir(@Param('id', ParseIntPipe) id: number, @Request() req) {
-    return this.service.reabrir(id, req.user.cuil);
+    return this.service.reabrir(id, { cuil: req.user.cuil, rol: req.user.rol });
   }
 }

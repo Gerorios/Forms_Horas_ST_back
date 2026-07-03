@@ -157,9 +157,22 @@ export class RegistrosHorasService {
     });
   }
 
-  async resolver(id: number, dto: ResolverRegistroDto, aprobadoPorCuil: string) {
-    const registro = await this.prisma.registroHoras.findUnique({ where: { id } });
+  async resolver(
+    id: number,
+    dto: ResolverRegistroDto,
+    usuario: { cuil: string; rol: string },
+  ) {
+    const registro = await this.prisma.registroHoras.findUnique({
+      where: { id },
+      include: { contrato: { select: { jefeContratoCuil: true } } },
+    });
     if (!registro) throw new NotFoundException('Registro no encontrado');
+    if (
+      usuario.rol !== 'Admin' &&
+      registro.contrato.jefeContratoCuil !== usuario.cuil
+    ) {
+      throw new ForbiddenException('No sos jefe del contrato de este registro');
+    }
     if (registro.estado !== 'pendiente') {
       throw new BadRequestException('Solo se pueden resolver registros pendientes');
     }
@@ -171,7 +184,7 @@ export class RegistrosHorasService {
       where: { id },
       data: {
         estado: dto.estado,
-        aprobadoPorCuil,
+        aprobadoPorCuil: usuario.cuil,
         aprobadoEn: new Date(),
         motivoDesaprobacion: dto.motivoDesaprobacion ?? null,
       },
@@ -182,7 +195,7 @@ export class RegistrosHorasService {
       data: {
         tabla: 'sth_registros_horas',
         registroId: id,
-        usuarioCuil: aprobadoPorCuil,
+        usuarioCuil: usuario.cuil,
         accion: dto.estado === 'aprobado' ? 'aprobar' : 'desaprobar',
         campo: 'estado',
         valorAnterior: 'pendiente',
@@ -193,9 +206,18 @@ export class RegistrosHorasService {
     return updated;
   }
 
-  async reabrir(id: number, usuarioCuil: string) {
-    const registro = await this.prisma.registroHoras.findUnique({ where: { id } });
+  async reabrir(id: number, usuario: { cuil: string; rol: string }) {
+    const registro = await this.prisma.registroHoras.findUnique({
+      where: { id },
+      include: { contrato: { select: { jefeContratoCuil: true } } },
+    });
     if (!registro) throw new NotFoundException('Registro no encontrado');
+    if (
+      usuario.rol !== 'Admin' &&
+      registro.contrato.jefeContratoCuil !== usuario.cuil
+    ) {
+      throw new ForbiddenException('No sos jefe del contrato de este registro');
+    }
 
     const updated = await this.prisma.registroHoras.update({
       where: { id },
@@ -207,7 +229,7 @@ export class RegistrosHorasService {
       data: {
         tabla: 'sth_registros_horas',
         registroId: id,
-        usuarioCuil,
+        usuarioCuil: usuario.cuil,
         accion: 'reabrir',
         campo: 'estado',
         valorAnterior: registro.estado,
