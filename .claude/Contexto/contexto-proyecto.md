@@ -433,3 +433,32 @@ propias horas). Cargadores = **JefeCuadrilla / JefeContrato / Admin**.
 - Al hacer el pase: adoptar componentes shadcn (button/input/select/table/tabs/card/dialog/
   toast), estados de carga/vacío, y un shell (header/nav) prolijo. Usar el skill
   `frontend-design`.
+
+---
+
+## 17. Fase 3 COMPLETA (2026-07-03) — Aprobaciones + Novedades + Ausencias
+
+Spec: `docs/superpowers/specs/2026-07-03-fase3-aprobaciones-novedades-ausencias-design.md`
+Plan: `docs/superpowers/plans/2026-07-03-fase3-aprobaciones-novedades-ausencias.md`
+
+**Backend** (`formulario-horas-backend`):
+- `GET /catalogos/tipos-novedad` (activos).
+- `GET /registros-horas/por-aprobar` (JefeContrato/Admin): agrupa por (operario, fecha),
+  trae filas pendientes de esos pares incluyendo otros contratos como contexto, con flag
+  `accionable` (true si es fila del contrato del jefe). Admin ve todos los contratos.
+- `resolver`/`reabrir` ahora exigen ser **jefe del contrato de esa fila** (o Admin) → 403 si no.
+
+**Frontend** (`formulario-horas-frontend`):
+- `/aprobaciones` (JefeContrato): tarjeta por operario+fecha; filas accionables con
+  Aprobar / Desaprobar (motivo en diálogo); filas de otro contrato en gris (contexto).
+- `/novedades` (Supervisor): lista + form Nueva novedad (operario ≥3, tipo, fechas, justificación).
+- `/ausencias` (HyS): bandeja por estadoHys (pendiente por defecto) + Aprobar/Desaprobar + filtro.
+- Util pura `agruparPorOperarioFecha` (testeada). **49/49 tests, lint y build OK.**
+
+**Para probar E2E en vivo falta seed de prueba** (reversible):
+- Al menos 1 **tipo de novedad** en `sth_tipos_novedad` (para el form del Supervisor y que HyS tenga qué aprobar).
+- Setear `jefeContratoCuil` de algún contrato (p. ej. K5) a un usuario JefeContrato para probar el scope
+  (hoy solo el Admin ve la bandeja porque ningún contrato tiene jefe). Hay registros pendientes de prueba
+  (ids ~11/12 en K5) para poblar `/aprobaciones` con el admin.
+
+**Pendiente global:** rediseño visual (§16, tras Fase 3) y provisión de logins read-only de operarios.
