@@ -418,3 +418,18 @@ propias horas). Cargadores = **JefeCuadrilla / JefeContrato / Admin**.
 
 **Usuarios de prueba vigentes:** `admin@test.local`/`admin1234` (Admin),
 `jefecuadrilla@test.local`/`jdc12345` (JefeCuadrilla), `operario@test.local`/`oper1234` (Operario).
+
+---
+
+## 16. Decisión de diseño visual (2026-07-03)
+
+- Las pantallas actuales son **andamiaje funcional en crudo** (HTML + utilidades Tailwind),
+  NO el diseño final. shadcn/ui está instalado pero aún sin aplicar en serio.
+- **Decisión:** el **rediseño visual se hace AL FINAL, después de la Fase 3** (primero toda la
+  funcionalidad en crudo; luego un único pase de diseño global).
+- **Dirección estética elegida: "limpio y profesional"** — dashboard sobrio: mucho blanco,
+  tarjetas, bordes suaves, tipografía legible, **dorado de marca `#ECB332` como acento**
+  (botones/estados activos), gris `#7C8081` para texto/bordes. Mobile-first (uso en campo).
+- Al hacer el pase: adoptar componentes shadcn (button/input/select/table/tabs/card/dialog/
+  toast), estados de carga/vacío, y un shell (header/nav) prolijo. Usar el skill
+  `frontend-design`.
