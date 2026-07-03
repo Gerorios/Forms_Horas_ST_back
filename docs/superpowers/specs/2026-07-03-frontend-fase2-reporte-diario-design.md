@@ -39,7 +39,7 @@ Formulario único (React Hook Form + Zod), mobile-first. Secciones:
 - **GPS**: se captura con `navigator.geolocation` al montar. Estados: capturando / capturado (muestra lat,lng) / denegado. Si se deniega, **igual se puede guardar** (queda sin coordenadas; la provincia es el respaldo).
 
 **4.2 Operarios[]**
-- Multiselect con búsqueda: `GET /empleados?q=<texto>` (debounced). La lista son empleados activos. Se pueden elegir varios. Muestra chips de los seleccionados. Mínimo 1.
+- Multiselect **con búsqueda escribiendo** (combobox `command` + `popover`). Como hay muchos empleados (cientos), **no se listan todos**: el usuario escribe y, a partir de **3 caracteres**, se dispara `GET /empleados?q=<texto>` (debounced ~300 ms) que filtra por coincidencia en el nombre del lado del servidor. Con menos de 3 caracteres se muestra una pista ("Escribí al menos 3 letras…"). Se pueden elegir varios; los seleccionados se muestran como chips removibles y persisten aunque cambie el texto de búsqueda. Mínimo 1.
 
 **4.3 Líneas[]**
 - Repetidor. Cada línea: **contrato** (select de los `contratosHabilitados` del perfil de sesión) → **tarea** (select de `GET /catalogos/tareas?contratoId=` del contrato elegido; se deshabilita hasta elegir contrato) → **horas** (número > 0). Botón agregar/quitar línea. Mínimo 1 línea.
