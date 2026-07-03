@@ -1,0 +1,14 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Local Claude Code settings y scratch (no compartir)
+.claude/settings.local.json
+.claude/skills/
+.superpowers/

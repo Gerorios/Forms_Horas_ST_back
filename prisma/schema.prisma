@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ------------------------------------------------------------
+// EMPLEADOS (tabla existente en la base)
+// ------------------------------------------------------------
+model snuempleados {
+  codigo            Int
+  fecha_nacimiento  DateTime? @db.Date
+  fecha_ingreso     DateTime? @db.Date
+  legajo            Int       @default(0)
+  apellido_nombre   String    @default("") @db.VarChar(70)
+  cuil              String    @id @db.Char(13)
+  sexo              String    @db.Char(1)
+  seccion           String    @db.Char(30)
+  categoria         String    @db.Char(30)
+  cargo             String    @db.Char(30)
+  importe_categoria Decimal?  @db.Decimal(12, 2)
+  jornal            String    @db.Char(1)
+  domicilio         String    @db.Char(100)
+  localidad         String    @db.Char(35)
+  provincia         String    @db.Char(35)
+  comentario        String    @db.Char(100)
+  codigocuadrilla   Int?      @default(0)
+  detallecua        String?   @default("") @db.VarChar(30)
+  activo            String    @db.Char(1)
+  borrado           String?   @default("") @db.Char(1)
+  graba             DateTime? @db.Date
+  hora              String?   @default("") @db.Char(5)
+  usuario           String?   @default("") @db.VarChar(30)
+
+  // Relaciones inversas
+  usuarioApp           Usuario?
+  registrosHoras       RegistroHoras[]    @relation("Operario")
+  novedades            Novedad[]          @relation("NovedadOperario")
+}
+
+// ------------------------------------------------------------
+// PERSONAL / ACCESO
+// ------------------------------------------------------------
+model Rol {
+  id       Int       @id @default(autoincrement())
+  nombre   String    @unique
+  usuarios Usuario[]
+
+  @@map("sth_roles")
+}
+
+model Usuario {
+  cuil         String  @id @db.Char(13)
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  rolId        Int     @map("rol_id")
+  activo       Boolean @default(true)
+
+  rol      Rol          @relation(fields: [rolId], references: [id])
+  empleado snuempleados @relation(fields: [cuil], references: [cuil])
+
+  contratosHabilitados  ContratoHabilitado[]
+  contratosComoJefe     Contrato[]      @relation("JefeContrato")
+  registrosCargados     RegistroHoras[] @relation("CargadoPor")
+  registrosAprobados    RegistroHoras[] @relation("AprobadoPor")
+  novedadesCargadas     Novedad[]       @relation("NovedadCargadoPor")
+  novedadesAprobadasHys Novedad[]       @relation("NovedadAprobadoHys")
+  auditorias            Auditoria[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sth_usuarios")
+}
+
+// M:N — el USUARIO que carga tiene habilitados ciertos contratos (no el empleado)
+model ContratoHabilitado {
+  usuarioCuil String @map("usuario_cuil") @db.Char(13)
+  contratoId  Int    @map("contrato_id")
+
+  usuario  Usuario  @relation(fields: [usuarioCuil], references: [cuil])
+  contrato Contrato @relation(fields: [contratoId], references: [id])
+
+  @@id([usuarioCuil, contratoId])
+  @@map("sth_contratos_habilitados")
+}
+
+// ------------------------------------------------------------
+// CATÁLOGOS / ADMINISTRACIÓN
+// ------------------------------------------------------------
+model Contrato {
+  id               Int     @id @default(autoincrement())
+  codigo           String  @unique
+  nombre           String
+  jefeContratoCuil String? @map("jefe_contrato_cuil") @db.Char(13)
+  activo           Boolean @default(true)
+
+  jefeContrato         Usuario?           @relation("JefeContrato", fields: [jefeContratoCuil], references: [cuil])
+  tareas               TareaCatalogo[]
+  usuariosHabilitados ContratoHabilitado[]
+  registrosHoras       RegistroHoras[]
+
+  @@map("sth_contratos")
+}
+
+model TareaCatalogo {
+  id         Int     @id @default(autoincrement())
+  contratoId Int     @map("contrato_id")
+  nombre     String
+  activo     Boolean @default(true)
+
+  contrato  Contrato        @relation(fields: [contratoId], references: [id])
+  registros RegistroHoras[]
+
+  @@map("sth_tareas_catalogo")
+}
+
+model Movil {
+  id            Int     @id @default(autoincrement())
+  identificador String  @unique
+  descripcion   String?
+  activo        Boolean @default(true)
+
+  registros RegistroMovil[]
+
+  @@map("sth_moviles")
+}
+
+model Provincia {
+  id     Int    @id @default(autoincrement())
+  nombre String @unique
+
+  registros RegistroHoras[]
+
+  @@map("sth_provincias")
+}
+
+model TipoNovedad {
+  id                    Int     @id @default(autoincrement())
+  nombre                String  @unique
+  requiereAprobacionHys Boolean @default(false) @map("requiere_aprobacion_hys")
+  generaPlus            Boolean @default(false) @map("genera_plus")
+  activo                Boolean @default(true)
+
+  novedades Novedad[]
+
+  @@map("sth_tipos_novedad")
+}
+
+// ------------------------------------------------------------
+// TRANSACCIONALES
+// ------------------------------------------------------------
+enum EstadoRegistro {
+  pendiente
+  aprobado
+  desaprobado
+}
+
+model RegistroHoras {
+  id                  Int            @id @default(autoincrement())
+  fecha               DateTime       @db.Date
+  operarioCuil        String         @map("operario_cuil") @db.Char(13)
+  cargadoPorCuil      String         @map("cargado_por_cuil") @db.Char(13)
+  contratoId          Int            @map("contrato_id")
+  tareaId             Int            @map("tarea_id")
+  horas               Decimal        @db.Decimal(4, 2)
+  provinciaId         Int            @map("provincia_id")
+  gpsLat              Float?         @map("gps_lat")
+  gpsLng              Float?         @map("gps_lng")
+  estado              EstadoRegistro @default(pendiente)
+  motivoDesaprobacion String?        @map("motivo_desaprobacion") @db.Text
+  aprobadoPorCuil     String?        @map("aprobado_por_cuil") @db.Char(13)
+  aprobadoEn          DateTime?      @map("aprobado_en")
+  alertaHoras         Boolean        @default(false) @map("alerta_horas")
+
+  operario    snuempleados  @relation("Operario", fields: [operarioCuil], references: [cuil])
+  cargadoPor  Usuario       @relation("CargadoPor", fields: [cargadoPorCuil], references: [cuil])
+  aprobadoPor Usuario?      @relation("AprobadoPor", fields: [aprobadoPorCuil], references: [cuil])
+  contrato    Contrato      @relation(fields: [contratoId], references: [id])
+  tarea       TareaCatalogo @relation(fields: [tareaId], references: [id])
+  provincia   Provincia     @relation(fields: [provinciaId], references: [id])
+  moviles     RegistroMovil[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([fecha])
+  @@index([operarioCuil, fecha])
+  @@index([contratoId, estado])
+  @@map("sth_registros_horas")
+}
+
+model RegistroMovil {
+  registroId Int @map("registro_id")
+  movilId    Int @map("movil_id")
+
+  registro RegistroHoras @relation(fields: [registroId], references: [id])
+  movil    Movil         @relation(fields: [movilId], references: [id])
+
+  @@id([registroId, movilId])
+  @@map("sth_registro_moviles")
+}
+
+enum EstadoHys {
+  pendiente
+  aprobada
+  desaprobada
+  no_aplica
+}
+
+model Novedad {
+  id                 Int       @id @default(autoincrement())
+  operarioCuil       String    @map("operario_cuil") @db.Char(13)
+  tipoNovedadId      Int       @map("tipo_novedad_id")
+  fechaInicio        DateTime  @map("fecha_inicio") @db.Date
+  fechaFin           DateTime? @map("fecha_fin") @db.Date
+  cargadoPorCuil     String    @map("cargado_por_cuil") @db.Char(13)
+  justificacionTexto String?   @map("justificacion_texto") @db.Text
+  adjuntoUrl         String?   @map("adjunto_url")
+  estadoHys          EstadoHys @default(no_aplica) @map("estado_hys")
+  aprobadoHysPorCuil String?   @map("aprobado_hys_por_cuil") @db.Char(13)
+  aprobadoHysEn      DateTime? @map("aprobado_hys_en")
+
+  operario       snuempleados @relation("NovedadOperario", fields: [operarioCuil], references: [cuil])
+  tipoNovedad    TipoNovedad  @relation(fields: [tipoNovedadId], references: [id])
+  cargadoPor     Usuario      @relation("NovedadCargadoPor", fields: [cargadoPorCuil], references: [cuil])
+  aprobadoHysPor Usuario?     @relation("NovedadAprobadoHys", fields: [aprobadoHysPorCuil], references: [cuil])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([operarioCuil, fechaInicio])
+  @@index([tipoNovedadId, estadoHys])
+  @@map("sth_novedades")
+}
+
+// ------------------------------------------------------------
+// AUDITORÍA
+// ------------------------------------------------------------
+enum AccionAuditoria {
+  crear
+  editar
+  aprobar
+  desaprobar
+  reabrir
+}
+
+model Auditoria {
+  id            Int             @id @default(autoincrement())
+  tabla         String
+  registroId    Int             @map("registro_id")
+  usuarioCuil   String          @map("usuario_cuil") @db.Char(13)
+  fecha         DateTime        @default(now())
+  accion        AccionAuditoria
+  campo         String?
+  valorAnterior String?         @map("valor_anterior") @db.Text
+  valorNuevo    String?         @map("valor_nuevo") @db.Text
+
+  usuario Usuario @relation(fields: [usuarioCuil], references: [cuil])
+
+  @@index([tabla, registroId])
+  @@map("sth_auditoria")
+}
