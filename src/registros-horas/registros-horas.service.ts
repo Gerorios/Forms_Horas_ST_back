@@ -321,4 +321,35 @@ export class RegistrosHorasService {
       return updated;
     }, { timeout: 30000, maxWait: 10000 });
   }
+
+  async porAprobar(usuario: { cuil: string; rol: string }) {
+    // 1) Contratos de los que el usuario es jefe (Admin = todos)
+    const contratos = await this.prisma.contrato.findMany({
+      where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    if (misContratoIds.length === 0) return [];
+
+    // 2) Pares (operario, fecha) con al menos una fila pendiente en mis contratos
+    const pares = await this.prisma.registroHoras.findMany({
+      where: { estado: 'pendiente', contratoId: { in: misContratoIds } },
+      select: { operarioCuil: true, fecha: true },
+      distinct: ['operarioCuil', 'fecha'],
+    });
+    if (pares.length === 0) return [];
+
+    // 3) Todas las filas pendientes de esos pares (incluye otros contratos = contexto)
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        estado: 'pendiente',
+        OR: pares.map((p) => ({ operarioCuil: p.operarioCuil, fecha: p.fecha })),
+      },
+      include: INCLUDE_BASICO,
+      orderBy: [{ fecha: 'desc' }, { operarioCuil: 'asc' }],
+    });
+
+    const setIds = new Set(misContratoIds);
+    return filas.map((f) => ({ ...f, accionable: setIds.has(f.contratoId) }));
+  }
 }

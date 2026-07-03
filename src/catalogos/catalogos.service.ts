@@ -27,4 +27,12 @@ export class CatalogosService {
       orderBy: { identificador: 'asc' },
     });
   }
+
+  getTiposNovedad() {
+    return this.prisma.tipoNovedad.findMany({
+      where: { activo: true },
+      select: { id: true, nombre: true, requiereAprobacionHys: true },
+      orderBy: { nombre: 'asc' },
+    });
+  }
 }

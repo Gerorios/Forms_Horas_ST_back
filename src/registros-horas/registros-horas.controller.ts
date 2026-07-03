@@ -36,6 +36,12 @@ export class RegistrosHorasController {
     return this.service.findAll({ fecha, contratoId, estado, operarioCuil, cargadoPorCuil });
   }
 
+  @Get('por-aprobar')
+  @Roles('JefeContrato', 'Admin')
+  porAprobar(@Request() req) {
+    return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol });
+  }
+
   @Patch(':id')
   @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
   update(

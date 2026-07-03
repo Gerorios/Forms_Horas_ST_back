@@ -21,4 +21,9 @@ export class CatalogosController {
   getMoviles() {
     return this.service.getMoviles();
   }
+
+  @Get('tipos-novedad')
+  getTiposNovedad() {
+    return this.service.getTiposNovedad();
+  }
 }
