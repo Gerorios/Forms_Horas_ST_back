@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsDateString, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateRegistroHorasDto {
   @IsDateString()
@@ -10,8 +10,10 @@ export class CreateRegistroHorasDto {
   @IsInt()
   contratoId: number;
 
-  @IsInt()
-  tareaId: number;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  tareaIds: number[];
 
   @IsNumber()
   horas: number;

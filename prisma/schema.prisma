@@ -112,7 +112,7 @@ model TareaCatalogo {
   activo     Boolean @default(true)
 
   contrato  Contrato        @relation(fields: [contratoId], references: [id])
-  registros RegistroHoras[]
+  registros RegistroTarea[]
 
   @@map("sth_tareas_catalogo")
 }
@@ -164,7 +164,6 @@ model RegistroHoras {
   operarioCuil        String         @map("operario_cuil") @db.Char(13)
   cargadoPorCuil      String         @map("cargado_por_cuil") @db.Char(13)
   contratoId          Int            @map("contrato_id")
-  tareaId             Int            @map("tarea_id")
   horas               Decimal        @db.Decimal(4, 2)
   provinciaId         Int            @map("provincia_id")
   gpsLat              Float?         @map("gps_lat")
@@ -179,9 +178,9 @@ model RegistroHoras {
   cargadoPor  Usuario       @relation("CargadoPor", fields: [cargadoPorCuil], references: [cuil])
   aprobadoPor Usuario?      @relation("AprobadoPor", fields: [aprobadoPorCuil], references: [cuil])
   contrato    Contrato      @relation(fields: [contratoId], references: [id])
-  tarea       TareaCatalogo @relation(fields: [tareaId], references: [id])
   provincia   Provincia     @relation(fields: [provinciaId], references: [id])
   moviles     RegistroMovil[]
+  tareas      RegistroTarea[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -201,6 +200,17 @@ model RegistroMovil {
 
   @@id([registroId, movilId])
   @@map("sth_registro_moviles")
+}
+
+model RegistroTarea {
+  registroId Int @map("registro_id")
+  tareaId    Int @map("tarea_id")
+
+  registro RegistroHoras @relation(fields: [registroId], references: [id])
+  tarea    TareaCatalogo @relation(fields: [tareaId], references: [id])
+
+  @@id([registroId, tareaId])
+  @@map("sth_registro_tareas")
 }
 
 enum EstadoHys {

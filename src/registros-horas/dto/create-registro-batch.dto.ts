@@ -14,11 +14,14 @@ export class LineaRegistroDto {
   @IsInt()
   contratoId: number;
 
-  @IsInt()
-  tareaId: number;
-
   @IsNumber()
   horas: number;
+
+  // Varias tareas del maestro por línea (sin horas por tarea). Ver ADR-002.
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  tareaIds: number[];
 }
 
 /**

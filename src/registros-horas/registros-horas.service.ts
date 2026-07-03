@@ -13,7 +13,7 @@ import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
   contrato: { select: { id: true, codigo: true, nombre: true } },
-  tarea: { select: { id: true, nombre: true } },
+  tareas: { include: { tarea: { select: { id: true, nombre: true } } } },
   provincia: { select: { id: true, nombre: true } },
   moviles: { include: { movil: { select: { id: true, identificador: true } } } },
 };
@@ -52,12 +52,12 @@ export class RegistrosHorasService {
         operarioCuil: dto.operarioCuil,
         cargadoPorCuil,
         contratoId: dto.contratoId,
-        tareaId: dto.tareaId,
         horas: dto.horas,
         provinciaId: dto.provinciaId,
         gpsLat: dto.gpsLat,
         gpsLng: dto.gpsLng,
         alertaHoras,
+        tareas: { create: dto.tareaIds.map((tareaId) => ({ tareaId })) },
         moviles: dto.movilIds?.length
           ? { create: dto.movilIds.map((movilId) => ({ movilId })) }
           : undefined,
@@ -73,7 +73,11 @@ export class RegistrosHorasService {
    * desaprobados + suma de las líneas del batch).
    */
   async createBatch(dto: CreateRegistroBatchDto, cargadoPorCuil: string) {
-    const contratoIds = [...new Set(dto.lineas.map((l) => l.contratoId))];
+    const contratoIds = dto.lineas.map((l) => l.contratoId);
+    // Una línea por contrato: no se repite el contrato en la misma carga (ADR-002).
+    if (new Set(contratoIds).size !== contratoIds.length) {
+      throw new BadRequestException('No se puede repetir el contrato en una carga');
+    }
     const habilitados = await this.prisma.contratoHabilitado.findMany({
       where: { usuarioCuil: cargadoPorCuil, contratoId: { in: contratoIds } },
       select: { contratoId: true },
@@ -116,12 +120,12 @@ export class RegistrosHorasService {
                 operarioCuil,
                 cargadoPorCuil,
                 contratoId: linea.contratoId,
-                tareaId: linea.tareaId,
                 horas: linea.horas,
                 provinciaId: dto.provinciaId,
                 gpsLat: dto.gpsLat,
                 gpsLng: dto.gpsLng,
                 alertaHoras,
+                tareas: { create: linea.tareaIds.map((tareaId) => ({ tareaId })) },
                 moviles: dto.movilIds?.length
                   ? { create: dto.movilIds.map((movilId) => ({ movilId })) }
                   : undefined,
@@ -291,13 +295,15 @@ export class RegistrosHorasService {
       if (dto.movilIds !== undefined) {
         await tx.registroMovil.deleteMany({ where: { registroId: id } });
       }
+      if (dto.tareaIds !== undefined) {
+        await tx.registroTarea.deleteMany({ where: { registroId: id } });
+      }
 
       const updated = await tx.registroHoras.update({
         where: { id },
         data: {
           fecha,
           contratoId: dto.contratoId ?? undefined,
-          tareaId: dto.tareaId ?? undefined,
           horas: dto.horas ?? undefined,
           provinciaId: dto.provinciaId ?? undefined,
           gpsLat: dto.gpsLat ?? undefined,
@@ -307,6 +313,9 @@ export class RegistrosHorasService {
           aprobadoEn: null,
           motivoDesaprobacion: null,
           alertaHoras,
+          ...(dto.tareaIds !== undefined && dto.tareaIds.length
+            ? { tareas: { create: dto.tareaIds.map((tareaId) => ({ tareaId })) } }
+            : {}),
           ...(dto.movilIds !== undefined
             ? {
                 moviles: dto.movilIds.length
@@ -329,13 +338,12 @@ export class RegistrosHorasService {
             estado: registro.estado,
             horas: Number(registro.horas),
             contratoId: registro.contratoId,
-            tareaId: registro.tareaId,
           }),
           valorNuevo: JSON.stringify({
             estado: 'pendiente',
             horas: Number(horas),
             contratoId: dto.contratoId ?? registro.contratoId,
-            tareaId: dto.tareaId ?? registro.tareaId,
+            ...(dto.tareaIds !== undefined ? { tareaIds: dto.tareaIds } : {}),
           }),
         },
       });
