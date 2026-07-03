@@ -142,6 +142,7 @@ export class RegistrosHorasService {
     contratoId?: number;
     estado?: string;
     operarioCuil?: string;
+    cargadoPorCuil?: string;
   }) {
     return this.prisma.registroHoras.findMany({
       where: {
@@ -149,6 +150,7 @@ export class RegistrosHorasService {
         ...(filtros.contratoId ? { contratoId: filtros.contratoId } : {}),
         ...(filtros.estado ? { estado: filtros.estado as any } : {}),
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
+        ...(filtros.cargadoPorCuil ? { cargadoPorCuil: filtros.cargadoPorCuil } : {}),
       },
       include: INCLUDE_BASICO,
       orderBy: { fecha: 'desc' },

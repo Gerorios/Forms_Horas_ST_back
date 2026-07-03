@@ -14,13 +14,13 @@ export class RegistrosHorasController {
   constructor(private service: RegistrosHorasService) {}
 
   @Post()
-  @Roles('Operario', 'JefeContrato', 'Admin')
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
   create(@Body() dto: CreateRegistroHorasDto, @Request() req) {
     return this.service.create(dto, req.user.cuil);
   }
 
   @Post('batch')
-  @Roles('Operario', 'JefeContrato', 'Admin')
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
   createBatch(@Body() dto: CreateRegistroBatchDto, @Request() req) {
     return this.service.createBatch(dto, req.user.cuil);
   }
@@ -31,12 +31,13 @@ export class RegistrosHorasController {
     @Query('contratoId', new ParseIntPipe({ optional: true })) contratoId?: number,
     @Query('estado') estado?: string,
     @Query('operarioCuil') operarioCuil?: string,
+    @Query('cargadoPorCuil') cargadoPorCuil?: string,
   ) {
-    return this.service.findAll({ fecha, contratoId, estado, operarioCuil });
+    return this.service.findAll({ fecha, contratoId, estado, operarioCuil, cargadoPorCuil });
   }
 
   @Patch(':id')
-  @Roles('Operario', 'JefeContrato', 'Admin')
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateRegistroHorasDto,
