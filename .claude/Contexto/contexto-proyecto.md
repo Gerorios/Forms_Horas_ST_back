@@ -358,3 +358,37 @@ colapsar rol, seeds reales, JWT 1 h).
 
 **Próximo paso:** crear los remotos en GitHub y pushear, y/o arrancar la **Fase 2**
 del frontend (carga masiva + mis registros), que ya tiene el backend listo.
+
+---
+
+## 14. Fase 2 COMPLETA (2026-07-03, sesión 2)
+
+**Repos remotos** (creados y vinculados por el usuario):
+- Backend: `https://github.com/Gerorios/Forms_Horas_ST_back.git`
+- Frontend: `https://github.com/Gerorios/Forms_Horas_ST_Frontend.git`
+
+**Nomenclatura:** la pantalla de carga se llama **"Reporte diario"** (ruta `/reporte`);
+internamente usa `POST /registros-horas/batch`.
+
+**Spec y plan** (en repo backend):
+- Spec: `docs/superpowers/specs/2026-07-03-frontend-fase2-reporte-diario-design.md`
+- Plan: `docs/superpowers/plans/2026-07-03-frontend-fase2-reporte-diario.md`
+
+**Implementado (10 tareas, subagentes + TDD):**
+- **Backend:** módulo `catalogos` (GET `/catalogos/tareas?contratoId=`, `/catalogos/provincias`,
+  `/catalogos/moviles`, solo `JwtAuthGuard`) — verificado por curl.
+- **Frontend:** shadcn/ui inicializado (tokens de marca intactos); utils puras de quincena
+  (con fix de zona horaria: `enQuincena` parsea fecha local) y conteo N×M; capa de API
+  (hooks catálogos/empleados/registros); `useGeolocation`; `OperariosSelect` (búsqueda
+  server-side desde 3 caracteres); `LineasField`; página **Reporte diario** (`/reporte`);
+  página **Mis registros** (`/mis-registros`, solo `operarioCuil` propio, filtro de quincena
+  en cliente); nav renombrada + Toaster global.
+- Verificación: **37/37 tests**, `npm run build` OK, `npm run lint` limpio. Catálogos en vivo OK.
+- Detalles: la provincia se auto-selecciona a la primera (contexto: "provincia siempre 1");
+  se evitó `setState`-en-effect (provincia derivada, geo con init perezoso).
+
+**Pendiente / próximo:**
+- Fase 3: bandeja de aprobación (Jefe de Contrato), novedades (Supervisor), ausencias (HyS).
+- Sin tests automatizados en backend todavía (verificación por curl).
+- UI de corrección desde "Mis registros" vía `PATCH /registros-horas/:id` (endpoint ya existe).
+- Seeds reales de catálogos (contratos K2–K12, tareas, móviles, jefes).
