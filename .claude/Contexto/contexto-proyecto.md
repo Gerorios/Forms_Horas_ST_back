@@ -39,10 +39,10 @@ liquidación que se conecta directamente a esta base de datos.
 | **Higiene y Seguridad (HyS)** | Aprueba específicamente las Ausencias. |
 | **Admin (IT)** | Acceso total. Administra catálogos (tareas, contratos, tipos de novedad, móviles, usuarios). **Un solo usuario admin.** |
 
-> **DECISIÓN (2026-07-02): el rol "Jefe de Cuadrilla" NO existe.** No hay jefes de
-> cuadrilla fijos: un día carga uno, otro día carga otro. Todos son **Operario**.
-> Cualquier operario con login puede hacer la carga masiva. Se colapsa
-> `JefeCuadrilla` → `Operario` en el backend (roles y `@Roles(...)`).
+> ~~**DECISIÓN (2026-07-02): el rol "Jefe de Cuadrilla" NO existe.**~~
+> ⚠️ **SUPERSEDED por ADR-001 (2026-07-03)** — ver `docs/adr/2026-07-03-adr-001-modelo-de-roles.md`.
+> Ahora **SÍ existe Jefe de Cuadrilla**: es quien carga (persona responsable), y el
+> **Operario NO carga** (solo consulta sus propias horas, read-only). Ver §15.
 
 ---
 
@@ -392,3 +392,29 @@ internamente usa `POST /registros-horas/batch`.
 - Sin tests automatizados en backend todavía (verificación por curl).
 - UI de corrección desde "Mis registros" vía `PATCH /registros-horas/:id` (endpoint ya existe).
 - Seeds reales de catálogos (contratos K2–K12, tareas, móviles, jefes).
+
+---
+
+## 15. ADR-001 — Modelo de roles revisado (2026-07-03)
+
+Ver `docs/adr/2026-07-03-adr-001-modelo-de-roles.md` y `docs/glosario.md`.
+
+**Cambio:** se reintrodujo **Jefe de Cuadrilla** (carga las horas del equipo, para
+cualquier empleado activo) y el **Operario pasó a read-only** (solo consulta sus
+propias horas). Cargadores = **JefeCuadrilla / JefeContrato / Admin**.
+
+**Implementado (esta etapa):**
+- Backend (`e11321b`): `@Roles` de crear/batch/patch → JefeCuadrilla/JefeContrato/Admin
+  (sin Operario); `GET /registros-horas` suma filtro `cargadoPorCuil`. Seed: rol
+  `JefeCuadrilla` + usuario de prueba `jefecuadrilla@test.local` / `jdc12345`
+  (cuil 20169331708, habilitado en K5). Verificado por curl (JdC carga 201, Operario 403).
+- Frontend (`8e1eb2a`): `Rol` suma `'JefeCuadrilla'`; nav (Operario → solo Mis registros;
+  JdC → Reporte diario + Mis registros); **Mis registros rol-aware**: JdC con 2 pestañas
+  (*Mis horas* / *Cargas que hice* vía `cargadoPorCuil`), Operario solo *Mis horas*.
+  41/41 tests, lint y build OK.
+
+**Diferido (etapa siguiente):** provisión de usuarios read-only de los operarios
+(~121+ altas) y pulido de su vista de consulta.
+
+**Usuarios de prueba vigentes:** `admin@test.local`/`admin1234` (Admin),
+`jefecuadrilla@test.local`/`jdc12345` (JefeCuadrilla), `operario@test.local`/`oper1234` (Operario).
