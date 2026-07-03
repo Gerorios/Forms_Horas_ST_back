@@ -12,7 +12,7 @@ export class RegistrosHorasController {
   constructor(private service: RegistrosHorasService) {}
 
   @Post()
-  @Roles('Operario', 'JefeCuadrilla', 'JefeContrato', 'Admin')
+  @Roles('Operario', 'JefeContrato', 'Admin')
   create(@Body() dto: CreateRegistroHorasDto, @Request() req) {
     return this.service.create(dto, req.user.cuil);
   }
