@@ -310,3 +310,51 @@ forzado) + Vitest; cliente Axios con interceptores Bearer/401; API auth + `Sessi
 (merge/PR) — o, si se sigue con Fase 2 (carga masiva + mis registros), resolver
 antes los gaps de backend (endpoint batch N×M, `PATCH /registros-horas/:id`,
 colapsar rol, seeds reales, JWT 1 h).
+
+---
+
+## 13. Repositorios y hitos (2026-07-03, sesión 2)
+
+### Repos
+- Se **descartó** el repo cajón-de-sastre (`Aplicaciones Web/.git`, borrado). Archivos
+  legacy rescatados en `Aplicaciones Web/_rescate_repo_viejo/`.
+- **Dos repos separados**, cada uno `git init` con commit inicial limpio en rama `main`:
+  - `Formulario_Horas/Backend` → futuro `formulario-horas-backend`.
+  - `Formulario_Horas/Frontend` → futuro `formulario-horas-frontend`.
+- **Remotos en GitHub pendientes** (no hay `gh` instalado): crear repos vacíos y
+  `git remote add origin ... && git push -u origin main` en cada uno.
+- `.env` fuera del control de versiones; hay `.env.example` en ambos.
+
+### Integridad de la BD (IMPORTANTE)
+- ⚠️ **NUNCA correr `prisma db push` ni `prisma migrate` contra esta BD**: es
+  **compartida** con otros sistemas (liquidación, certificaciones, etc.) y el schema
+  Prisma solo modela las tablas `sth_` + `snuempleados`, así que `db push` intentaría
+  **DROPEAR decenas de tablas ajenas**. Gestionar DDL a mano (SQL puntual).
+- Las 12 tablas `sth_` existían **sin foreign keys**. Se agregaron **19 FKs** a mano
+  (con `prisma migrate diff` como referencia, aplicando solo los `ADD CONSTRAINT` de
+  `sth_`). Integridad referencial completa.
+- **Charset:** `snuempleados.cuil` es **utf8mb3**; nuestras columnas `cuil` estaban en
+  utf8mb4 → las FKs a empleados fallaban (error 3780). Se convirtieron las columnas
+  `cuil` de las tablas `sth_` a **utf8mb3_general_ci** para igualar al legacy. (Prisma
+  no representa collation por columna en el schema; no importa porque no usamos migrate.)
+
+### Paso B — gaps de backend RESUELTOS (commits en repo backend)
+- `15a3eed`: colapsar `JefeCuadrilla`→`Operario` en `@Roles`, JWT **1 h**, fix `start:prod`
+  (`dist/src/main`).
+- `2ba40b7`: **`POST /registros-horas/batch`** (expande N×M en transacción, valida
+  contratos habilitados, alerta >16 h por operario/día con lecturas fuera de la
+  transacción y `timeout: 30000` por latencia de BD remota) y **`PATCH /registros-horas/:id`**
+  (corrige la fila → `pendiente` + limpia aprobación + auditoría `editar`; permiso del que
+  cargó o JefeContrato/Admin).
+- **Verificado en vivo por curl:** batch 2×2 = 4 filas; 403 con contrato no habilitado;
+  PATCH resetea a pendiente con auditoría. Registros de prueba borrados (registros_horas
+  en 0). Quedó seed de prueba útil: provincia `Córdoba` (id 1), contrato `K5` (id 1) con
+  admin habilitado, tareas `Excavación`/`Montaje`.
+
+### Gaps de backend que siguen pendientes
+- Seeds reales (contratos K2–K12, tareas, móviles, 3 Jefes de Contrato). Ver §8.
+- Vista SQL para el sistema de liquidación (coordinar con sistemas).
+- Sin tests automatizados en el backend todavía (verificación fue por curl/integración).
+
+**Próximo paso:** crear los remotos en GitHub y pushear, y/o arrancar la **Fase 2**
+del frontend (carga masiva + mis registros), que ya tiene el backend listo.
