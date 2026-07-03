@@ -18,8 +18,9 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **`operarioCuil`** — En un registro, el **dueño de las horas** (a quién le corresponden). Puede ser cualquier empleado activo.
 - **`cargadoPorCuil`** — Quién **hizo la carga** (siempre un usuario con login: JdC / JefeContrato / Admin).
 - **Contrato habilitado (`sth_contratos_habilitados`)** — M:N que cuelga del **usuario que carga**: define de qué contratos puede elegir tareas al cargar.
-- **Registro de horas (`sth_registros_horas`)** — Fila atómica `{fecha, operario, contrato, tarea, horas, provincia, móviles, GPS}` con estado `pendiente|aprobado|desaprobado`.
-- **Reporte diario (carga masiva)** — Una carga produce **N operarios × M líneas** = N×M filas atómicas (vía `POST /registros-horas/batch`).
+- **Registro de horas (`sth_registros_horas`)** — Fila `{fecha, operario, contrato, horas, provincia, GPS}` con estado `pendiente|aprobado|desaprobado`. Las **tareas** (varias, del maestro) cuelgan en `sth_registro_tareas` (M:N) y los **móviles** en `sth_registro_moviles` (M:N). Las horas son **del contrato**, no por tarea (ver ADR-002).
+- **Línea de carga** — `{ contrato, horas, tareas[] }`. Una línea por contrato; ≥1 tarea. Las tareas salen del maestro `tareas_catalogo` (estandarizadas), sin horas por tarea.
+- **Reporte diario (carga masiva)** — Una carga produce **N operarios × M líneas** = N×M filas en `sth_registros_horas` (móviles compartidos por toda la carga). Vía `POST /registros-horas/batch`.
 - **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia"). Solo las **Ausencias** requieren aprobación de HyS.
 - **Quincena** — Período 1–15 / 16–fin de mes, calculado por fecha (sin tabla ni cierre).
 
