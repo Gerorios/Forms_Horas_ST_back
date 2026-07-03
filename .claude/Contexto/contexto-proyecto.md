@@ -479,3 +479,26 @@ Otros: `sth_contratos` K5 (id 1) con `jefeContratoCuil` = jefecontrato. Tipos de
 Ausencia (id 1, requiere HyS), Accidente (id 2, requiere HyS), Franco (id 3, no). Hay 1
 novedad Ausencia pendiente y 2 registros de horas pendientes en K5 (para /aprobaciones).
 Todo seed de prueba, reversible.
+
+---
+
+## 19. ADR-002 aplicado + rediseño visual (2026-07-03)
+
+**ADR-002 (tareas múltiples por registro):** implementado de punta a punta.
+- BD: dropeada `tarea_id` + su FK; creada `sth_registro_tareas` (M:N) con FKs (DDL a mano).
+- Prisma: `RegistroTarea`; `RegistroHoras` sin `tarea`, con `tareas[]`.
+- Backend: línea `{contratoId, horas, tareaIds[]}`, una línea por contrato (400 si repite),
+  `createBatch`/`update`/`INCLUDE` con tareas M:N. Verificado por curl (8hs + [Excavación,Montaje]).
+- Frontend: `LineasField` con multiselect de tareas por contrato (chips), contrato no repetible;
+  tablas muestran las tareas como lista. Móviles de ejemplo seedeados (INT-101, INT-102, AB123CD).
+
+**Rediseño visual (§16) aplicado — estilo "limpio y profesional":**
+- Sistema: tokens de marca (sand/ink/gold/estados) mapeados a shadcn; fuentes Space Grotesk
+  (display) + IBM Plex Sans (cuerpo) + IBM Plex Mono (datos); firma "pico" dorado.
+- Shell sidebar (desktop) + drawer (mobile); primitivos `PageHeader` y `StatusBadge`.
+- Rediseñadas: login, home, 403, reporte, mis-registros, aprobaciones, novedades, ausencias.
+- 50/50 tests, lint y build OK. Ambos repos pusheados.
+
+Datos de prueba para ver: hay 1 registro pendiente (K5, 8hs, tareas Excavación/Montaje) del
+operario TORRES cargado por el JdC → visible en /aprobaciones (jefecontrato@test.local),
+/mis-registros (operario@test.local) y "Cargas que hice" (jefecuadrilla@test.local).
