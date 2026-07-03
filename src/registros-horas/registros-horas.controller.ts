@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { RegistrosHorasService } from './registros-horas.service';
 import { CreateRegistroHorasDto } from './dto/create-registro-horas.dto';
+import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
+import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,6 +19,12 @@ export class RegistrosHorasController {
     return this.service.create(dto, req.user.cuil);
   }
 
+  @Post('batch')
+  @Roles('Operario', 'JefeContrato', 'Admin')
+  createBatch(@Body() dto: CreateRegistroBatchDto, @Request() req) {
+    return this.service.createBatch(dto, req.user.cuil);
+  }
+
   @Get()
   findAll(
     @Query('fecha') fecha?: string,
@@ -25,6 +33,16 @@ export class RegistrosHorasController {
     @Query('operarioCuil') operarioCuil?: string,
   ) {
     return this.service.findAll({ fecha, contratoId, estado, operarioCuil });
+  }
+
+  @Patch(':id')
+  @Roles('Operario', 'JefeContrato', 'Admin')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRegistroHorasDto,
+    @Request() req,
+  ) {
+    return this.service.update(id, dto, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/resolver')
