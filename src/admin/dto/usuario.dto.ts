@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateUsuarioDto {
   @IsString()
@@ -40,4 +40,11 @@ export class UpdateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   contratosIds?: number[];
+}
+
+export class CrearUsuariosMasivoDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  cuils: string[];
 }

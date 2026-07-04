@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
 import { CreateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
@@ -123,5 +123,55 @@ export class AdminService {
     }
 
     return this.prisma.usuario.update({ where: { cuil }, data });
+  }
+
+  async createUsuariosMasivo(cuils: string[]) {
+    const rolOperario = await this.prisma.rol.findUnique({ where: { nombre: 'Operario' } });
+    if (!rolOperario) throw new NotFoundException('No existe el rol Operario');
+
+    const creados: { cuil: string; apellido_nombre: string; email: string; password: string }[] = [];
+    const omitidos: { cuil: string; motivo: string }[] = [];
+
+    for (const cuil of cuils) {
+      const yaExiste = await this.prisma.usuario.findUnique({ where: { cuil } });
+      if (yaExiste) {
+        omitidos.push({ cuil, motivo: 'ya tiene usuario' });
+        continue;
+      }
+      const emp = await this.prisma.snuempleados.findUnique({
+        where: { cuil },
+        select: { legajo: true, apellido_nombre: true, activo: true, borrado: true },
+      });
+      if (!emp || emp.activo !== 'S' || emp.borrado === 'S') {
+        omitidos.push({ cuil, motivo: 'empleado inexistente o inactivo' });
+        continue;
+      }
+      const email = await this.generarEmail(emp.legajo, cuil);
+      const password = this.generarPassword();
+      const passwordHash = await bcrypt.hash(password, 10);
+      await this.prisma.usuario.create({
+        data: { cuil, email, passwordHash, rolId: rolOperario.id },
+      });
+      creados.push({ cuil, apellido_nombre: emp.apellido_nombre, email, password });
+    }
+    return { creados, omitidos };
+  }
+
+  private async generarEmail(legajo: number, cuil: string): Promise<string> {
+    const base = legajo && legajo > 0 ? String(legajo) : cuil;
+    let email = `${base}@st.local`;
+    let n = 1;
+    while (await this.prisma.usuario.findUnique({ where: { email } })) {
+      email = `${base}-${n}@st.local`;
+      n++;
+    }
+    return email;
+  }
+
+  private generarPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let p = '';
+    for (let i = 0; i < 10; i++) p += chars[Math.floor(Math.random() * chars.length)];
+    return p;
   }
 }

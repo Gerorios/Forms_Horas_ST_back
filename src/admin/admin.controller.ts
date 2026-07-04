@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuar
 import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
 import { CreateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
-import { CreateUsuarioDto, UpdateUsuarioDto } from './dto/usuario.dto';
+import { CreateUsuarioDto, UpdateUsuarioDto, CrearUsuariosMasivoDto } from './dto/usuario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -77,5 +77,10 @@ export class AdminController {
   @Patch('usuarios/:cuil')
   updateUsuario(@Param('cuil') cuil: string, @Body() dto: UpdateUsuarioDto) {
     return this.service.updateUsuario(cuil, dto);
+  }
+
+  @Post('usuarios/masivo')
+  createUsuariosMasivo(@Body() dto: CrearUsuariosMasivoDto) {
+    return this.service.createUsuariosMasivo(dto.cuils);
   }
 }
