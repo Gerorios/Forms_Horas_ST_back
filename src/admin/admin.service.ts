@@ -82,9 +82,12 @@ export class AdminService {
         cuil: true,
         email: true,
         activo: true,
+        rolId: true,
         rol: { select: { nombre: true } },
         empleado: { select: { apellido_nombre: true } },
-        contratosHabilitados: { include: { contrato: { select: { codigo: true } } } },
+        contratosHabilitados: {
+          select: { contratoId: true, contrato: { select: { codigo: true } } },
+        },
       },
       orderBy: { cuil: 'asc' },
     });
