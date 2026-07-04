@@ -521,7 +521,34 @@ devuelve credenciales. Verificado por curl.
 - **54/54 tests, lint y build OK.** Ambos repos pusheados.
 
 **Con esto quedan las 4 fases completas.** Pendientes globales:
-- Edición completa de usuario (email/rol/contraseña) — hoy solo activar/desactivar.
+- ~~Edición completa de usuario (email/rol/contraseña)~~ ✅ **RESUELTO (2026-07-04)** — ver §21.
 - Flujo de cambio de contraseña por el propio usuario (no hay backend).
 - Vista SQL de liquidación (externo, a coordinar con sistemas).
 - Deploy (Vercel + Railway/Render) y datos reales (contratos K2–K12, tareas, móviles, jefes).
+
+---
+
+## 21. Edición completa de usuario + fix hydration (2026-07-04)
+
+Spec: `docs/superpowers/specs/2026-07-04-edicion-usuario-design.md`
+Plan: `docs/superpowers/plans/2026-07-04-edicion-usuario.md`
+
+**Fix hydration mismatch** (`SessionProvider`, frontend `src/lib/auth/session.tsx`):
+`loading` se inicializa determinista (`true`, igual en server y cliente) y el `setState`
+se resuelve en callbacks async del effect (flag `cancelado`), evitando el mismatch y el
+error de lint `react-hooks/set-state-in-effect`.
+
+**Edición completa de usuario** (era solo activar/desactivar):
+- Backend (aditivo, sin schema): `GET /admin/usuarios` ahora expone `rolId` y los
+  `contratoId` de cada contrato habilitado (para preseleccionar en el form). El endpoint
+  `PATCH /admin/usuarios/:cuil` ya soportaba email/password/rolId/activo/contratosIds.
+- Frontend: nuevo componente `UsuarioEditRow` (fila expandible inline) con form pre-cargado:
+  email, rol, contratos habilitados (chips) y contraseña opcional (vacío = no cambia, ≥8).
+  Envía solo los campos que cambiaron; Guardar deshabilitado si es inválido o sin cambios;
+  Cancelar descarta. El toggle de activo (`PillActivo`) se mantiene, ahora pasado como prop.
+- Verificación: **59/59 tests**, lint limpio, build OK. E2E por curl del PATCH (200 + persiste).
+- Ejecutado con subagent-driven-development (3 tareas, review por tarea + review final de rama,
+  sin hallazgos Critical/Important).
+
+**Diferido (Minor del review, no bloqueante):** `updateUsuario` no es transaccional
+(deleteMany+createMany+update sueltos) — considerar `$transaction` a futuro.
