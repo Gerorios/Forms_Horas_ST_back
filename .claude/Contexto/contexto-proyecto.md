@@ -502,3 +502,26 @@ Todo seed de prueba, reversible.
 Datos de prueba para ver: hay 1 registro pendiente (K5, 8hs, tareas Excavación/Montaje) del
 operario TORRES cargado por el JdC → visible en /aprobaciones (jefecontrato@test.local),
 /mis-registros (operario@test.local) y "Cargas que hice" (jefecuadrilla@test.local).
+
+---
+
+## 20. Fase 4 COMPLETA (2026-07-04) — Panel Admin
+
+Spec: `docs/superpowers/specs/2026-07-04-fase4-panel-admin-design.md`
+Plan: `docs/superpowers/plans/2026-07-04-fase4-panel-admin.md`
+
+**Backend:** `POST /admin/usuarios/masivo` (alta masiva de operarios): email por legajo
+(`<legajo>@st.local`, fallback a cuil), contraseña aleatoria por usuario, saltea existentes,
+devuelve credenciales. Verificado por curl.
+
+**Frontend:** árbol `/admin/*` con sub-nav y guard de rol Admin:
+- `/admin/usuarios` (lista + toggle activo + alta individual + **alta masiva** con tabla de credenciales),
+- `/admin/contratos`, `/admin/tareas` (por contrato), `/admin/moviles`, `/admin/provincias`, `/admin/tipos-novedad`.
+- Hooks en `lib/api/admin.ts`; componente `PillActivo`; feedback con toast.promise.
+- **54/54 tests, lint y build OK.** Ambos repos pusheados.
+
+**Con esto quedan las 4 fases completas.** Pendientes globales:
+- Edición completa de usuario (email/rol/contraseña) — hoy solo activar/desactivar.
+- Flujo de cambio de contraseña por el propio usuario (no hay backend).
+- Vista SQL de liquidación (externo, a coordinar con sistemas).
+- Deploy (Vercel + Railway/Render) y datos reales (contratos K2–K12, tareas, móviles, jefes).
