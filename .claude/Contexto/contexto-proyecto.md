@@ -552,3 +552,22 @@ error de lint `react-hooks/set-state-in-effect`.
 
 **Diferido (Minor del review, no bloqueante):** `updateUsuario` no es transaccional
 (deleteMany+createMany+update sueltos) — considerar `$transaction` a futuro.
+
+---
+
+## 22. Purga de seed de prueba (2026-07-04)
+
+⚠️ **Los usuarios y datos de prueba de las secciones §12, §15 y §18 YA NO EXISTEN.**
+Se borraron (transacción, DML a mano vía Prisma) los 6 usuarios `@test.local`
+(`admin`, `operario`, `jefecuadrilla`, `jefecontrato`, `supervisor`, `hys`) y **todos**
+los datos transaccionales de prueba: 5 registros_horas (+ registro_moviles/tareas),
+3 novedades, 5 auditorías, y los contratos_habilitados de esos usuarios. El contrato
+`K5` quedó con `jefeContratoCuil = null`.
+
+**Usuarios REALES vigentes en la BD (los únicos que quedan):**
+- `rcarrazana@serytec.com` — **Admin** (CARRAZANA RODRIGO). Es el admin de referencia.
+- `jteran@serytec.com` — Supervisor (AVILA TERAN JOSE).
+- `ccazorla@serytec.com` — HyS (CAZORLA CLAUDIA).
+
+No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Catálogos
+(contratos, tareas, móviles, provincias, tipos de novedad) se conservaron.
