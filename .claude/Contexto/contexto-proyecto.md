@@ -571,3 +571,30 @@ los datos transaccionales de prueba: 5 registros_horas (+ registro_moviles/tarea
 
 No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Catálogos
 (contratos, tareas, móviles, provincias, tipos de novedad) se conservaron.
+
+---
+
+## 23. Estado al cerrar (2026-07-05) — dónde retomar
+
+**Ambos repos pusheados a `origin/main`:**
+- Backend `Forms_Horas_ST_back` → `427d571`.
+- Frontend `Forms_Horas_ST_Frontend` → `dd654a3`.
+
+**Estado del código:** 4 fases + edición de usuario completas. 59/59 tests, lint y build OK.
+
+**Estado de la BD (compartida `191.101.235.7`, base `testing`):** solo los 3 usuarios reales
+`@serytec.com` (ver §22). Sin datos transaccionales (todo purgado). Catálogos intactos.
+`K5` sin jefe asignado y los usuarios reales **sin contratos habilitados** todavía.
+
+**Pendientes globales (para retomar):**
+1. Datos reales: asignar `jefeContratoCuil` a los contratos (K5 quedó en null), habilitar
+   contratos a los usuarios que cargan, y cargar catálogos reales (contratos K2–K12, tareas,
+   móviles). Sin esto, los usuarios reales no pueden cargar ni aprobar por scope de contrato.
+2. Provisión de logins de operarios (read-only) — alta masiva ya existe (§20).
+3. Flujo de cambio de contraseña por el propio usuario (no hay backend).
+4. Vista SQL de liquidación (coordinar con sistemas).
+5. Deploy (Vercel frontend + Railway/Render backend).
+6. Diferido (Minor): hacer transaccional `AdminService.updateUsuario` (§21).
+
+**Nota operativa:** los servidores de dev (backend `npm run start:dev` :3001, frontend
+`npm run dev` :3000) NO quedaron corriendo; relevantar al retomar para probar en navegador.
