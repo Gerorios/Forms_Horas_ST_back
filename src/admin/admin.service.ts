@@ -156,7 +156,7 @@ export class AdminService {
         continue;
       }
       const email = await this.generarEmail(emp.legajo, cuil);
-      const password = this.generarPassword();
+      const password = cuil;
       const passwordHash = await bcrypt.hash(password, 10);
       await this.prisma.usuario.create({
         data: { cuil, email, passwordHash, rolId: rolOperario.id },
@@ -177,10 +177,4 @@ export class AdminService {
     return email;
   }
 
-  private generarPassword(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    let p = '';
-    for (let i = 0; i < 10; i++) p += chars[Math.floor(Math.random() * chars.length)];
-    return p;
-  }
 }
