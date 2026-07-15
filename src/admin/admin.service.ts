@@ -176,5 +176,4 @@ export class AdminService {
     }
     return email;
   }
-
 }
