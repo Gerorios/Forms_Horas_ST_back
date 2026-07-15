@@ -598,3 +598,52 @@ No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Cat
 
 **Nota operativa:** los servidores de dev (backend `npm run start:dev` :3001, frontend
 `npm run dev` :3000) NO quedaron corriendo; relevantar al retomar para probar en navegador.
+
+---
+
+## 24. Filtro de usuarios + reset de contraseña (2026-07-15)
+
+Spec: `docs/superpowers/specs/2026-07-15-filtro-usuarios-y-reset-password-design.md`
+Plan: `docs/superpowers/plans/2026-07-15-filtro-usuarios-y-reset-password.md`
+ADR: `docs/adr/2026-07-15-adr-003-password-reset-cuil.md`
+Ejecutado con Subagent-Driven Development (5 tareas, implementador + revisor por tarea, todas
+con review clean). Rama: `feature/admin-usuarios-filtro-reset` en ambos repos (basada en `main`,
+**no** en la rama del PR del CRUD de maestros — son dos features independientes, sin mezclar).
+
+**Motivación:** se hizo un alta masiva de usuarios y se perdieron las contraseñas generadas
+(se cerró la pestaña antes de copiar la tabla de credenciales). Como las contraseñas se guardan
+como hash `bcrypt` (irreversible), no había forma de recuperarlas.
+
+**Backend** (2 tareas, review clean): `POST /admin/usuarios/:cuil/resetear-password` (nuevo,
+setea `passwordHash = bcrypt.hash(cuil, 10)`); alta masiva (`createUsuariosMasivo`) ahora usa el
+`cuil` como password en vez de un random de 10 caracteres (`generarPassword()` eliminado, sin
+usos).
+
+**Decisión de seguridad consciente (ADR-003):** la contraseña de un usuario (alta masiva y reset
+individual) **es su propio CUIL**. El CUIL no es secreto (DNI, recibos de sueldo, compañeros lo
+conocen) — riesgo aceptado explícitamente por el dueño del producto a cambio de simplicidad para
+operarios de campo. Autoservicio "olvidé mi contraseña" queda **diferido** (no hay infraestructura
+de email; la mayoría de los usuarios de alta masiva reciben `<legajo>@st.local`, no enviable).
+
+**Frontend** (3 tareas, review clean): filtro 100% client-side en `/admin/usuarios` (texto por
+nombre, accent/case-insensitive vía `\p{Diacritic}`, + chips de selección múltiple de rol,
+combinados con "Y"); hook `useResetearPassword`; botón "Resetear contraseña" dentro del form
+expandido de `UsuarioEditRow` con diálogo de confirmación — el diálogo vive a nivel de página
+(`UsuariosAdminPage`), no dentro de la fila de tabla (evita HTML inválido), mismo patrón que
+`DesaprobarDialog` en `/aprobaciones`.
+
+**Verificación:** frontend 69/69 tests, lint y build OK. Backend build OK (sin suite de tests
+automatizada, consistente con el resto del módulo Admin — verificación por curl documentada en
+el plan, no ejecutada en esta sesión por falta de credenciales Admin reales).
+
+**Minor findings del review (no bloqueantes, diferidos):**
+- `UsuarioEditRow`/`MovilEditRow`/etc. no resincronizan estado local si la prop cambia de
+  identidad con la fila abierta (patrón preexistente, ver §23/PR de maestros).
+- En `usuarios-page.test.tsx`, la assertion de nombre/cuil en el diálogo usa `getAllByText(...)`
+  en vez de discriminar por el diálogo (menos rigurosa) — cobertura real ya cubierta en el test
+  unitario de `ResetearPasswordDialog`.
+
+**Pendiente para cerrar esta rama:** review final de rama completa, luego merge/PR a `main` en
+ambos repos. Checklist E2E manual del usuario (con Admin real) antes de mergear: filtro por
+nombre/rol funciona en vivo; reset de contraseña de un usuario permite loguearse con el CUIL;
+alta masiva muestra el CUIL como password en la tabla de credenciales.
