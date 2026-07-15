@@ -27,6 +27,16 @@ export class CreateMovilDto {
   descripcion?: string;
 }
 
+export class UpdateMovilDto {
+  @IsOptional()
+  @IsString()
+  identificador?: string;
+
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+}
+
 export class CreateProvinciaDto {
   @IsString()
   nombre: string;
