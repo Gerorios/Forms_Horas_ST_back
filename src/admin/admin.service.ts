@@ -128,6 +128,12 @@ export class AdminService {
     return this.prisma.usuario.update({ where: { cuil }, data });
   }
 
+  async resetearPassword(cuil: string) {
+    const passwordHash = await bcrypt.hash(cuil, 10);
+    await this.prisma.usuario.update({ where: { cuil }, data: { passwordHash } });
+    return { cuil, password: cuil };
+  }
+
   async createUsuariosMasivo(cuils: string[]) {
     const rolOperario = await this.prisma.rol.findUnique({ where: { nombre: 'Operario' } });
     if (!rolOperario) throw new NotFoundException('No existe el rol Operario');

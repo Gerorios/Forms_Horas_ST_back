@@ -79,6 +79,11 @@ export class AdminController {
     return this.service.updateUsuario(cuil, dto);
   }
 
+  @Post('usuarios/:cuil/resetear-password')
+  resetearPassword(@Param('cuil') cuil: string) {
+    return this.service.resetearPassword(cuil);
+  }
+
   @Post('usuarios/masivo')
   createUsuariosMasivo(@Body() dto: CrearUsuariosMasivoDto) {
     return this.service.createUsuariosMasivo(dto.cuils);
