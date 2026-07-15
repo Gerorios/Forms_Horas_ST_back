@@ -598,3 +598,52 @@ No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Cat
 
 **Nota operativa:** los servidores de dev (backend `npm run start:dev` :3001, frontend
 `npm run dev` :3000) NO quedaron corriendo; relevantar al retomar para probar en navegador.
+
+---
+
+## 24. CRUD de maestros admin completado (2026-07-15)
+
+Spec: `docs/superpowers/specs/2026-07-14-completar-crud-maestros-design.md`
+Plan: `docs/superpowers/plans/2026-07-14-completar-crud-maestros.md`
+Ejecutado con Subagent-Driven Development (10 tareas, implementador + revisor por tarea).
+Rama: `feature/completar-crud-maestros` en ambos repos (aún sin mergear a `main`).
+
+**Backend** (4 tareas, todas con review clean): `PATCH /admin/tareas/:id`,
+`PATCH /admin/moviles/:id`, `PATCH /admin/provincias/:id`,
+`PATCH /admin/tipos-novedad/:id` — mismo patrón que `updateContrato` (DTO
+`Update*Dto` con campos opcionales + `prisma.<modelo>.update()`). Los toggles
+`.../activo` existentes quedaron intactos, sin tocar.
+
+**Frontend** (5 tareas, todas con review clean): hooks `useEditarTarea`,
+`useEditarMovil`, `useEditarProvincia`, `useEditarTipoNovedad` en
+`lib/api/admin.ts`; componentes `TareaEditRow`, `MovilEditRow`,
+`ProvinciaEditRow`, `TipoNovedadEditRow` (fila expandible inline, mismo
+patrón que `UsuarioEditRow`) cableados en sus respectivas páginas
+`/admin/*`.
+
+**Con esto, los 6 maestros del panel Admin tienen CRUD completo**
+(crear/listar/editar, + activar-desactivar donde aplica):
+
+| Entidad | Crear | Listar | Editar | Activar/Desactivar |
+|---|---|---|---|---|
+| Contratos | ✅ | ✅ | ✅ | — (vía PATCH) |
+| Usuarios | ✅ | ✅ | ✅ | — |
+| Tareas | ✅ | ✅ | ✅ | ✅ |
+| Móviles | ✅ | ✅ | ✅ | ✅ |
+| Tipos de novedad | ✅ | ✅ | ✅ | ✅ |
+| Provincias | ✅ | ✅ | ✅ | ❌ (decisión explícita — ver spec §1) |
+
+**Decisión deliberada:** Provincia **no** suma columna `activo` — solo ganó
+edición de `nombre`. Ningún maestro tiene hard delete (fuera de alcance en
+todo el panel).
+
+**Verificación:** frontend 80/80 tests, lint y build OK. Backend build OK
+(sigue sin suite de tests automatizada — verificación por curl documentada
+en el plan, no ejecutada en esta sesión por falta de credenciales Admin
+reales; **queda pendiente que el usuario haga el click-through manual** en
+`/admin/tareas`, `/admin/moviles`, `/admin/provincias`, `/admin/tipos-novedad`
+antes de mergear).
+
+**Pendiente para cerrar esta rama:** review final de rama completa (whole-branch
+review), luego merge/PR de `feature/completar-crud-maestros` → `main` en
+ambos repos (ver skill `finishing-a-development-branch`).

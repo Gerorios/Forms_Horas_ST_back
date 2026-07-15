@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
-import { CreateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
+import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, UpdateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto, CrearUsuariosMasivoDto } from './dto/usuario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -40,6 +40,11 @@ export class AdminController {
     return this.service.toggleTarea(id, dto);
   }
 
+  @Patch('tareas/:id')
+  updateTarea(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTareaDto) {
+    return this.service.updateTarea(id, dto);
+  }
+
   @Get('moviles')
   getMoviles() { return this.service.getMoviles(); }
 
@@ -51,11 +56,21 @@ export class AdminController {
     return this.service.toggleMovil(id, dto);
   }
 
+  @Patch('moviles/:id')
+  updateMovil(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMovilDto) {
+    return this.service.updateMovil(id, dto);
+  }
+
   @Get('provincias')
   getProvincias() { return this.service.getProvincias(); }
 
   @Post('provincias')
   createProvincia(@Body() dto: CreateProvinciaDto) { return this.service.createProvincia(dto); }
+
+  @Patch('provincias/:id')
+  updateProvincia(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProvinciaDto) {
+    return this.service.updateProvincia(id, dto);
+  }
 
   @Get('tipos-novedad')
   getTiposNovedad() { return this.service.getTiposNovedad(); }
@@ -66,6 +81,11 @@ export class AdminController {
   @Patch('tipos-novedad/:id/activo')
   toggleTipoNovedad(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleActivoDto) {
     return this.service.toggleTipoNovedad(id, dto);
+  }
+
+  @Patch('tipos-novedad/:id')
+  updateTipoNovedad(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTipoNovedadDto) {
+    return this.service.updateTipoNovedad(id, dto);
   }
 
   @Get('usuarios')
