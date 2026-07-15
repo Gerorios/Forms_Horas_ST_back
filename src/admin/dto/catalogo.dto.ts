@@ -61,6 +61,20 @@ export class CreateTipoNovedadDto {
   generaPlus?: boolean;
 }
 
+export class UpdateTipoNovedadDto {
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requiereAprobacionHys?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  generaPlus?: boolean;
+}
+
 export class ToggleActivoDto {
   @IsBoolean()
   activo: boolean;
