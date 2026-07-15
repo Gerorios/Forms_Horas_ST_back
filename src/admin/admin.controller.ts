@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
-import { CreateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
+import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto, CrearUsuariosMasivoDto } from './dto/usuario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -38,6 +38,11 @@ export class AdminController {
   @Patch('tareas/:id/activo')
   toggleTarea(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleActivoDto) {
     return this.service.toggleTarea(id, dto);
+  }
+
+  @Patch('tareas/:id')
+  updateTarea(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTareaDto) {
+    return this.service.updateTarea(id, dto);
   }
 
   @Get('moviles')

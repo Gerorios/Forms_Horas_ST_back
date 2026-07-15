@@ -8,6 +8,16 @@ export class CreateTareaDto {
   nombre: string;
 }
 
+export class UpdateTareaDto {
+  @IsOptional()
+  @IsInt()
+  contratoId?: number;
+
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+}
+
 export class CreateMovilDto {
   @IsString()
   identificador: string;
