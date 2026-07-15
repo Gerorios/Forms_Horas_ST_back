@@ -42,6 +42,12 @@ export class CreateProvinciaDto {
   nombre: string;
 }
 
+export class UpdateProvinciaDto {
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+}
+
 export class CreateTipoNovedadDto {
   @IsString()
   nombre: string;

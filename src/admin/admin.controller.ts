@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
-import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
+import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto, CrearUsuariosMasivoDto } from './dto/usuario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -66,6 +66,11 @@ export class AdminController {
 
   @Post('provincias')
   createProvincia(@Body() dto: CreateProvinciaDto) { return this.service.createProvincia(dto); }
+
+  @Patch('provincias/:id')
+  updateProvincia(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProvinciaDto) {
+    return this.service.updateProvincia(id, dto);
+  }
 
   @Get('tipos-novedad')
   getTiposNovedad() { return this.service.getTiposNovedad(); }

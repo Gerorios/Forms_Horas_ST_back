@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
-import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
+import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto } from './dto/usuario.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -70,6 +70,10 @@ export class AdminService {
 
   createProvincia(dto: CreateProvinciaDto) {
     return this.prisma.provincia.create({ data: dto });
+  }
+
+  updateProvincia(id: number, dto: UpdateProvinciaDto) {
+    return this.prisma.provincia.update({ where: { id }, data: dto });
   }
 
   getTiposNovedad() {
