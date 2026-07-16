@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
-import { CreateTareaDto, CreateMovilDto, CreateProvinciaDto, CreateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
+import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, UpdateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto } from './dto/usuario.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -44,6 +44,10 @@ export class AdminService {
     return this.prisma.tareaCatalogo.update({ where: { id }, data: { activo: dto.activo } });
   }
 
+  updateTarea(id: number, dto: UpdateTareaDto) {
+    return this.prisma.tareaCatalogo.update({ where: { id }, data: dto });
+  }
+
   getMoviles() {
     return this.prisma.movil.findMany({ orderBy: { identificador: 'asc' } });
   }
@@ -56,12 +60,20 @@ export class AdminService {
     return this.prisma.movil.update({ where: { id }, data: { activo: dto.activo } });
   }
 
+  updateMovil(id: number, dto: UpdateMovilDto) {
+    return this.prisma.movil.update({ where: { id }, data: dto });
+  }
+
   getProvincias() {
     return this.prisma.provincia.findMany({ orderBy: { nombre: 'asc' } });
   }
 
   createProvincia(dto: CreateProvinciaDto) {
     return this.prisma.provincia.create({ data: dto });
+  }
+
+  updateProvincia(id: number, dto: UpdateProvinciaDto) {
+    return this.prisma.provincia.update({ where: { id }, data: dto });
   }
 
   getTiposNovedad() {
@@ -74,6 +86,10 @@ export class AdminService {
 
   toggleTipoNovedad(id: number, dto: ToggleActivoDto) {
     return this.prisma.tipoNovedad.update({ where: { id }, data: { activo: dto.activo } });
+  }
+
+  updateTipoNovedad(id: number, dto: UpdateTipoNovedadDto) {
+    return this.prisma.tipoNovedad.update({ where: { id }, data: dto });
   }
 
   getUsuarios() {

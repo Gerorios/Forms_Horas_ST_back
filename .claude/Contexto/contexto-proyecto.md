@@ -601,7 +601,88 @@ No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Cat
 
 ---
 
-## 24. Filtro de usuarios + reset de contraseña (2026-07-15)
+## 24. CRUD de maestros admin completado (2026-07-15)
+
+Spec: `docs/superpowers/specs/2026-07-14-completar-crud-maestros-design.md`
+Plan: `docs/superpowers/plans/2026-07-14-completar-crud-maestros.md`
+Ejecutado con Subagent-Driven Development (10 tareas, implementador y revisor por tarea).
+Rama: `feature/completar-crud-maestros` en ambos repos (mergeada a `main`).
+
+**Backend** (4 tareas, todas con review clean): `PATCH /admin/tareas/:id`,
+`PATCH /admin/moviles/:id`, `PATCH /admin/provincias/:id`,
+`PATCH /admin/tipos-novedad/:id` — mismo patrón que `updateContrato` (DTO
+`Update*Dto` con campos opcionales + `prisma.<modelo>.update()`). Los toggles
+`.../activo` existentes quedaron intactos, sin tocar.
+
+**Frontend** (5 tareas, todas con review clean): hooks `useEditarTarea`,
+`useEditarMovil`, `useEditarProvincia`, `useEditarTipoNovedad` en
+`lib/api/admin.ts`; componentes `TareaEditRow`, `MovilEditRow`,
+`ProvinciaEditRow`, `TipoNovedadEditRow` (fila expandible inline, mismo
+patrón que `UsuarioEditRow`) cableados en sus respectivas páginas
+`/admin/*`.
+
+**Con esto, los 6 maestros del panel Admin tienen CRUD completo**
+(crear/listar/editar, + activar-desactivar donde aplica):
+
+| Entidad | Crear | Listar | Editar | Activar/Desactivar |
+|---|---|---|---|---|
+| Contratos | ✅ | ✅ | ✅ | — (vía PATCH) |
+| Usuarios | ✅ | ✅ | ✅ | — |
+| Tareas | ✅ | ✅ | ✅ | ✅ |
+| Móviles | ✅ | ✅ | ✅ | ✅ |
+| Tipos de novedad | ✅ | ✅ | ✅ | ✅ |
+| Provincias | ✅ | ✅ | ✅ | ❌ (decisión explícita — ver spec §1) |
+
+**Decisión deliberada:** Provincia **no** suma columna `activo` — solo ganó
+edición de `nombre`. Ningún maestro tiene hard delete (fuera de alcance en
+todo el panel).
+
+**Verificación:** frontend 80/80 tests, lint y build OK. Backend build OK.
+
+---
+
+## 25. Edición de Contratos (nombre + Jefe de Contrato) — bugfix (2026-07-16)
+
+Spec: `docs/superpowers/specs/2026-07-16-edicion-contratos-jefe-design.md`
+Plan: `docs/superpowers/plans/2026-07-16-edicion-contratos-jefe.md`
+Ejecutado con Subagent-Driven Development (4 tareas, implementador y revisor por tarea, todas
+con review clean). Rama: `feature/contratos-jefe` en ambos repos (mergeada a `main`).
+
+**Bug encontrado por el usuario:** un Jefe de Cuadrilla cargó horas en un contrato, pero el Jefe
+de Contrato de ese mismo contrato no veía nada pendiente en `/aprobaciones`. Root cause (via
+`superpowers:systematic-debugging`, evidencia directa de la BD): **los 8 contratos tenían
+`jefeContratoCuil = null`** — `GET /registros-horas/por-aprobar` filtra por
+`{ jefeContratoCuil: usuario.cuil }`, así que sin ese dato ningún JefeContrato veía nada. Causa
+raíz secundaria: `/admin/contratos` nunca tuvo forma de asignar el jefe desde la UI (el backend ya
+lo soportaba desde antes, solo faltaba el frontend).
+
+**Desbloqueo inmediato (manual, antes de esta feature):** se asignó por script directo contra la
+BD a `mvega@serytec.com` (CUIL `27398878499`) como jefe de K9 y K10, para destrabar la prueba del
+usuario mientras se implementaba la solución permanente.
+
+**Backend** (1 tarea, review clean): `UpdateContratoDto.jefeContratoCuil` ahora acepta
+`string | null` explícito (antes solo `string | undefined`) — permite **desasignar** un jefe. Sin
+cambios de servicio/controller (Prisma ya acepta `null` para limpiar la FK nullable).
+
+**Frontend** (3 tareas, review clean): `useEditarContrato` ampliado al mismo tipo; nuevo
+`ContratoEditRow` (mismo patrón fila-expandible que `TareaEditRow`/`MovilEditRow`) con input de
+nombre + `<select>` "Jefe de Contrato" (opción "Sin jefe asignado" → `null`, poblado con usuarios
+`rol.nombre === 'JefeContrato'` filtrados client-side en la página); cableado en
+`/admin/contratos`, reemplazando la fila plana que solo tenía crear + toggle activo.
+
+**Verificación:** frontend 88/89 tests (1 falla preexistente y no relacionada — ver nota abajo),
+lint y build OK. Backend build OK.
+
+**Nota — test preexistente roto por el calendario (no de esta feature):**
+`mis-registros-page.test.tsx` usa una fecha fija (`2026-07-05`, quincena 1) en su fixture, pero la
+página filtra por la quincena de "hoy" por default. Al cruzar el 16 de julio (quincena 2), el test
+empezó a fallar — confirmado que no tiene relación con esta feature (mismo resultado corriendo el
+test aislado contra `main`). Queda como deuda preexistente a arreglar en otra sesión (el fixture
+debería usar una fecha relativa a "hoy", no hardcodeada).
+
+---
+
+## 26. Filtro de usuarios + reset de contraseña (2026-07-15)
 
 Spec: `docs/superpowers/specs/2026-07-15-filtro-usuarios-y-reset-password-design.md`
 Plan: `docs/superpowers/plans/2026-07-15-filtro-usuarios-y-reset-password.md`
