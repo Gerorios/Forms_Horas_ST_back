@@ -19,7 +19,7 @@ export class UpdateContratoDto {
 
   @IsOptional()
   @IsString()
-  jefeContratoCuil?: string;
+  jefeContratoCuil?: string | null;
 
   @IsOptional()
   @IsBoolean()
