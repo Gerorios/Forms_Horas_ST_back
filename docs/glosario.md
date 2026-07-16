@@ -30,3 +30,8 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Aprobación** → JefeContrato aprueba/desaprueba; puede reabrir/editar.
 - **Corrección** → quien cargó (o JefeContrato/Admin) edita la fila desaprobada → vuelve a `pendiente` + auditoría.
 - **Consulta** → Operario ve lo suyo (`operarioCuil`); JdC ve lo suyo + lo que cargó (`cargadoPorCuil`).
+- **Reset de contraseña** → el Admin resetea la contraseña de un usuario individual a su propio CUIL
+  (determinístico, sin generar nada al azar). Ver ADR-003 — es una decisión de seguridad consciente, no
+  un autoservicio: el usuario final no puede resetear su propia contraseña sin pasar por el Admin
+  (autoservicio por email queda diferido, no hay infraestructura de envío de mail ni email real para la
+  mayoría de los usuarios de alta masiva, que reciben `<legajo>@st.local`, no enviable).

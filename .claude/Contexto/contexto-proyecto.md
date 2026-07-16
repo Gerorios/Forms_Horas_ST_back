@@ -605,8 +605,8 @@ No hay contraseñas de estos usuarios en este doc (las gestiona la empresa). Cat
 
 Spec: `docs/superpowers/specs/2026-07-14-completar-crud-maestros-design.md`
 Plan: `docs/superpowers/plans/2026-07-14-completar-crud-maestros.md`
-Ejecutado con Subagent-Driven Development (10 tareas, implementador + revisor por tarea).
-Rama: `feature/completar-crud-maestros` en ambos repos (aún sin mergear a `main`).
+Ejecutado con Subagent-Driven Development (10 tareas, implementador y revisor por tarea).
+Rama: `feature/completar-crud-maestros` en ambos repos (mergeada a `main`).
 
 **Backend** (4 tareas, todas con review clean): `PATCH /admin/tareas/:id`,
 `PATCH /admin/moviles/:id`, `PATCH /admin/provincias/:id`,
@@ -637,16 +637,7 @@ patrón que `UsuarioEditRow`) cableados en sus respectivas páginas
 edición de `nombre`. Ningún maestro tiene hard delete (fuera de alcance en
 todo el panel).
 
-**Verificación:** frontend 80/80 tests, lint y build OK. Backend build OK
-(sigue sin suite de tests automatizada — verificación por curl documentada
-en el plan, no ejecutada en esta sesión por falta de credenciales Admin
-reales; **queda pendiente que el usuario haga el click-through manual** en
-`/admin/tareas`, `/admin/moviles`, `/admin/provincias`, `/admin/tipos-novedad`
-antes de mergear).
-
-**Pendiente para cerrar esta rama:** review final de rama completa (whole-branch
-review), luego merge/PR de `feature/completar-crud-maestros` → `main` en
-ambos repos (ver skill `finishing-a-development-branch`).
+**Verificación:** frontend 80/80 tests, lint y build OK. Backend build OK.
 
 ---
 
@@ -654,9 +645,8 @@ ambos repos (ver skill `finishing-a-development-branch`).
 
 Spec: `docs/superpowers/specs/2026-07-16-edicion-contratos-jefe-design.md`
 Plan: `docs/superpowers/plans/2026-07-16-edicion-contratos-jefe.md`
-Ejecutado con Subagent-Driven Development (4 tareas, implementador + revisor por tarea, todas
-con review clean). Rama: `feature/contratos-jefe` en ambos repos (basada en `main`, con el CRUD
-de maestros ya mergeado).
+Ejecutado con Subagent-Driven Development (4 tareas, implementador y revisor por tarea, todas
+con review clean). Rama: `feature/contratos-jefe` en ambos repos (mergeada a `main`).
 
 **Bug encontrado por el usuario:** un Jefe de Cuadrilla cargó horas en un contrato, pero el Jefe
 de Contrato de ese mismo contrato no veía nada pendiente en `/aprobaciones`. Root cause (via
@@ -680,17 +670,61 @@ nombre + `<select>` "Jefe de Contrato" (opción "Sin jefe asignado" → `null`, 
 `rol.nombre === 'JefeContrato'` filtrados client-side en la página); cableado en
 `/admin/contratos`, reemplazando la fila plana que solo tenía crear + toggle activo.
 
-**Verificación:** frontend 88/89 tests (1 falla preexistente y no relacionada, ver nota abajo),
+**Verificación:** frontend 88/89 tests (1 falla preexistente y no relacionada — ver nota abajo),
 lint y build OK. Backend build OK.
 
 **Nota — test preexistente roto por el calendario (no de esta feature):**
 `mis-registros-page.test.tsx` usa una fecha fija (`2026-07-05`, quincena 1) en su fixture, pero la
 página filtra por la quincena de "hoy" por default. Al cruzar el 16 de julio (quincena 2), el test
-empezó a fallar — confirmado que el diff de esta rama no toca nada de `mis-registros` (mismo
-resultado corriendo el test aislado contra `main`). Queda como deuda preexistente a arreglar en
-otra sesión (el fixture debería usar una fecha relativa a "hoy", no hardcodeada).
+empezó a fallar — confirmado que no tiene relación con esta feature (mismo resultado corriendo el
+test aislado contra `main`). Queda como deuda preexistente a arreglar en otra sesión (el fixture
+debería usar una fecha relativa a "hoy", no hardcodeada).
+
+---
+
+## 26. Filtro de usuarios + reset de contraseña (2026-07-15)
+
+Spec: `docs/superpowers/specs/2026-07-15-filtro-usuarios-y-reset-password-design.md`
+Plan: `docs/superpowers/plans/2026-07-15-filtro-usuarios-y-reset-password.md`
+ADR: `docs/adr/2026-07-15-adr-003-password-reset-cuil.md`
+Ejecutado con Subagent-Driven Development (5 tareas, implementador + revisor por tarea, todas
+con review clean). Rama: `feature/admin-usuarios-filtro-reset` en ambos repos (basada en `main`,
+**no** en la rama del PR del CRUD de maestros — son dos features independientes, sin mezclar).
+
+**Motivación:** se hizo un alta masiva de usuarios y se perdieron las contraseñas generadas
+(se cerró la pestaña antes de copiar la tabla de credenciales). Como las contraseñas se guardan
+como hash `bcrypt` (irreversible), no había forma de recuperarlas.
+
+**Backend** (2 tareas, review clean): `POST /admin/usuarios/:cuil/resetear-password` (nuevo,
+setea `passwordHash = bcrypt.hash(cuil, 10)`); alta masiva (`createUsuariosMasivo`) ahora usa el
+`cuil` como password en vez de un random de 10 caracteres (`generarPassword()` eliminado, sin
+usos).
+
+**Decisión de seguridad consciente (ADR-003):** la contraseña de un usuario (alta masiva y reset
+individual) **es su propio CUIL**. El CUIL no es secreto (DNI, recibos de sueldo, compañeros lo
+conocen) — riesgo aceptado explícitamente por el dueño del producto a cambio de simplicidad para
+operarios de campo. Autoservicio "olvidé mi contraseña" queda **diferido** (no hay infraestructura
+de email; la mayoría de los usuarios de alta masiva reciben `<legajo>@st.local`, no enviable).
+
+**Frontend** (3 tareas, review clean): filtro 100% client-side en `/admin/usuarios` (texto por
+nombre, accent/case-insensitive vía `\p{Diacritic}`, + chips de selección múltiple de rol,
+combinados con "Y"); hook `useResetearPassword`; botón "Resetear contraseña" dentro del form
+expandido de `UsuarioEditRow` con diálogo de confirmación — el diálogo vive a nivel de página
+(`UsuariosAdminPage`), no dentro de la fila de tabla (evita HTML inválido), mismo patrón que
+`DesaprobarDialog` en `/aprobaciones`.
+
+**Verificación:** frontend 69/69 tests, lint y build OK. Backend build OK (sin suite de tests
+automatizada, consistente con el resto del módulo Admin — verificación por curl documentada en
+el plan, no ejecutada en esta sesión por falta de credenciales Admin reales).
+
+**Minor findings del review (no bloqueantes, diferidos):**
+- `UsuarioEditRow`/`MovilEditRow`/etc. no resincronizan estado local si la prop cambia de
+  identidad con la fila abierta (patrón preexistente, ver §23/PR de maestros).
+- En `usuarios-page.test.tsx`, la assertion de nombre/cuil en el diálogo usa `getAllByText(...)`
+  en vez de discriminar por el diálogo (menos rigurosa) — cobertura real ya cubierta en el test
+  unitario de `ResetearPasswordDialog`.
 
 **Pendiente para cerrar esta rama:** review final de rama completa, luego merge/PR a `main` en
-ambos repos. Checklist E2E manual del usuario antes de mergear: asignar un jefe a un contrato y
-confirmar que ese usuario ve los registros pendientes en `/aprobaciones`; desasignarlo y confirmar
-que deja de verlos.
+ambos repos. Checklist E2E manual del usuario (con Admin real) antes de mergear: filtro por
+nombre/rol funciona en vivo; reset de contraseña de un usuario permite loguearse con el CUIL;
+alta masiva muestra el CUIL como password en la tabla de credenciales.
