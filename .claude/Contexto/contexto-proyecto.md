@@ -647,3 +647,50 @@ antes de mergear).
 **Pendiente para cerrar esta rama:** review final de rama completa (whole-branch
 review), luego merge/PR de `feature/completar-crud-maestros` → `main` en
 ambos repos (ver skill `finishing-a-development-branch`).
+
+---
+
+## 25. Edición de Contratos (nombre + Jefe de Contrato) — bugfix (2026-07-16)
+
+Spec: `docs/superpowers/specs/2026-07-16-edicion-contratos-jefe-design.md`
+Plan: `docs/superpowers/plans/2026-07-16-edicion-contratos-jefe.md`
+Ejecutado con Subagent-Driven Development (4 tareas, implementador + revisor por tarea, todas
+con review clean). Rama: `feature/contratos-jefe` en ambos repos (basada en `main`, con el CRUD
+de maestros ya mergeado).
+
+**Bug encontrado por el usuario:** un Jefe de Cuadrilla cargó horas en un contrato, pero el Jefe
+de Contrato de ese mismo contrato no veía nada pendiente en `/aprobaciones`. Root cause (via
+`superpowers:systematic-debugging`, evidencia directa de la BD): **los 8 contratos tenían
+`jefeContratoCuil = null`** — `GET /registros-horas/por-aprobar` filtra por
+`{ jefeContratoCuil: usuario.cuil }`, así que sin ese dato ningún JefeContrato veía nada. Causa
+raíz secundaria: `/admin/contratos` nunca tuvo forma de asignar el jefe desde la UI (el backend ya
+lo soportaba desde antes, solo faltaba el frontend).
+
+**Desbloqueo inmediato (manual, antes de esta feature):** se asignó por script directo contra la
+BD a `mvega@serytec.com` (CUIL `27398878499`) como jefe de K9 y K10, para destrabar la prueba del
+usuario mientras se implementaba la solución permanente.
+
+**Backend** (1 tarea, review clean): `UpdateContratoDto.jefeContratoCuil` ahora acepta
+`string | null` explícito (antes solo `string | undefined`) — permite **desasignar** un jefe. Sin
+cambios de servicio/controller (Prisma ya acepta `null` para limpiar la FK nullable).
+
+**Frontend** (3 tareas, review clean): `useEditarContrato` ampliado al mismo tipo; nuevo
+`ContratoEditRow` (mismo patrón fila-expandible que `TareaEditRow`/`MovilEditRow`) con input de
+nombre + `<select>` "Jefe de Contrato" (opción "Sin jefe asignado" → `null`, poblado con usuarios
+`rol.nombre === 'JefeContrato'` filtrados client-side en la página); cableado en
+`/admin/contratos`, reemplazando la fila plana que solo tenía crear + toggle activo.
+
+**Verificación:** frontend 88/89 tests (1 falla preexistente y no relacionada, ver nota abajo),
+lint y build OK. Backend build OK.
+
+**Nota — test preexistente roto por el calendario (no de esta feature):**
+`mis-registros-page.test.tsx` usa una fecha fija (`2026-07-05`, quincena 1) en su fixture, pero la
+página filtra por la quincena de "hoy" por default. Al cruzar el 16 de julio (quincena 2), el test
+empezó a fallar — confirmado que el diff de esta rama no toca nada de `mis-registros` (mismo
+resultado corriendo el test aislado contra `main`). Queda como deuda preexistente a arreglar en
+otra sesión (el fixture debería usar una fecha relativa a "hoy", no hardcodeada).
+
+**Pendiente para cerrar esta rama:** review final de rama completa, luego merge/PR a `main` en
+ambos repos. Checklist E2E manual del usuario antes de mergear: asignar un jefe a un contrato y
+confirmar que ese usuario ve los registros pendientes en `/aprobaciones`; desasignarlo y confirmar
+que deja de verlos.
