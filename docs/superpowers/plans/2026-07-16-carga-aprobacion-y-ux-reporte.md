@@ -975,6 +975,7 @@ Reemplazar el contenido completo de `src/app/(protected)/aprobaciones/page.tsx`:
 ```tsx
 'use client';
 
+import { useMemo } from 'react';
 import { usePorAprobar } from '@/lib/api/aprobaciones';
 import { agruparPorLote } from '@/lib/agrupar';
 import { LoteCard } from '@/features/aprobaciones/lote-card';
@@ -982,7 +983,10 @@ import { PageHeader } from '@/components/page-header';
 
 export default function AprobacionesPage() {
   const { data, isLoading } = usePorAprobar();
-  const grupos = agruparPorLote(data ?? []);
+  // useMemo: agruparPorLote() arma arrays nuevos en cada llamada. Sin memoizar,
+  // grupo.accionables cambiaría de referencia en cada render del padre y
+  // resetearía la selección de checkboxes de LoteCard sin necesidad.
+  const grupos = useMemo(() => agruparPorLote(data ?? []), [data]);
 
   if (isLoading) return <p className="text-slate">Cargando…</p>;
 
