@@ -366,22 +366,20 @@ export class RegistrosHorasService {
     const misContratoIds = contratos.map((c) => c.id);
     if (misContratoIds.length === 0) return [];
 
-    // 2) Pares (operario, fecha) con al menos una fila pendiente en mis contratos
-    const pares = await this.prisma.registroHoras.findMany({
+    // 2) Lotes con al menos una fila pendiente en mis contratos
+    const lotes = await this.prisma.registroHoras.findMany({
       where: { estado: 'pendiente', contratoId: { in: misContratoIds } },
-      select: { operarioCuil: true, fecha: true },
-      distinct: ['operarioCuil', 'fecha'],
+      select: { loteId: true },
+      distinct: ['loteId'],
     });
-    if (pares.length === 0) return [];
+    if (lotes.length === 0) return [];
 
-    // 3) Todas las filas pendientes de esos pares (incluye otros contratos = contexto)
+    // 3) Todas las filas pendientes de esos lotes (incluye otros contratos = contexto)
+    const loteIds = lotes.map((l) => l.loteId);
     const filas = await this.prisma.registroHoras.findMany({
-      where: {
-        estado: 'pendiente',
-        OR: pares.map((p) => ({ operarioCuil: p.operarioCuil, fecha: p.fecha })),
-      },
+      where: { estado: 'pendiente', loteId: { in: loteIds } },
       include: INCLUDE_BASICO,
-      orderBy: [{ fecha: 'desc' }, { operarioCuil: 'asc' }],
+      orderBy: [{ fecha: 'desc' }, { loteId: 'asc' }, { operarioCuil: 'asc' }],
     });
 
     const setIds = new Set(misContratoIds);
