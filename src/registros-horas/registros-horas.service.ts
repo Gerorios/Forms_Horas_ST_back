@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -48,6 +49,7 @@ export class RegistrosHorasService {
 
     return this.prisma.registroHoras.create({
       data: {
+        loteId: randomUUID(),
         fecha: new Date(dto.fecha),
         operarioCuil: dto.operarioCuil,
         cargadoPorCuil,
@@ -108,6 +110,8 @@ export class RegistrosHorasService {
       alertaPorOperario.set(operarioCuil, totalDia > 16);
     }
 
+    const loteId = randomUUID();
+
     return this.prisma.$transaction(
       async (tx) => {
         const registros = [];
@@ -116,6 +120,7 @@ export class RegistrosHorasService {
           for (const linea of dto.lineas) {
             const registro = await tx.registroHoras.create({
               data: {
+                loteId,
                 fecha,
                 operarioCuil,
                 cargadoPorCuil,
