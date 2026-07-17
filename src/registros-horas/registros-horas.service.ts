@@ -10,6 +10,7 @@ import { CreateRegistroHorasDto } from './dto/create-registro-horas.dto';
 import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
 import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
+import { ResolverLoteDto } from './dto/resolver-lote.dto';
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -213,6 +214,63 @@ export class RegistrosHorasService {
     });
 
     return updated;
+  }
+
+  /**
+   * Resuelve en bloque las filas `pendiente` de un lote que pertenecen a los contratos del
+   * usuario (o todas si es Admin). El conjunto "accionable" se recalcula siempre server-side —
+   * los `ids` del cliente solo intersectan ese conjunto ya autorizado, nunca lo amplían.
+   */
+  async resolverLote(
+    loteId: string,
+    dto: ResolverLoteDto,
+    usuario: { cuil: string; rol: string },
+  ) {
+    if (dto.estado === 'desaprobado' && !dto.motivoDesaprobacion) {
+      throw new BadRequestException('Se requiere motivo al desaprobar');
+    }
+
+    const accionables = await this.prisma.registroHoras.findMany({
+      where: {
+        loteId,
+        estado: 'pendiente',
+        contrato: usuario.rol === 'Admin' ? undefined : { jefeContratoCuil: usuario.cuil },
+      },
+      select: { id: true },
+    });
+    const accionablesIds = new Set(accionables.map((r) => r.id));
+
+    const idsAResolver = dto.ids
+      ? dto.ids.filter((id) => accionablesIds.has(id))
+      : [...accionablesIds];
+
+    if (idsAResolver.length === 0) {
+      throw new BadRequestException('Nada para resolver');
+    }
+
+    await this.prisma.registroHoras.updateMany({
+      where: { id: { in: idsAResolver } },
+      data: {
+        estado: dto.estado,
+        aprobadoPorCuil: usuario.cuil,
+        aprobadoEn: new Date(),
+        motivoDesaprobacion: dto.motivoDesaprobacion ?? null,
+      },
+    });
+
+    await this.prisma.auditoria.createMany({
+      data: idsAResolver.map((id) => ({
+        tabla: 'sth_registros_horas',
+        registroId: id,
+        usuarioCuil: usuario.cuil,
+        accion: dto.estado === 'aprobado' ? 'aprobar' : 'desaprobar',
+        campo: 'estado',
+        valorAnterior: 'pendiente',
+        valorNuevo: dto.estado,
+      })),
+    });
+
+    return { resueltos: idsAResolver.length, ids: idsAResolver };
   }
 
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
