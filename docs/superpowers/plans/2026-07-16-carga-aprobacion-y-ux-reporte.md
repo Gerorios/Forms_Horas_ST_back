@@ -688,7 +688,7 @@ describe('LoteCard', () => {
 
   it('Aprobar todo (colapsado) resuelve sin ids (todo lo accionable)', async () => {
     render(<LoteCard grupo={grupo()} />);
-    await userEvent.click(screen.getByRole('button', { name: /aprobar todo/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^aprobar todo/i }));
     await waitFor(() =>
       expect(resolverLote).toHaveBeenCalledWith({ loteId: 'lote-1', estado: 'aprobado', ids: undefined }),
     );
@@ -707,7 +707,7 @@ describe('LoteCard', () => {
     render(<LoteCard grupo={grupo()} />);
     await userEvent.click(screen.getByRole('button', { name: /ver detalle/i }));
     await userEvent.click(screen.getByLabelText('Incluir a GOMEZ'));
-    await userEvent.click(screen.getByRole('button', { name: /aprobar seleccionados/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^aprobar seleccionados/i }));
     await waitFor(() =>
       expect(resolverLote).toHaveBeenCalledWith({ loteId: 'lote-1', estado: 'aprobado', ids: [1] }),
     );
@@ -715,7 +715,7 @@ describe('LoteCard', () => {
 
   it('desaprobar exige motivo y llama con ids undefined en modo colapsado', async () => {
     render(<LoteCard grupo={grupo()} />);
-    await userEvent.click(screen.getByRole('button', { name: /desaprobar todo/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^desaprobar todo/i }));
     await userEvent.type(screen.getByLabelText(/motivo/i), 'no corresponde');
     await userEvent.click(screen.getByRole('button', { name: /confirmar/i }));
     await waitFor(() =>
@@ -729,8 +729,8 @@ describe('LoteCard', () => {
     render(<LoteCard grupo={grupo([fila(1, 'PEREZ')])} />);
     await userEvent.click(screen.getByRole('button', { name: /ver detalle/i }));
     await userEvent.click(screen.getByLabelText('Incluir a PEREZ'));
-    expect(screen.getByRole('button', { name: /aprobar seleccionados/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /desaprobar seleccionados/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^aprobar seleccionados/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^desaprobar seleccionados/i })).toBeDisabled();
   });
 });
 ```
@@ -950,14 +950,14 @@ describe('AprobacionesPage', () => {
 
   it('agrupa por lote: 2 lotes distintos → 2 tarjetas, cada una con su botón Aprobar todo', () => {
     render(<AprobacionesPage />);
-    expect(screen.getAllByRole('button', { name: /aprobar todo/i })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /^aprobar todo/i })).toHaveLength(2);
   });
 
   it('expandir un lote muestra su detalle sin afectar al otro', async () => {
     render(<AprobacionesPage />);
     const detalles = screen.getAllByRole('button', { name: /ver detalle/i });
     await userEvent.click(detalles[0]);
-    expect(screen.getAllByRole('button', { name: /aprobar seleccionados/i })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^aprobar seleccionados/i })).toHaveLength(1);
   });
 });
 ```
