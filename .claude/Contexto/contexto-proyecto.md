@@ -728,3 +728,64 @@ el plan, no ejecutada en esta sesión por falta de credenciales Admin reales).
 ambos repos. Checklist E2E manual del usuario (con Admin real) antes de mergear: filtro por
 nombre/rol funciona en vivo; reset de contraseña de un usuario permite loguearse con el CUIL;
 alta masiva muestra el CUIL como password en la tabla de credenciales.
+
+---
+
+## 27. Aprobación por carga + mejoras UX (mis registros, móviles, envío) — 2026-07-16
+
+Spec: `docs/superpowers/specs/2026-07-16-carga-aprobacion-y-ux-reporte-design.md`
+Plan: `docs/superpowers/plans/2026-07-16-carga-aprobacion-y-ux-reporte.md`
+ADR: `docs/adr/2026-07-16-adr-004-aprobacion-por-carga.md`
+Sesión de `grilling` + `domain-modeling` para el diseño, luego Subagent-Driven Development
+(13 tareas, implementador + revisor por tarea, todas con review clean). Rama:
+`feature/carga-aprobacion-ux` en ambos repos (basada en `main`, con todo lo previo ya mergeado).
+
+**1) Aprobación por carga, no por fila individual.** Nueva columna `loteId` (UUID, `CHAR(36)
+NOT NULL`) en `sth_registros_horas` — se asigna una sola vez por envío (individual o batch) y
+queda igual en todas las filas que ese envío genera (ver ADR-004, que extiende el modelo N×M de
+ADR-002). DDL aplicado a mano contra la BD compartida (backfill: cada fila de prueba existente
+recibió su propio `loteId`, `total = distintos = 6`, sin nulos). `porAprobar()` agrupa por
+`loteId` en vez de (operario, fecha). Nuevo endpoint `PATCH /registros-horas/lote/:loteId/resolver`
+(`{ estado, ids?, motivoDesaprobacion? }`) — el conjunto autorizado se recalcula siempre
+server-side por `jefeContratoCuil`, los `ids` del cliente solo pueden intersectarlo, nunca
+ampliarlo (verificado con 5 escenarios de stress test en el review). Frontend:
+`agruparPorLote`/`GrupoLote`, hook `useResolverLote`, componente `LoteCard` (botones grandes
+"Aprobar todo"/"Desaprobar todo" que resuelven toda la carga de un click; "Ver detalle" despliega
+checkboxes para excluir a alguien puntual antes de confirmar) cableado en `/aprobaciones`.
+
+**2) Mis registros — total grande + tarjetas.** `RegistrosCards` reemplaza la tabla: total de la
+quincena bien grande arriba, una tarjeta por **registro** (no por día, decisión explícita para
+evitar ambigüedad de estado cuando un día tiene 2 líneas). Motivo de desaprobación visible en la
+tarjeta (antes solo en tooltip, no funcional en celular). `RegistrosTabla` borrado (sin
+consumidores).
+
+**3) Selector de móviles.** `MovilesSelect` reemplaza los +15 botones tipo chip en `/reporte` por
+un desplegable custom con checkbox por móvil (sin buscador de texto, para no requerir tipear en
+el celular).
+
+**4) Envío directo sin confirmación previa.** `/reporte`: "Reportar" envía directo y muestra
+`CargandoModal` (spinner) mientras `crear.isPending`. Se sacó el modal de confirmación ("se
+generarán N filas") y la barra inferior con el mismo dato — información técnica que no le servía
+al Jefe de Cuadrilla que carga.
+
+**Bug real encontrado durante la ejecución (no del código de producción, del propio plan):** los
+tests de `LoteCard` usaban regex sin anclar (`/aprobar todo/i`), que matcheaba también "Desaprobar
+todo" por substring (`"Desaprobar"` contiene `"aprobar"`). Corregido anclando con `^` en las 7
+ocurrencias del plan (Tasks 7 y 8) antes de que el implementador siguiera. También se detectó (vía
+review) que `agruparPorLote(data ?? [])` sin `useMemo` en `/aprobaciones` resetearía la selección
+de checkboxes en cada render — corregido preventivamente en el plan antes de despachar la Task 8.
+
+**Fix de deuda preexistente (Task 10):** `mis-registros-page.test.tsx` dependía de la quincena por
+default (`quincenaDeFecha(new Date())`) con fechas de fixture hardcodeadas — ya había roto una vez
+al cruzar un límite real de quincena (ver contexto de la sesión de `edición de contratos`). Ahora
+selecciona la quincena explícitamente vía los controles de `QuincenaSelect`, determinístico sin
+importar el día real. Verificado end-to-end por el reviewer, con grep independiente confirmando
+`RegistrosTabla` sin referencias remanentes tras borrarlo.
+
+**Verificación:** frontend 120/120 tests, lint y build OK. Backend build OK.
+
+**Pendiente para cerrar esta rama:** review final de rama completa, luego merge/PR a `main` en
+ambos repos. Checklist E2E manual del usuario antes de mergear: carga masiva con operarios en
+contrato propio + ajeno → una sola tarjeta de lote en `/aprobaciones`, "Aprobar todo" resuelve solo
+el contrato propio; expandir y destildar a alguien deja esa fila pendiente; total y tarjetas en
+`/mis-registros`; selector de móviles y envío directo en `/reporte`.

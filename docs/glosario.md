@@ -20,14 +20,15 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Contrato habilitado (`sth_contratos_habilitados`)** — M:N que cuelga del **usuario que carga**: define de qué contratos puede elegir tareas al cargar.
 - **Registro de horas (`sth_registros_horas`)** — Fila `{fecha, operario, contrato, horas, provincia, GPS}` con estado `pendiente|aprobado|desaprobado`. Las **tareas** (varias, del maestro) cuelgan en `sth_registro_tareas` (M:N) y los **móviles** en `sth_registro_moviles` (M:N). Las horas son **del contrato**, no por tarea (ver ADR-002).
 - **Línea de carga** — `{ contrato, horas, tareas[] }`. Una línea por contrato; ≥1 tarea. Las tareas salen del maestro `tareas_catalogo` (estandarizadas), sin horas por tarea.
-- **Reporte diario (carga masiva)** — Una carga produce **N operarios × M líneas** = N×M filas en `sth_registros_horas` (móviles compartidos por toda la carga). Vía `POST /registros-horas/batch`.
+- **Carga (`loteId`)** — Un envío del formulario de reporte (individual o masivo). Produce **N operarios × M líneas** = N×M filas en `sth_registros_horas` (ver ADR-002), todas con el mismo `loteId` (UUID generado una vez por envío — ver ADR-004). Es la unidad de **aprobación**: el Jefe de Contrato aprueba/desaprueba una carga completa (su porción, según contrato) de una sola vez, no fila por fila.
+- **Reporte diario** — El formulario de carga (`POST /registros-horas` individual o `POST /registros-horas/batch` masivo). Móviles compartidos por toda la carga.
 - **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia"). Solo las **Ausencias** requieren aprobación de HyS.
 - **Quincena** — Período 1–15 / 16–fin de mes, calculado por fecha (sin tabla ni cierre).
 
 ## Flujos
 
-- **Carga** → JdC/JefeContrato/Admin crea registros (estado `pendiente`).
-- **Aprobación** → JefeContrato aprueba/desaprueba; puede reabrir/editar.
+- **Carga** → JdC/JefeContrato/Admin crea registros (estado `pendiente`), todos con el mismo `loteId`.
+- **Aprobación** → JefeContrato aprueba/desaprueba **una carga completa** (su porción, según contrato) de una sola acción; puede excluir filas puntuales antes de confirmar. También puede reabrir/editar filas individuales.
 - **Corrección** → quien cargó (o JefeContrato/Admin) edita la fila desaprobada → vuelve a `pendiente` + auditoría.
 - **Consulta** → Operario ve lo suyo (`operarioCuil`); JdC ve lo suyo + lo que cargó (`cargadoPorCuil`).
 - **Reset de contraseña** → el Admin resetea la contraseña de un usuario individual a su propio CUIL

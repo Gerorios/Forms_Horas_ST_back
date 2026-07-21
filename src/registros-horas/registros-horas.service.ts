@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,6 +10,7 @@ import { CreateRegistroHorasDto } from './dto/create-registro-horas.dto';
 import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
 import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
+import { ResolverLoteDto } from './dto/resolver-lote.dto';
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -48,6 +50,7 @@ export class RegistrosHorasService {
 
     return this.prisma.registroHoras.create({
       data: {
+        loteId: randomUUID(),
         fecha: new Date(dto.fecha),
         operarioCuil: dto.operarioCuil,
         cargadoPorCuil,
@@ -108,6 +111,8 @@ export class RegistrosHorasService {
       alertaPorOperario.set(operarioCuil, totalDia > 16);
     }
 
+    const loteId = randomUUID();
+
     return this.prisma.$transaction(
       async (tx) => {
         const registros = [];
@@ -116,6 +121,7 @@ export class RegistrosHorasService {
           for (const linea of dto.lineas) {
             const registro = await tx.registroHoras.create({
               data: {
+                loteId,
                 fecha,
                 operarioCuil,
                 cargadoPorCuil,
@@ -208,6 +214,63 @@ export class RegistrosHorasService {
     });
 
     return updated;
+  }
+
+  /**
+   * Resuelve en bloque las filas `pendiente` de un lote que pertenecen a los contratos del
+   * usuario (o todas si es Admin). El conjunto "accionable" se recalcula siempre server-side —
+   * los `ids` del cliente solo intersectan ese conjunto ya autorizado, nunca lo amplían.
+   */
+  async resolverLote(
+    loteId: string,
+    dto: ResolverLoteDto,
+    usuario: { cuil: string; rol: string },
+  ) {
+    if (dto.estado === 'desaprobado' && !dto.motivoDesaprobacion) {
+      throw new BadRequestException('Se requiere motivo al desaprobar');
+    }
+
+    const accionables = await this.prisma.registroHoras.findMany({
+      where: {
+        loteId,
+        estado: 'pendiente',
+        contrato: usuario.rol === 'Admin' ? undefined : { jefeContratoCuil: usuario.cuil },
+      },
+      select: { id: true },
+    });
+    const accionablesIds = new Set(accionables.map((r) => r.id));
+
+    const idsAResolver = dto.ids
+      ? dto.ids.filter((id) => accionablesIds.has(id))
+      : [...accionablesIds];
+
+    if (idsAResolver.length === 0) {
+      throw new BadRequestException('Nada para resolver');
+    }
+
+    await this.prisma.registroHoras.updateMany({
+      where: { id: { in: idsAResolver } },
+      data: {
+        estado: dto.estado,
+        aprobadoPorCuil: usuario.cuil,
+        aprobadoEn: new Date(),
+        motivoDesaprobacion: dto.motivoDesaprobacion ?? null,
+      },
+    });
+
+    await this.prisma.auditoria.createMany({
+      data: idsAResolver.map((id) => ({
+        tabla: 'sth_registros_horas',
+        registroId: id,
+        usuarioCuil: usuario.cuil,
+        accion: dto.estado === 'aprobado' ? 'aprobar' : 'desaprobar',
+        campo: 'estado',
+        valorAnterior: 'pendiente',
+        valorNuevo: dto.estado,
+      })),
+    });
+
+    return { resueltos: idsAResolver.length, ids: idsAResolver };
   }
 
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
@@ -361,22 +424,20 @@ export class RegistrosHorasService {
     const misContratoIds = contratos.map((c) => c.id);
     if (misContratoIds.length === 0) return [];
 
-    // 2) Pares (operario, fecha) con al menos una fila pendiente en mis contratos
-    const pares = await this.prisma.registroHoras.findMany({
+    // 2) Lotes con al menos una fila pendiente en mis contratos
+    const lotes = await this.prisma.registroHoras.findMany({
       where: { estado: 'pendiente', contratoId: { in: misContratoIds } },
-      select: { operarioCuil: true, fecha: true },
-      distinct: ['operarioCuil', 'fecha'],
+      select: { loteId: true },
+      distinct: ['loteId'],
     });
-    if (pares.length === 0) return [];
+    if (lotes.length === 0) return [];
 
-    // 3) Todas las filas pendientes de esos pares (incluye otros contratos = contexto)
+    // 3) Todas las filas pendientes de esos lotes (incluye otros contratos = contexto)
+    const loteIds = lotes.map((l) => l.loteId);
     const filas = await this.prisma.registroHoras.findMany({
-      where: {
-        estado: 'pendiente',
-        OR: pares.map((p) => ({ operarioCuil: p.operarioCuil, fecha: p.fecha })),
-      },
+      where: { estado: 'pendiente', loteId: { in: loteIds } },
       include: INCLUDE_BASICO,
-      orderBy: [{ fecha: 'desc' }, { operarioCuil: 'asc' }],
+      orderBy: [{ fecha: 'desc' }, { loteId: 'asc' }, { operarioCuil: 'asc' }],
     });
 
     const setIds = new Set(misContratoIds);

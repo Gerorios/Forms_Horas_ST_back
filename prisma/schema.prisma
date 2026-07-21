@@ -160,6 +160,7 @@ enum EstadoRegistro {
 
 model RegistroHoras {
   id                  Int            @id @default(autoincrement())
+  loteId              String         @map("lote_id") @db.Char(36)
   fecha               DateTime       @db.Date
   operarioCuil        String         @map("operario_cuil") @db.Char(13)
   cargadoPorCuil      String         @map("cargado_por_cuil") @db.Char(13)
@@ -188,6 +189,7 @@ model RegistroHoras {
   @@index([fecha])
   @@index([operarioCuil, fecha])
   @@index([contratoId, estado])
+  @@index([loteId])
   @@map("sth_registros_horas")
 }
 
