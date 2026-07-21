@@ -1,3 +1,4 @@
+
 # Contexto del proyecto — App de Registro de Horas
 
 > Documento vivo. Si retomás esta conversación en otra sesión, pegá o subí este
@@ -784,8 +785,9 @@ importar el día real. Verificado end-to-end por el reviewer, con grep independi
 
 **Verificación:** frontend 120/120 tests, lint y build OK. Backend build OK.
 
-**Pendiente para cerrar esta rama:** review final de rama completa, luego merge/PR a `main` en
-ambos repos. Checklist E2E manual del usuario antes de mergear: carga masiva con operarios en
-contrato propio + ajeno → una sola tarjeta de lote en `/aprobaciones`, "Aprobar todo" resuelve solo
-el contrato propio; expandir y destildar a alguien deja esa fila pendiente; total y tarjetas en
-`/mis-registros`; selector de móviles y envío directo en `/reporte`.
+**Rama cerrada (2026-07-21):** mergeada a `main` (--no-ff) y pusheada en ambos repos
+(backend `ec6e691`, frontend `c37b1ba`); rama `feature/carga-aprobacion-ux` eliminada local y
+remota. Checklist E2E manual del usuario (post-merge, si no se hizo antes): carga masiva con
+operarios en contrato propio + ajeno → una sola tarjeta de lote en `/aprobaciones`, "Aprobar todo"
+resuelve solo el contrato propio; expandir y destildar a alguien deja esa fila pendiente; total y
+tarjetas en `/mis-registros`; selector de móviles y envío directo en `/reporte`.
