@@ -39,8 +39,8 @@ export class RegistrosHorasController {
 
   @Get('por-aprobar')
   @Roles('JefeContrato', 'Admin')
-  porAprobar(@Request() req) {
-    return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol });
+  porAprobar(@Query('estado') estado: string | undefined, @Request() req) {
+    return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol }, estado);
   }
 
   @Patch(':id')

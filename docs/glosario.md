@@ -19,7 +19,7 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **`cargadoPorCuil`** — Quién **hizo la carga** (siempre un usuario con login: JdC / JefeContrato / Admin).
 - **Contrato habilitado (`sth_contratos_habilitados`)** — M:N que cuelga del **usuario que carga**: define de qué contratos puede elegir tareas al cargar.
 - **Registro de horas (`sth_registros_horas`)** — Fila `{fecha, operario, contrato, horas, provincia, GPS}` con estado `pendiente|aprobado|desaprobado`. Las **tareas** (varias, del maestro) cuelgan en `sth_registro_tareas` (M:N) y los **móviles** en `sth_registro_moviles` (M:N). Las horas son **del contrato**, no por tarea (ver ADR-002).
-- **Línea de carga** — `{ contrato, horas, tareas[] }`. Una línea por contrato; ≥1 tarea. Las tareas salen del maestro `tareas_catalogo` (estandarizadas), sin horas por tarea.
+- **Línea de carga** — `{ contrato, horas, tareas[], observacion? }`. Una línea por contrato; ≥1 tarea. Las tareas salen del maestro `tareas_catalogo` (estandarizadas), sin horas por tarea. La **observación** es texto libre opcional (productividad, viajes a otra localidad, justificación de las horas) — una por línea, compartida por todos los operarios de esa carga en ese contrato, igual criterio que las horas (ver ADR-005). Listado de materiales y tickets de combustible quedan explícitamente diferidos, no forman parte de esto.
 - **Carga (`loteId`)** — Un envío del formulario de reporte (individual o masivo). Produce **N operarios × M líneas** = N×M filas en `sth_registros_horas` (ver ADR-002), todas con el mismo `loteId` (UUID generado una vez por envío — ver ADR-004). Es la unidad de **aprobación**: el Jefe de Contrato aprueba/desaprueba una carga completa (su porción, según contrato) de una sola vez, no fila por fila.
 - **Reporte diario** — El formulario de carga (`POST /registros-horas` individual o `POST /registros-horas/batch` masivo). Móviles compartidos por toda la carga.
 - **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia"). Solo las **Ausencias** requieren aprobación de HyS.
@@ -36,3 +36,18 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
   un autoservicio: el usuario final no puede resetear su propia contraseña sin pasar por el Admin
   (autoservicio por email queda diferido, no hay infraestructura de envío de mail ni email real para la
   mayoría de los usuarios de alta masiva, que reciben `<legajo>@st.local`, no enviable).
+
+## Ideas a futuro (no implementadas)
+
+- **Duplicación de horas entre contratos** — Un mismo operario puede repartir sus horas reales de un
+  día entre contratos distintos (ej. 6hs en K9/K10 y otras 6hs en K2/K6 el mismo día), sin que ningún
+  Jefe de Contrato lo note: cada uno ve solo su porción y le "parece razonable" en aislamiento. El
+  `alertaHoras` actual (>16hs/día, ver `registros-horas.service.ts`) no cubre este caso — el total
+  puede ser perfectamente plausible (12hs) y aun así ser una duplicación. Detectarlo requiere ver, por
+  operario y día, el total real cruzando **todos** los contratos/lotes (solo filas `pendiente` +
+  `aprobado`; lo `desaprobado` se excluye porque puede ser justamente una duplicación ya detectada y
+  rechazada).
+- **Rol Liquidador** — Rol aún no existente en el sistema (no está en el glosario de roles ni
+  implementado). Sería el destinatario natural de un panel que muestre esa vista cruzada por
+  operario/día — se decidió explícitamente que **no** es responsabilidad de `/aprobaciones` (Jefe de
+  Contrato), que se mantiene agrupado por `loteId` únicamente.

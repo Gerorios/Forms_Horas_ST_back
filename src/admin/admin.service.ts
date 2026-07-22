@@ -104,6 +104,7 @@ export class AdminService {
         contratosHabilitados: {
           select: { contratoId: true, contrato: { select: { codigo: true } } },
         },
+        contratosComoJefe: { select: { id: true, codigo: true } },
       },
       orderBy: { cuil: 'asc' },
     });
@@ -114,7 +115,7 @@ export class AdminService {
     if (existe) throw new ConflictException('Ya existe un usuario con ese CUIL');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    return this.prisma.usuario.create({
+    const usuario = await this.prisma.usuario.create({
       data: {
         cuil: dto.cuil,
         email: dto.email,
@@ -125,10 +126,19 @@ export class AdminService {
           : undefined,
       },
     });
+
+    if (dto.contratosJefeIds?.length) {
+      await this.prisma.contrato.updateMany({
+        where: { id: { in: dto.contratosJefeIds } },
+        data: { jefeContratoCuil: dto.cuil },
+      });
+    }
+
+    return usuario;
   }
 
   async updateUsuario(cuil: string, dto: UpdateUsuarioDto) {
-    const { password, contratosIds, ...rest } = dto;
+    const { password, contratosIds, contratosJefeIds, ...rest } = dto;
     const data: any = { ...rest };
     if (password) data.passwordHash = await bcrypt.hash(password, 10);
 
@@ -139,6 +149,19 @@ export class AdminService {
           data: contratosIds.map((contratoId) => ({ usuarioCuil: cuil, contratoId })),
         });
       }
+    }
+
+    if (contratosJefeIds !== undefined) {
+      // Un contrato tiene un solo Jefe: asignar acá puede quitarle el contrato
+      // a quien lo tuviera antes (mismo comportamiento que /admin/contratos).
+      await this.prisma.contrato.updateMany({
+        where: { id: { in: contratosJefeIds } },
+        data: { jefeContratoCuil: cuil },
+      });
+      await this.prisma.contrato.updateMany({
+        where: { jefeContratoCuil: cuil, NOT: { id: { in: contratosJefeIds } } },
+        data: { jefeContratoCuil: null },
+      });
     }
 
     return this.prisma.usuario.update({ where: { cuil }, data });

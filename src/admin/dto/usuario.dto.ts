@@ -17,6 +17,11 @@ export class CreateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   contratosIds?: number[];
+
+  /** Contratos de los que este usuario es Jefe de Contrato (aprueba/desaprueba). */
+  @IsOptional()
+  @IsInt({ each: true })
+  contratosJefeIds?: number[];
 }
 
 export class UpdateUsuarioDto {
@@ -40,6 +45,11 @@ export class UpdateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   contratosIds?: number[];
+
+  /** Contratos de los que este usuario es Jefe de Contrato (aprueba/desaprueba). */
+  @IsOptional()
+  @IsInt({ each: true })
+  contratosJefeIds?: number[];
 }
 
 export class CrearUsuariosMasivoDto {

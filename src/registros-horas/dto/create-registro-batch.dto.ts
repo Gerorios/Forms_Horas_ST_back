@@ -22,6 +22,12 @@ export class LineaRegistroDto {
   @ArrayNotEmpty()
   @IsInt({ each: true })
   tareaIds: number[];
+
+  // Contexto en texto libre de la línea (productividad, viajes, etc.). Una por
+  // línea, compartida por todos los operarios del envío — ver ADR-005.
+  @IsOptional()
+  @IsString()
+  observacion?: string;
 }
 
 /**
