@@ -32,4 +32,8 @@ export class CreateRegistroHorasDto {
   @IsOptional()
   @IsInt({ each: true })
   movilIds?: number[];
+
+  @IsOptional()
+  @IsString()
+  observacion?: string;
 }

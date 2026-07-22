@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsInt, IsNumber, IsOptional } from 'class-validator';
+import { IsArray, IsDateString, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
 
 /**
  * Corrección de un registro (típicamente uno desaprobado): edita la misma fila,
@@ -37,4 +37,8 @@ export class UpdateRegistroHorasDto {
   @IsOptional()
   @IsInt({ each: true })
   movilIds?: number[];
+
+  @IsOptional()
+  @IsString()
+  observacion?: string;
 }

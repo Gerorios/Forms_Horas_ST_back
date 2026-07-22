@@ -171,6 +171,7 @@ model RegistroHoras {
   gpsLng              Float?         @map("gps_lng")
   estado              EstadoRegistro @default(pendiente)
   motivoDesaprobacion String?        @map("motivo_desaprobacion") @db.Text
+  observacion         String?        @db.Text
   aprobadoPorCuil     String?        @map("aprobado_por_cuil") @db.Char(13)
   aprobadoEn          DateTime?      @map("aprobado_en")
   alertaHoras         Boolean        @default(false) @map("alerta_horas")

@@ -60,6 +60,7 @@ export class RegistrosHorasService {
         gpsLat: dto.gpsLat,
         gpsLng: dto.gpsLng,
         alertaHoras,
+        observacion: dto.observacion,
         tareas: { create: dto.tareaIds.map((tareaId) => ({ tareaId })) },
         moviles: dto.movilIds?.length
           ? { create: dto.movilIds.map((movilId) => ({ movilId })) }
@@ -131,6 +132,7 @@ export class RegistrosHorasService {
                 gpsLat: dto.gpsLat,
                 gpsLng: dto.gpsLng,
                 alertaHoras,
+                observacion: linea.observacion,
                 tareas: { create: linea.tareaIds.map((tareaId) => ({ tareaId })) },
                 moviles: dto.movilIds?.length
                   ? { create: dto.movilIds.map((movilId) => ({ movilId })) }
@@ -376,6 +378,7 @@ export class RegistrosHorasService {
           aprobadoEn: null,
           motivoDesaprobacion: null,
           alertaHoras,
+          observacion: dto.observacion ?? undefined,
           ...(dto.tareaIds !== undefined && dto.tareaIds.length
             ? { tareas: { create: dto.tareaIds.map((tareaId) => ({ tareaId })) } }
             : {}),
@@ -415,7 +418,13 @@ export class RegistrosHorasService {
     }, { timeout: 30000, maxWait: 10000 });
   }
 
-  async porAprobar(usuario: { cuil: string; rol: string }) {
+  async porAprobar(usuario: { cuil: string; rol: string }, estadoQuery?: string) {
+    const ESTADOS_VALIDOS = ['pendiente', 'aprobado', 'desaprobado'] as const;
+    const estado = (estadoQuery ?? 'pendiente') as (typeof ESTADOS_VALIDOS)[number];
+    if (!ESTADOS_VALIDOS.includes(estado)) {
+      throw new BadRequestException('estado inválido');
+    }
+
     // 1) Contratos de los que el usuario es jefe (Admin = todos)
     const contratos = await this.prisma.contrato.findMany({
       where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
@@ -424,18 +433,18 @@ export class RegistrosHorasService {
     const misContratoIds = contratos.map((c) => c.id);
     if (misContratoIds.length === 0) return [];
 
-    // 2) Lotes con al menos una fila pendiente en mis contratos
+    // 2) Lotes con al menos una fila en ese estado en mis contratos
     const lotes = await this.prisma.registroHoras.findMany({
-      where: { estado: 'pendiente', contratoId: { in: misContratoIds } },
+      where: { estado, contratoId: { in: misContratoIds } },
       select: { loteId: true },
       distinct: ['loteId'],
     });
     if (lotes.length === 0) return [];
 
-    // 3) Todas las filas pendientes de esos lotes (incluye otros contratos = contexto)
+    // 3) Todas las filas de esos lotes en el mismo estado (incluye otros contratos = contexto)
     const loteIds = lotes.map((l) => l.loteId);
     const filas = await this.prisma.registroHoras.findMany({
-      where: { estado: 'pendiente', loteId: { in: loteIds } },
+      where: { estado, loteId: { in: loteIds } },
       include: INCLUDE_BASICO,
       orderBy: [{ fecha: 'desc' }, { loteId: 'asc' }, { operarioCuil: 'asc' }],
     });
