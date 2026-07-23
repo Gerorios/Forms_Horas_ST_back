@@ -11,6 +11,7 @@ import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
 import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
+import { CorregirLoteDto } from './dto/corregir-lote.dto';
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -273,6 +274,115 @@ export class RegistrosHorasService {
     });
 
     return { resueltos: idsAResolver.length, ids: idsAResolver };
+  }
+
+  /**
+   * Corrige las horas de una línea (contrato) dentro de un lote pendiente:
+   * rechaza todas las filas de esos operarios en esa línea y crea filas
+   * nuevas con la hora corregida, ya aprobadas por quien corrige. El vínculo
+   * `loteIdOrigen` deja trazabilidad hacia el lote rechazado. Ver ADR-006.
+   */
+  async corregirLote(
+    loteId: string,
+    dto: CorregirLoteDto,
+    usuario: { cuil: string; rol: string },
+  ) {
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        loteId,
+        contratoId: dto.contratoId,
+        estado: 'pendiente',
+        contrato: usuario.rol === 'Admin' ? undefined : { jefeContratoCuil: usuario.cuil },
+      },
+      include: { tareas: true, moviles: true },
+    });
+    if (filas.length === 0) {
+      throw new BadRequestException('Nada para corregir en ese contrato');
+    }
+
+    const idsARechazar = filas.map((f) => f.id);
+    const nuevoLoteId = randomUUID();
+    const ahora = new Date();
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.registroHoras.updateMany({
+          where: { id: { in: idsARechazar } },
+          data: {
+            estado: 'desaprobado',
+            motivoDesaprobacion: dto.motivo,
+            aprobadoPorCuil: usuario.cuil,
+            aprobadoEn: ahora,
+          },
+        });
+
+        const nuevas = [];
+        for (const original of filas) {
+          // Alerta >16hs recalculada excluyendo lo desaprobado (la fila que
+          // acabamos de rechazar ya no cuenta) — mismo criterio que create().
+          const previas = await tx.registroHoras.aggregate({
+            where: {
+              operarioCuil: original.operarioCuil,
+              fecha: original.fecha,
+              estado: { not: 'desaprobado' },
+            },
+            _sum: { horas: true },
+          });
+          const alertaHoras =
+            Number(previas._sum.horas ?? 0) + Number(dto.horasCorregidas) > 16;
+
+          const nueva = await tx.registroHoras.create({
+            data: {
+              loteId: nuevoLoteId,
+              loteIdOrigen: loteId,
+              fecha: original.fecha,
+              operarioCuil: original.operarioCuil,
+              cargadoPorCuil: original.cargadoPorCuil,
+              contratoId: original.contratoId,
+              horas: dto.horasCorregidas,
+              provinciaId: original.provinciaId,
+              gpsLat: original.gpsLat,
+              gpsLng: original.gpsLng,
+              observacion: original.observacion,
+              estado: 'aprobado',
+              aprobadoPorCuil: usuario.cuil,
+              aprobadoEn: ahora,
+              alertaHoras,
+              tareas: { create: original.tareas.map((t) => ({ tareaId: t.tareaId })) },
+              moviles: original.moviles.length
+                ? { create: original.moviles.map((m) => ({ movilId: m.movilId })) }
+                : undefined,
+            },
+            include: INCLUDE_BASICO,
+          });
+          nuevas.push(nueva);
+        }
+
+        await tx.auditoria.createMany({
+          data: idsARechazar.map((id) => ({
+            tabla: 'sth_registros_horas',
+            registroId: id,
+            usuarioCuil: usuario.cuil,
+            accion: 'desaprobar',
+            campo: 'horas',
+            valorAnterior: JSON.stringify({ estado: 'pendiente' }),
+            valorNuevo: JSON.stringify({
+              estado: 'desaprobado',
+              motivo: dto.motivo,
+              loteIdCorreccion: nuevoLoteId,
+            }),
+          })),
+        });
+
+        return {
+          loteIdOrigen: loteId,
+          loteId: nuevoLoteId,
+          corregidos: nuevas.length,
+          registros: nuevas,
+        };
+      },
+      { timeout: 30000, maxWait: 10000 },
+    );
   }
 
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {

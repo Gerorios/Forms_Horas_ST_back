@@ -172,6 +172,7 @@ model RegistroHoras {
   estado              EstadoRegistro @default(pendiente)
   motivoDesaprobacion String?        @map("motivo_desaprobacion") @db.Text
   observacion         String?        @db.Text
+  loteIdOrigen        String?        @map("lote_id_origen") @db.Char(36)
   aprobadoPorCuil     String?        @map("aprobado_por_cuil") @db.Char(13)
   aprobadoEn          DateTime?      @map("aprobado_en")
   alertaHoras         Boolean        @default(false) @map("alerta_horas")
@@ -191,6 +192,7 @@ model RegistroHoras {
   @@index([operarioCuil, fecha])
   @@index([contratoId, estado])
   @@index([loteId])
+  @@index([loteIdOrigen])
   @@map("sth_registros_horas")
 }
 

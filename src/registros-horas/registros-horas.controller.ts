@@ -5,6 +5,7 @@ import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
 import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
+import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -71,6 +72,16 @@ export class RegistrosHorasController {
     @Request() req,
   ) {
     return this.service.resolverLote(loteId, dto, { cuil: req.user.cuil, rol: req.user.rol });
+  }
+
+  @Patch('lote/:loteId/corregir')
+  @Roles('JefeContrato', 'Admin')
+  corregirLote(
+    @Param('loteId') loteId: string,
+    @Body() dto: CorregirLoteDto,
+    @Request() req,
+  ) {
+    return this.service.corregirLote(loteId, dto, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/reabrir')

@@ -30,6 +30,7 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Carga** → JdC/JefeContrato/Admin crea registros (estado `pendiente`), todos con el mismo `loteId`.
 - **Aprobación** → JefeContrato aprueba/desaprueba **una carga completa** (su porción, según contrato) de una sola acción; puede excluir filas puntuales antes de confirmar. También puede reabrir/editar filas individuales.
 - **Corrección** → quien cargó (o JefeContrato/Admin) edita la fila desaprobada → vuelve a `pendiente` + auditoría.
+- **Corrección de horas por línea** (distinta de la anterior) → el Jefe de Contrato, tras auditar el GPS de la carga, corrige la hora declarada de una línea completa (todos los operarios de ese contrato en ese lote): rechaza esas filas y crea filas nuevas ya `aprobado` con la hora corregida, enlazadas por `loteIdOrigen` al lote rechazado. No pasa por `pendiente` de nuevo — quien corrige es quien decide el valor real. Ver ADR-006.
 - **Consulta** → Operario ve lo suyo (`operarioCuil`); JdC ve lo suyo + lo que cargó (`cargadoPorCuil`).
 - **Reset de contraseña** → el Admin resetea la contraseña de un usuario individual a su propio CUIL
   (determinístico, sin generar nada al azar). Ver ADR-003 — es una decisión de seguridad consciente, no
