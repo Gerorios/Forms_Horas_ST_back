@@ -47,6 +47,9 @@ export class AuthService {
         contratosHabilitados: {
           select: { contrato: { select: { id: true, codigo: true, nombre: true } } },
         },
+        tiposNovedadHabilitados: {
+          select: { tipoNovedad: { select: { id: true, nombre: true } } },
+        },
       },
     });
   }

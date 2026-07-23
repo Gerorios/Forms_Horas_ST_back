@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNovedadDto } from './dto/create-novedad.dto';
 import { ResolverNovedadDto } from './dto/resolver-novedad.dto';
@@ -13,13 +13,30 @@ const INCLUDE_BASICO = {
 export class NovedadesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateNovedadDto, cargadoPorCuil: string) {
+  async create(dto: CreateNovedadDto, usuario: { cuil: string; rol: string }) {
     const tipo = await this.prisma.tipoNovedad.findUnique({
       where: { id: dto.tipoNovedadId },
     });
     if (!tipo) throw new NotFoundException('Tipo de novedad no encontrado');
 
+    // Solo JefeCuadrilla se restringe a los tipos que le habilitaron (ver
+    // ADR-007); Supervisor/JefeContrato/Admin siguen sin restricción.
+    if (usuario.rol === 'JefeCuadrilla') {
+      const habilitado = await this.prisma.tipoNovedadHabilitado.findUnique({
+        where: {
+          usuarioCuil_tipoNovedadId: {
+            usuarioCuil: usuario.cuil,
+            tipoNovedadId: dto.tipoNovedadId,
+          },
+        },
+      });
+      if (!habilitado) {
+        throw new ForbiddenException('No tenés habilitado ese tipo de novedad');
+      }
+    }
+
     const estadoHys = tipo.requiereAprobacionHys ? 'pendiente' : 'no_aplica';
+    const cargadoPorCuil = usuario.cuil;
 
     return this.prisma.novedad.create({
       data: {
