@@ -12,9 +12,9 @@ export class NovedadesController {
   constructor(private service: NovedadesService) {}
 
   @Post()
-  @Roles('Supervisor', 'JefeContrato', 'Admin')
+  @Roles('Supervisor', 'JefeContrato', 'JefeCuadrilla', 'Admin')
   create(@Body() dto: CreateNovedadDto, @Request() req) {
-    return this.service.create(dto, req.user.cuil);
+    return this.service.create(dto, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Get()

@@ -64,6 +64,29 @@ export class AdminService {
     return this.prisma.movil.update({ where: { id }, data: dto });
   }
 
+  async createMovilesMasivo(identificadores: string[]) {
+    // Se recorta espacios y se dedupe antes de comparar, para no tratar como
+    // duplicado algo que solo difiere en espacios en blanco.
+    const limpios = [...new Set(identificadores.map((i) => i.trim()).filter(Boolean))];
+
+    const existentes = await this.prisma.movil.findMany({
+      where: { identificador: { in: limpios } },
+      select: { identificador: true },
+    });
+    const existentesSet = new Set(existentes.map((e) => e.identificador));
+
+    const creados = limpios.filter((i) => !existentesSet.has(i));
+    const omitidos = limpios.filter((i) => existentesSet.has(i));
+
+    if (creados.length) {
+      await this.prisma.movil.createMany({
+        data: creados.map((identificador) => ({ identificador })),
+      });
+    }
+
+    return { creados, omitidos };
+  }
+
   getProvincias() {
     return this.prisma.provincia.findMany({ orderBy: { nombre: 'asc' } });
   }
@@ -105,6 +128,9 @@ export class AdminService {
           select: { contratoId: true, contrato: { select: { codigo: true } } },
         },
         contratosComoJefe: { select: { id: true, codigo: true } },
+        tiposNovedadHabilitados: {
+          select: { tipoNovedadId: true, tipoNovedad: { select: { nombre: true } } },
+        },
       },
       orderBy: { cuil: 'asc' },
     });
@@ -124,6 +150,9 @@ export class AdminService {
         contratosHabilitados: dto.contratosIds?.length
           ? { create: dto.contratosIds.map((contratoId) => ({ contratoId })) }
           : undefined,
+        tiposNovedadHabilitados: dto.tiposNovedadIds?.length
+          ? { create: dto.tiposNovedadIds.map((tipoNovedadId) => ({ tipoNovedadId })) }
+          : undefined,
       },
     });
 
@@ -138,7 +167,7 @@ export class AdminService {
   }
 
   async updateUsuario(cuil: string, dto: UpdateUsuarioDto) {
-    const { password, contratosIds, contratosJefeIds, ...rest } = dto;
+    const { password, contratosIds, contratosJefeIds, tiposNovedadIds, ...rest } = dto;
     const data: any = { ...rest };
     if (password) data.passwordHash = await bcrypt.hash(password, 10);
 
@@ -147,6 +176,15 @@ export class AdminService {
       if (contratosIds.length) {
         await this.prisma.contratoHabilitado.createMany({
           data: contratosIds.map((contratoId) => ({ usuarioCuil: cuil, contratoId })),
+        });
+      }
+    }
+
+    if (tiposNovedadIds !== undefined) {
+      await this.prisma.tipoNovedadHabilitado.deleteMany({ where: { usuarioCuil: cuil } });
+      if (tiposNovedadIds.length) {
+        await this.prisma.tipoNovedadHabilitado.createMany({
+          data: tiposNovedadIds.map((tipoNovedadId) => ({ usuarioCuil: cuil, tipoNovedadId })),
         });
       }
     }
