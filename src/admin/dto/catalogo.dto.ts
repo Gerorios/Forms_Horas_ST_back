@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateTareaDto {
   @IsInt()
@@ -35,6 +35,13 @@ export class UpdateMovilDto {
   @IsOptional()
   @IsString()
   descripcion?: string;
+}
+
+export class CrearMovilesMasivoDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  identificadores: string[];
 }
 
 export class CreateProvinciaDto {
