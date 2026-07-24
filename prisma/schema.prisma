@@ -62,6 +62,7 @@ model Usuario {
   empleado snuempleados @relation(fields: [cuil], references: [cuil])
 
   contratosHabilitados  ContratoHabilitado[]
+  tiposNovedadHabilitados TipoNovedadHabilitado[]
   contratosComoJefe     Contrato[]      @relation("JefeContrato")
   registrosCargados     RegistroHoras[] @relation("CargadoPor")
   registrosAprobados    RegistroHoras[] @relation("AprobadoPor")
@@ -85,6 +86,20 @@ model ContratoHabilitado {
 
   @@id([usuarioCuil, contratoId])
   @@map("sth_contratos_habilitados")
+}
+
+// M:N — qué tipos de novedad puede cargar cada usuario. Por ahora solo se usa
+// para JefeCuadrilla (Supervisor/JefeContrato/Admin no se restringen, ver
+// ADR-007); vacío = no puede cargar ninguna novedad.
+model TipoNovedadHabilitado {
+  usuarioCuil   String @map("usuario_cuil") @db.Char(13)
+  tipoNovedadId Int    @map("tipo_novedad_id")
+
+  usuario     Usuario     @relation(fields: [usuarioCuil], references: [cuil])
+  tipoNovedad TipoNovedad @relation(fields: [tipoNovedadId], references: [id])
+
+  @@id([usuarioCuil, tipoNovedadId])
+  @@map("sth_tipos_novedad_habilitados")
 }
 
 // ------------------------------------------------------------
@@ -145,6 +160,7 @@ model TipoNovedad {
   activo                Boolean @default(true)
 
   novedades Novedad[]
+  habilitaciones TipoNovedadHabilitado[]
 
   @@map("sth_tipos_novedad")
 }

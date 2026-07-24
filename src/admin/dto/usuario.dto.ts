@@ -22,6 +22,11 @@ export class CreateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   contratosJefeIds?: number[];
+
+  /** Tipos de novedad que puede cargar (solo aplica hoy a JefeCuadrilla; ver ADR-007). */
+  @IsOptional()
+  @IsInt({ each: true })
+  tiposNovedadIds?: number[];
 }
 
 export class UpdateUsuarioDto {
@@ -50,6 +55,11 @@ export class UpdateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   contratosJefeIds?: number[];
+
+  /** Tipos de novedad que puede cargar (solo aplica hoy a JefeCuadrilla; ver ADR-007). */
+  @IsOptional()
+  @IsInt({ each: true })
+  tiposNovedadIds?: number[];
 }
 
 export class CrearUsuariosMasivoDto {

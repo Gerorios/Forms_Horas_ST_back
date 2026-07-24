@@ -5,9 +5,9 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 ## Roles
 
 - **Operario** — Empleado que trabaja y cuyas horas se registran. **No carga**; solo **consulta sus propias** horas (read-only, con detalle). Requiere login para consultar (provisión de usuarios diferida).
-- **Jefe de Cuadrilla (JefeCuadrilla)** — Persona responsable que **carga** las horas del equipo (para cualquier empleado activo). Consulta **sus propias** horas y **las que cargó**.
+- **Jefe de Cuadrilla (JefeCuadrilla)** — Persona responsable que **carga** las horas del equipo (para cualquier empleado activo). Consulta **sus propias** horas y **las que cargó**. Opcionalmente puede cargar novedades, pero solo de los **tipos que le habilitaron** (ver `Tipo de novedad habilitado`, ADR-007) — sin ninguno habilitado, no ve la opción.
 - **Jefe de Contrato (JefeContrato)** — Aprueba/desaprueba, reabre y edita registros de sus contratos. También puede cargar. (3 personas)
-- **Supervisor** — Carga novedades.
+- **Supervisor** — Carga novedades, de cualquier tipo, sin restricción.
 - **Higiene y Seguridad (HyS)** — Aprueba específicamente las Ausencias.
 - **Admin (IT)** — Acceso total; administra catálogos y usuarios. (1 persona)
 
@@ -22,7 +22,8 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Línea de carga** — `{ contrato, horas, tareas[], observacion? }`. Una línea por contrato; ≥1 tarea. Las tareas salen del maestro `tareas_catalogo` (estandarizadas), sin horas por tarea. La **observación** es texto libre opcional (productividad, viajes a otra localidad, justificación de las horas) — una por línea, compartida por todos los operarios de esa carga en ese contrato, igual criterio que las horas (ver ADR-005). Listado de materiales y tickets de combustible quedan explícitamente diferidos, no forman parte de esto.
 - **Carga (`loteId`)** — Un envío del formulario de reporte (individual o masivo). Produce **N operarios × M líneas** = N×M filas en `sth_registros_horas` (ver ADR-002), todas con el mismo `loteId` (UUID generado una vez por envío — ver ADR-004). Es la unidad de **aprobación**: el Jefe de Contrato aprueba/desaprueba una carga completa (su porción, según contrato) de una sola vez, no fila por fila.
 - **Reporte diario** — El formulario de carga (`POST /registros-horas` individual o `POST /registros-horas/batch` masivo). Móviles compartidos por toda la carga.
-- **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia"). Solo las **Ausencias** requieren aprobación de HyS.
+- **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia", "Viáticos"). Solo las **Ausencias** requieren aprobación de HyS.
+- **Tipo de novedad habilitado (`sth_tipos_novedad_habilitados`)** — M:N que cuelga del **usuario que carga la novedad**: define qué tipos puede usar. Mismo patrón que `Contrato habilitado`, pero hoy solo se aplica a JefeCuadrilla — Supervisor/JefeContrato/Admin no tienen restricción (ver ADR-007).
 - **Quincena** — Período 1–15 / 16–fin de mes, calculado por fecha (sin tabla ni cierre).
 
 ## Flujos
