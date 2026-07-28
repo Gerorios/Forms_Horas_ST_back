@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
 import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, UpdateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
@@ -115,15 +115,15 @@ export class AdminService {
     return this.prisma.tipoNovedad.update({ where: { id }, data: dto });
   }
 
-  getUsuarios() {
-    return this.prisma.usuario.findMany({
+  async getUsuarios() {
+    const usuarios = await this.prisma.usuario.findMany({
       select: {
         cuil: true,
         email: true,
         activo: true,
         rolId: true,
+        nombreFueraNomina: true,
         rol: { select: { nombre: true } },
-        empleado: { select: { apellido_nombre: true } },
         contratosHabilitados: {
           select: { contratoId: true, contrato: { select: { codigo: true } } },
         },
@@ -134,11 +134,33 @@ export class AdminService {
       },
       orderBy: { cuil: 'asc' },
     });
+
+    // snuempleados no tiene FK física (ver ADR-008): se resuelve el nombre a
+    // mano, con fallback a nombreFueraNomina para usuarios sin empleado real.
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: usuarios.map((u) => u.cuil) } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+
+    return usuarios.map(({ nombreFueraNomina, ...u }) => ({
+      ...u,
+      empleado: { apellido_nombre: nombrePorCuil.get(u.cuil) ?? nombreFueraNomina ?? '' },
+    }));
   }
 
   async createUsuario(dto: CreateUsuarioDto) {
     const existe = await this.prisma.usuario.findUnique({ where: { cuil: dto.cuil } });
     if (existe) throw new ConflictException('Ya existe un usuario con ese CUIL');
+
+    if (!dto.nombreFueraNomina) {
+      const empleado = await this.prisma.snuempleados.findUnique({ where: { cuil: dto.cuil } });
+      if (!empleado) {
+        throw new BadRequestException(
+          'No existe un empleado con ese CUIL. Si la persona no está en la nómina, completá su nombre.',
+        );
+      }
+    }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const usuario = await this.prisma.usuario.create({
@@ -147,6 +169,7 @@ export class AdminService {
         email: dto.email,
         passwordHash,
         rolId: dto.rolId,
+        nombreFueraNomina: dto.nombreFueraNomina,
         contratosHabilitados: dto.contratosIds?.length
           ? { create: dto.contratosIds.map((contratoId) => ({ contratoId })) }
           : undefined,

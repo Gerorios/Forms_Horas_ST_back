@@ -36,14 +36,14 @@ export class AuthService {
   }
 
   async perfil(cuil: string) {
-    return this.prisma.usuario.findUnique({
+    const usuario = await this.prisma.usuario.findUnique({
       where: { cuil },
       select: {
         cuil: true,
         email: true,
         activo: true,
+        nombreFueraNomina: true,
         rol: { select: { nombre: true } },
-        empleado: { select: { apellido_nombre: true, legajo: true, cargo: true } },
         contratosHabilitados: {
           select: { contrato: { select: { id: true, codigo: true, nombre: true } } },
         },
@@ -52,5 +52,23 @@ export class AuthService {
         },
       },
     });
+    if (!usuario) return null;
+
+    // snuempleados no tiene FK física (se sincroniza desde otro sistema, ver
+    // ADR-008): un usuario fuera de nómina no tiene fila ahí.
+    const empleado = await this.prisma.snuempleados.findUnique({
+      where: { cuil },
+      select: { apellido_nombre: true, legajo: true, cargo: true },
+    });
+
+    const { nombreFueraNomina, ...resto } = usuario;
+    return {
+      ...resto,
+      empleado: empleado ?? {
+        apellido_nombre: nombreFueraNomina ?? '',
+        legajo: null,
+        cargo: null,
+      },
+    };
   }
 }

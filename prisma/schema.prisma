@@ -35,7 +35,6 @@ model snuempleados {
   usuario           String?   @default("") @db.VarChar(30)
 
   // Relaciones inversas
-  usuarioApp           Usuario?
   registrosHoras       RegistroHoras[]    @relation("Operario")
   novedades            Novedad[]          @relation("NovedadOperario")
 }
@@ -58,8 +57,14 @@ model Usuario {
   rolId        Int     @map("rol_id")
   activo       Boolean @default(true)
 
-  rol      Rol          @relation(fields: [rolId], references: [id])
-  empleado snuempleados @relation(fields: [cuil], references: [cuil])
+  // Nombre cargado a mano por el Admin, solo se usa para mostrar cuando no
+  // hay fila en snuempleados (usuario fuera de nómina). Ver ADR-008.
+  nombreFueraNomina String? @map("nombre_fuera_nomina") @db.VarChar(100)
+
+  rol Rol @relation(fields: [rolId], references: [id])
+  // Sin FK física a snuempleados a propósito (ver ADR-008): snuempleados se
+  // sincroniza desde un sistema externo, y un Usuario puede no tener fila ahí
+  // (ej. dueño/socio gerente). El join se resuelve a mano en el código.
 
   contratosHabilitados  ContratoHabilitado[]
   tiposNovedadHabilitados TipoNovedadHabilitado[]

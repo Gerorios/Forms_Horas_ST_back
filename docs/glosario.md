@@ -13,8 +13,9 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 
 ## Entidades y campos clave
 
-- **Empleado (`snuempleados`)** — Tabla legacy de solo lectura, PK `cuil`. No todos los empleados tienen usuario/login.
-- **Usuario (`sth_usuarios`)** — Quien inicia sesión. PK `cuil` (referencia a `snuempleados`). Tiene un rol.
+- **Empleado (`snuempleados`)** — Tabla legacy de solo lectura, PK `cuil`, sincronizada automáticamente desde un sistema externo (ERP/liquidador de sueldos) que la sobreescribe periódicamente — por eso nunca se le insertan filas a mano. No todos los empleados tienen usuario/login.
+- **Usuario (`sth_usuarios`)** — Quien inicia sesión. PK `cuil` (un CUIL es un dato personal, lo tiene cualquiera sea o no empleado). Tiene un rol. Puede o no corresponder a una fila real de `snuempleados` — ver `Usuario fuera de nómina`.
+- **Usuario fuera de nómina** — Un `Usuario` cuyo `cuil` no tiene fila en `snuempleados` (ej. dueño o socio gerente, sin relación de dependencia). Su nombre para mostrar sale de `Usuario.nombreFueraNomina` (cargado a mano por el Admin), no de `snuempleados.apellido_nombre`. Disponible para cualquier rol al crear el usuario, vía un interruptor "En nómina / Fuera de nómina" en el alta. Ver ADR-008.
 - **`operarioCuil`** — En un registro, el **dueño de las horas** (a quién le corresponden). Puede ser cualquier empleado activo.
 - **`cargadoPorCuil`** — Quién **hizo la carga** (siempre un usuario con login: JdC / JefeContrato / Admin).
 - **Contrato habilitado (`sth_contratos_habilitados`)** — M:N que cuelga del **usuario que carga**: define de qué contratos puede elegir tareas al cargar.

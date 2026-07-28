@@ -14,6 +14,11 @@ export class CreateUsuarioDto {
   @IsInt()
   rolId: number;
 
+  /** Nombre cargado a mano para usuarios sin fila en snuempleados (ver ADR-008). */
+  @IsOptional()
+  @IsString()
+  nombreFueraNomina?: string;
+
   @IsOptional()
   @IsInt({ each: true })
   contratosIds?: number[];
@@ -46,6 +51,11 @@ export class UpdateUsuarioDto {
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
+
+  /** Nombre cargado a mano para usuarios sin fila en snuempleados (ver ADR-008). */
+  @IsOptional()
+  @IsString()
+  nombreFueraNomina?: string;
 
   @IsOptional()
   @IsInt({ each: true })
