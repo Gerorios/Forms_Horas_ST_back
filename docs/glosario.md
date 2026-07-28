@@ -10,6 +10,7 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Supervisor** — Carga novedades, de cualquier tipo, sin restricción.
 - **Higiene y Seguridad (HyS)** — Aprueba específicamente las Ausencias.
 - **Admin (IT)** — Acceso total; administra catálogos y usuarios. (1 persona)
+- **Liquidador** — Ve el panel de liquidación: total a cobrar por empleado y quincena (horas, categoría UOCRA, régimen, extras, presentismo, plus de novedades, por tantos). Carga las tarifas vigentes y, para "por tantos", la cantidad (km) de cada período. Ver ADR-009.
 
 ## Entidades y campos clave
 
@@ -26,6 +27,13 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 - **Novedad** — Ítem tipificado (p. ej. "Accidente", "Ausencia", "Viáticos"). Solo las **Ausencias** requieren aprobación de HyS.
 - **Tipo de novedad habilitado (`sth_tipos_novedad_habilitados`)** — M:N que cuelga del **usuario que carga la novedad**: define qué tipos puede usar. Mismo patrón que `Contrato habilitado`, pero hoy solo se aplica a JefeCuadrilla — Supervisor/JefeContrato/Admin no tienen restricción (ver ADR-007).
 - **Quincena** — Período 1–15 / 16–fin de mes, calculado por fecha (sin tabla ni cierre).
+- **Perfil de liquidación (`PerfilLiquidacion`)** — 1:1 con `snuempleados.cuil` (no con `Usuario`, la mayoría de los empleados no tienen login): régimen (`jornalizado` / `fijo` / `por_tantos`) + categoría UOCRA + modalidad de hora extra. Solo lo asignan Admin/Liquidador; un empleado sin este perfil (ej. administrativos) no aparece en el panel de liquidación — exclusión por omisión, no por un campo "es administrativo". Ver ADR-009.
+- **Categoría UOCRA** — Catálogo propio de esta app (no se reusa `snuempleados.categoria`, esa columna externa está incompleta). Cada categoría tiene una tarifa por hora.
+- **Tarifa vigente** — Patrón que se repite para casi todo monto de este dominio: una tabla versionada por fecha (`vigenteDesde`), se toma la fila con vigencia más reciente ≤ la fecha de la quincena liquidada. Se usa para: tarifa por categoría UOCRA, monto por día de novedad con plus, y precio por rango de km (por tantos). El multiplicador de hora extra es la excepción: es fijo en 1.5, no se versiona. Ver ADR-009.
+- **Modalidad de hora extra** — Dato fijo por empleado (no por quincena): "en B" (pago informal, sin descuentos) o "con descuentos" (parte del sueldo formal). Ver ADR-009.
+- **Régimen "por tantos"** — Pago por cantidad en vez de por hora. Hoy el único caso es relevamiento de fugas, medido en km: el Liquidador carga a mano el total de km de cada relevador por quincena (se mide en otra app, no en esta), y se paga todo al precio del rango en el que cae el total (no progresivo por tramos). Ver ADR-009.
+- **Presentismo** — 20% del sueldo básico (con el mismo tope de 88hs). Se pierde con una Ausencia desaprobada por HyS (certificado inválido/inasistencia injustificada) o con una Suspensión en el período. Ver ADR-009.
+- **Suspensión** — Tipo de novedad nuevo (disciplinaria), sin aprobación de HyS — a diferencia de Ausencia, no depende de un certificado médico. Su sola presencia en la quincena quita presentismo. Ver ADR-009.
 
 ## Flujos
 
@@ -50,7 +58,8 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
   operario y día, el total real cruzando **todos** los contratos/lotes (solo filas `pendiente` +
   `aprobado`; lo `desaprobado` se excluye porque puede ser justamente una duplicación ya detectada y
   rechazada).
-- **Rol Liquidador** — Rol aún no existente en el sistema (no está en el glosario de roles ni
-  implementado). Sería el destinatario natural de un panel que muestre esa vista cruzada por
-  operario/día — se decidió explícitamente que **no** es responsabilidad de `/aprobaciones` (Jefe de
-  Contrato), que se mantiene agrupado por `loteId` únicamente.
+- **Duplicación de horas, vista por Liquidador** — La vista cruzada por operario/día (todos los
+  contratos, no agrupada por `loteId`) que serviría para detectar la duplicación de arriba encaja
+  naturalmente en el panel de Liquidador (ADR-009, ya en diseño) — se decidió explícitamente que
+  **no** es responsabilidad de `/aprobaciones` (Jefe de Contrato), que se mantiene agrupado por
+  `loteId` únicamente.

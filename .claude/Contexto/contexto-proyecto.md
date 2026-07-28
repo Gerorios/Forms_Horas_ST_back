@@ -791,3 +791,263 @@ remota. Checklist E2E manual del usuario (post-merge, si no se hizo antes): carg
 operarios en contrato propio + ajeno → una sola tarjeta de lote en `/aprobaciones`, "Aprobar todo"
 resuelve solo el contrato propio; expandir y destildar a alguien deja esa fila pendiente; total y
 tarjetas en `/mis-registros`; selector de móviles y envío directo en `/reporte`.
+
+---
+
+## 28. Aprobaciones agrupadas por contrato + observación por línea (2026-07-20/21)
+
+PR #5 en ambos repos (`feature/aprobaciones-estado-y-observacion` backend, mergeado en
+`5eae47b`; `feature/aprobaciones-resumen-por-contrato` frontend, mergeado en `9a7ca58`).
+
+**Backend:** aprobaciones ahora exponen estado explícito por fila + jefes de contrato se leen
+desde `Usuario` (rol `JefeContrato`), no de un campo suelto; observación por línea persistida.
+
+**Frontend (rediseño grande de `/aprobaciones` y `/mis-registros`):** en vez de listado plano por
+fila, resumen agrupado: por día → operarios → vehículos → total de horas, con detalle por
+contrato debajo (`agrupar.ts`, `GrupoLote`/`GrupoContrato`). Pestañas Pendientes / Aprobados /
+Rechazados. "Cargas que hice" (JdC) con el mismo agrupado. **Bug real encontrado y corregido**: el
+total de horas por contrato sumaba las horas de cada fila duplicada por operario (una línea de
+carga se guarda una vez por operario, ver ADR-002) — se corrigió para tomar el valor de una sola
+fila no-desaprobada por (lote, contrato), no la suma de todas. También: el contador del bloque
+amarillo de "Mis horas" debía contar **solo `estado === 'aprobado'`** (no pendiente) — corregido
+tras aviso del usuario.
+
+---
+
+## 29. Corrección de horas por línea (ADR-006) + buscador de móviles + alta masiva de móviles
+(2026-07-22)
+
+PR #6 en ambos repos (`feature/aprobacion-correccion-horas`; backend mergeado en `09549a6`
+sobre commit `404abde`, frontend en `2ebe4ca` sobre `2a51896`). Diseñado con `/grill-with-docs`.
+
+**ADR-006** (`docs/adr/2026-07-22-adr-006-correccion-de-horas-por-linea.md`): el Jefe de Contrato,
+tras auditar el GPS de una carga, puede corregir la hora declarada de una línea completa (todos
+los operarios de ese contrato en ese lote). Decisión explícita: **no** se edita in-place — se
+rechazan las filas viejas y se crean filas nuevas ya `aprobado` con la hora corregida, enlazadas
+por `RegistroHoras.loteIdOrigen` al lote rechazado. Se evitó así tener que construir una UI que
+lea `Auditoria` para mostrar el historial de cambios. Endpoint
+`PATCH /registros-horas/lote/:loteId/corregir`.
+
+**Frontend:** al principio se probó una versión "liviana" (texto enlazando la corrección a la
+fila rechazada) — el usuario la rechazó ("no me convence, creo que deberíamos probar en 1 sola
+tarjeta tener tanto el reporte desaprobado y la corrección") y se rehizo como una sola tarjeta
+fusionada (`lib/correccion.ts` con `infoCorreccion()`, tarjetas `TarjetaSimple`/`TarjetaCorregida`
+en `mis-registros`).
+
+**Selector de móviles:** rehecho (segunda vez en la sesión — la primera versión se había perdido
+en un merge) como buscador con autocompletar (Popover + Command de shadcn/cmdk) en vez de la
+lista de chips fija, porque el catálogo real de móviles es grande. Alta masiva de móviles en
+`/admin/moviles` (pegar texto/CSV separado por saltos de línea o comas, dedupe y trim para no
+crear duplicados por espacios).
+
+---
+
+## 30. Novedades habilitadas por tipo para Jefe de Cuadrilla (ADR-007) (2026-07-23/24)
+
+PR #7 en ambos repos (`feature/novedades-jefe-cuadrilla`; backend mergeado en `b5d7b3a` sobre
+`b4c8b94`, frontend en `997e7a3` sobre `ef96f8f`). Diseñado con `/grill-with-docs`.
+
+**ADR-007** (`docs/adr/2026-07-23-adr-007-tipos-de-novedad-habilitados-por-usuario.md`): hasta
+ahora JefeCuadrilla no podía cargar novedades. Se le da esa capacidad, pero **acotada por tipo**:
+nueva tabla `sth_tipos_novedad_habilitados` (M:N usuario↔tipo de novedad), mismo patrón que
+`ContratoHabilitado`. Sin ningún tipo habilitado, no ve la opción de cargar. Supervisor/
+JefeContrato/Admin siguen sin restricción (no se tocó su comportamiento).
+
+**Frontend:** en el alta/edición de usuario, si el rol elegido es JefeCuadrilla aparece un
+toggle "¿Carga novedades?" + chips para elegir qué tipos. `navForRole` cambió de firma
+(`navForRole(rol)` → `navForRole(perfil)`) porque ahora la visibilidad de "Novedades" en el nav
+depende de tener ≥1 tipo habilitado, no solo del rol — confirmado explícitamente por el usuario
+("en el nav lateral solo aparecerá novedades si está habilitado para ello, sino debe estar
+oculto"). El formulario de nueva novedad filtra el catálogo a los tipos habilitados cuando el
+usuario es JefeCuadrilla.
+
+**Nota de flujo de git de esta sesión:** en un momento se mezcló sin querer en una sola rama sin
+commitear el trabajo de esta feature con el de la anterior (§29) — se resolvió partiendo los
+archivos mixtos (`schema.prisma`, `glosario.md`, `domain.ts`, `lib/api/admin.ts`) a mano con Edit,
+commiteando primero lo viejo (§29) y recién después esto.
+
+---
+
+## 31. Reporte diario 100% obligatorio + ocultar el rol en la UI (2026-07-24)
+
+PR #8 solo frontend (`feature/reporte-obligatorio-y-ocultar-rol`, mergeado en `ddeffc7` sobre
+`1d86178`). Sin cambios de backend. Diseñado con `/grill-with-docs`.
+
+**Todo obligatorio en `/reporte`:** móviles, operarios, y cada línea (contrato/horas/tareas/
+observación) pasan a ser requeridos. Antes, una línea incompleta se descartaba **en silencio** al
+enviar (sin avisar); ahora el botón "Reportar" siempre está habilitado, pero al clickear con algo
+incompleto marca en rojo cada campo faltante y no envía nada — decisión explícita del usuario
+("si elijo un contrato y no pongo las horas, observaciones, o tareas, debería marcarme con rojo y
+evitar el enviar datos incompletos"). Observación pasa de "(opcional)" a "(descripción de la
+tarea)".
+
+**Ocultar el rol en la UI:** el usuario pidió que no se muestre el nombre del rol en ningún lado
+("admin, jefe de cuadrilla, jefe de contrato, etc."). Se sacó de 3 lugares dinámicos: pie de la
+sidebar/drawer, eyebrow de Inicio, eyebrow de Novedades. **Se dejaron sin tocar**, a pedido
+explícito, los eyebrows *fijos* de texto ("Admin" en las páginas de admin, "Jefe de contrato" en
+Aprobaciones) — el pedido era sobre el nombre del rol dinámico, no sobre esos textos estáticos.
+
+---
+
+## 32. Limpieza de datos transaccionales de prueba (2026-07-26/27)
+
+Antes de probar en el hosting real, se truncaron (vía script Node/Prisma puntual, luego borrado)
+`sth_registros_horas`, `sth_registro_moviles`, `sth_registro_tareas`, `sth_auditoria` (usada
+exclusivamente para `sth_registros_horas`, confirmado en código antes de vaciarla) y
+`sth_novedades` — a pedido explícito del usuario, confirmando conteos antes de borrar. Los
+maestros/permisos (`sth_usuarios`, `sth_roles`, `sth_contratos`, `sth_tareas_catalogo`,
+`sth_moviles`, `sth_provincias`, `sth_tipos_novedad`, `sth_contratos_habilitados`,
+`sth_tipos_novedad_habilitados`, `snuempleados`) quedaron intactos.
+
+---
+
+## 33. Deploy a producción: primero gratis, después VPS con dominio propio (2026-07-24 a 27)
+
+**Paso 1 — gratis, para probar:** backend en **Render** (free tier, `npm install && npx prisma
+generate && npm run build` / `npm run start:prod`), frontend en **Vercel** (import directo del
+repo, `NEXT_PUBLIC_API_URL` apuntando a la URL de Render). Nota de troubleshooting real: el
+primer login desde el celular fallaba porque el frontend se había buildeado en Vercel **antes**
+de cargar `NEXT_PUBLIC_API_URL` (queda "horneada" en el bundle del cliente, no es runtime) — se
+detectó bajando y grepeando los chunks JS de producción buscando `localhost:3001`, y se resolvió
+con **Redeploy** después de cargar la env var. También: la organización de GitHub del repo
+frontend no dejaba autorizar el GitHub App de Vercel por permisos — se resolvió pegando el link
+del repo directo en el import de Vercel en vez de buscarlo en la lista.
+
+**Paso 2 — VPS Hostinger propia (2026-07-27), para no depender de free tiers:**
+- Plan **KVM 2** (2 vCPU / 8GB RAM), Ubuntu 24.04. IP y accesos: ver
+  `docs/infraestructura-produccion.md` (gitignored a propósito, no se sube a GitHub — ahí están
+  IP, comando SSH, dominio, rutas de Nginx/certificados, nombres de proceso PM2 y las env vars de
+  producción).
+- Acceso: par de claves SSH generado localmente (`~/.ssh/id_ed25519_hostinger_vps`), la pública
+  cargada en el VPS al crearlo.
+- Stack instalado a mano por SSH: Node 22 (NodeSource), git, Nginx, PM2, Certbot, ufw.
+- Ambos repos clonados en `/var/www/`, backend y frontend corriendo como procesos PM2
+  (`forms-horas-back` puerto 3001, `forms-horas-front` puerto 3000), `pm2 startup systemd` +
+  `pm2 save` para que sobrevivan un reinicio.
+- Dominio propio del usuario: `serytec.com.ar` (ya tiene una web ahí, administrada en Optimus
+  Panel) → se usó el subdominio **`misregistros.serytec.com.ar`** (registro `A` a la IP del VPS)
+  para no pisar la web existente.
+- Nginx como reverse proxy en el puerto 80: `/` → frontend (3000), `/api/` → backend (3001, con
+  rewrite que saca el prefijo `/api`) — así no hace falta mostrar puertos en la URL, sin esperar
+  al dominio (funciona igual apuntando directo a la IP).
+- SSL con Certbot (Let's Encrypt), redirect automático `http→https`, renovación automática.
+  Certificado emitido para `misregistros.serytec.com.ar`, vence 2026-10-25.
+- Firewall (ufw): solo 22/80/443 abiertos; 3000/3001 cerrados al exterior una vez que Nginx quedó
+  andando.
+- **Los deploys gratuitos de Vercel/Render quedaron levantados como posible respaldo** — no se
+  dieron de baja, decisión pendiente del usuario.
+
+**Documentación de infra:** se creó `docs/infraestructura-produccion.md` (backend), con **todo**
+lo de arriba en detalle (IP, comandos de acceso, rutas de Nginx, env vars) — está en `.gitignore`
+a propósito, nunca se sube a GitHub aunque viva en la carpeta del repo.
+
+---
+
+## 34. Usuarios "fuera de nómina" (ADR-008) — rama abierta, PRs sin mergear (2026-07-27)
+
+Diseñado con `/grill-with-docs`. Rama `feature/usuarios-fuera-de-nomina` en ambos repos, **ya
+pusheada pero todavía NO mergeada a `main`** (el usuario decidió seguir con la Fase 1 del
+Liquidador antes de mergear esto — pendiente).
+
+**Problema:** `Usuario.cuil` tenía una FK física obligatoria a `snuempleados.cuil`
+(`sth_usuarios_cuil_fkey`), así que no se podía crear ningún usuario (de ningún rol) si su CUIL no
+existía antes como empleado en `snuempleados`. Pero `snuempleados` se sincroniza automáticamente
+desde un sistema externo (ERP/liquidador de sueldos) — el dueño o un socio gerente, sin relación
+de dependencia, nunca iban a tener fila ahí.
+
+**ADR-008** (`docs/adr/2026-07-27-adr-008-usuarios-fuera-de-nomina.md`): se eliminó la FK física
+(DDL a mano: `ALTER TABLE sth_usuarios DROP FOREIGN KEY sth_usuarios_cuil_fkey`).
+`Usuario.cuil` se mantiene como identidad (un CUIL es un dato personal, lo tiene cualquiera sea o
+no empleado — no hace falta un esquema de IDs paralelo). Se agregó `Usuario.nombreFueraNomina`
+(nullable), usado como nombre para mostrar cuando no hay `snuempleados` real vinculado. El join
+`Usuario`↔`snuempleados` dejó de ser una relación Prisma con FK y pasa a resolverse a mano en el
+código (`auth.service.ts#perfil`, `admin.service.ts#getUsuarios`), con fallback a
+`nombreFueraNomina`.
+
+**Frontend:** en "Nuevo usuario" (panel Admin), toggle "En nómina" / "Fuera de nómina" — con
+nómina se mantiene el buscador de empleados de siempre; fuera de nómina se cargan a mano Nombre,
+Apellido y CUIL. Disponible para **cualquier rol**, no solo Admin (el usuario lo aclaró
+explícitamente: quiere poder cargar cualquier combinación de nombre/apellido/cuil/rol/email/
+contraseña). `EmpleadoResumen.legajo`/`cargo` pasan a nullable en el tipo (siguen sin mostrarse en
+ningún lado, así que no hay impacto visual).
+
+**Verificado en navegador por el usuario:** alta de usuario fuera de nómina + login con ese
+usuario, funcionando.
+
+---
+
+## 35. Rol Liquidador (ADR-009) — Fase 1 en curso, rama abierta (2026-07-28)
+
+Diseñado con `/grill-with-docs` (interview larga, muchas decisiones de dominio reales). Rama
+`feature/rol-liquidador` en ambos repos, creada desde `main` **sin** el ADR-008 (§34) todavía
+adentro — son dos features independientes en ramas separadas, ninguna mergeada a `main` todavía.
+Plan en 3 fases; **Fase 1 (catálogos, sin cálculo) ya implementada y verificada en local**,
+Fases 2 (motor de cálculo) y 3 (por tantos/km) quedan para después.
+
+**Por qué hace falta un catálogo propio:** se investigó si `snuempleados.jornal`/`categoria`
+alcanzaban para modelar régimen/tarifa y **no alcanzan** — `jornal` es binario (`S`/`N`, no
+distingue los 3 regímenes) e `importe_categoria` está en `0` para la mayoría de las categorías
+(dato externo incompleto, fuera de nuestro control).
+
+**Modelo (ADR-009,** `docs/adr/2026-07-28-adr-009-rol-liquidador-y-motor-de-liquidacion.md`**):**
+- **`PerfilLiquidacion`** — 1:1 con `snuempleados.cuil` (no con `Usuario`: la mayoría de los
+  empleados no tiene login), no `snuempleados` mismos: régimen (`jornalizado` / `fijo` /
+  `por_tantos`) + categoría UOCRA (nullable) + modalidad de hora extra (nullable). Un empleado
+  **sin** perfil asignado (ej. administrativos) no aparece en el panel — exclusión **por
+  omisión**, no por un campo "es administrativo" derivado de texto externo.
+- Patrón recurrente **"tarifa vigente por mes"**: `TarifaCategoriaUocra`, `MontoNovedadPlus`,
+  `RangoKmPorTantos` — cada una versionada por `vigenteDesde`, se toma la fila más reciente ≤ la
+  fecha de la quincena liquidada.
+- **Horas extras:** umbral 88hs/quincena (jornalizado), multiplicador **fijo en 1.5** (no
+  versionado — se había armado por error una tabla `IndiceHoraExtra` versionada y se sacó
+  cuando el usuario aclaró que el multiplicador nunca cambia).
+- **Modalidad de hora extra** (`en_b` / `con_descuentos`): dato fijo por empleado, independiente
+  del régimen — algunos cobran las extras en B (sin descuentos), otros como parte del sueldo
+  formal (con descuentos).
+- **Sueldo básico:** `tarifaCategoria × min(horasQuincena, 88)` (jornalizado) o
+  `tarifaCategoria × 88` fijo (régimen fijo, que usualmente ni declara horas).
+- **Presentismo:** 20% del sueldo básico. Se pierde con una Ausencia **desaprobada** por HyS
+  (certificado inválido/inasistencia injustificada — una Ausencia **aprobada** no lo afecta) o
+  con una **Suspensión** (tipo de novedad nuevo, disciplinario, sin requerir aprobación de HyS a
+  diferencia de Ausencia).
+- **"Por tantos"** (hoy solo relevamiento de fugas, por km): la cantidad de km **la carga el
+  Liquidador a mano** al momento de liquidar (se mide en otra app externa, no en esta, no se
+  deriva de `sth_registro_tareas`). Se paga **todo** el total al precio del rango en que cae (3
+  rangos, no progresivo).
+
+**Implementado en Fase 1:**
+- Rol **Liquidador** + `TipoNovedad` **Suspensión** (seed).
+- Tablas nuevas: `sth_perfiles_liquidacion`, `sth_categorias_uocra`,
+  `sth_tarifas_categoria_uocra`, `sth_montos_novedad_plus`, `sth_rangos_km_por_tantos` (DDL a
+  mano, mismas convenciones de charset que el resto — `sth_perfiles_liquidacion.cuil` en
+  `utf8mb3_general_ci` para poder tener FK a `snuempleados.cuil`).
+- Backend: módulo `src/liquidacion/` completo (`@Roles('Admin', 'Liquidador')`); se amplió
+  también `GET /admin/tipos-novedad` a `@Roles('Admin', 'Liquidador')` a nivel de método (el
+  Liquidador necesita leer el catálogo para asignar montos a los tipos con `generaPlus`).
+- Frontend: nav "Liquidación" (visible a Liquidador y Admin); layout con sub-nav propio
+  (`liquidacion-nav.ts`, mismo patrón que `admin-nav.ts`); páginas `/liquidacion/categorias`
+  (categorías UOCRA + su tarifa vigente), `/liquidacion/perfiles` (asignar régimen + categoría +
+  modalidad de hora extra por empleado, reusa `OperariosSelect`), `/liquidacion/novedades-plus`
+  (montos por tipo de novedad con `generaPlus`), `/liquidacion/por-tantos` (rangos de km).
+- **Bug de entorno detectado y corregido durante la verificación:** el backend local (`nest start
+  --watch`) no levantaba las rutas nuevas porque un proceso **viejo** (`node dist/src/main`,
+  quedado de cuando se probó el deploy a la VPS) estaba ocupando el puerto 3001 y bloqueando al
+  proceso de desarrollo real — se mató el proceso viejo y se reinició `npm run start:dev` limpio.
+
+**Verificación:** backend `tsc --noEmit` limpio, todas las rutas de `/liquidacion/*` confirmadas
+por log de arranque de Nest; frontend 185/185 tests (incluye test nuevo de
+`perfiles-page.test.tsx`), `tsc --noEmit` limpio.
+
+**Pendiente para retomar:**
+1. Probar en el navegador (asignarse el rol Liquidador desde Admin → Usuarios, entrar y probar las
+   4 pantallas) — el usuario todavía no confirmó el checklist E2E manual de esta fase.
+2. Mergear (en orden a decidir con el usuario) `feature/usuarios-fuera-de-nomina` (§34) y
+   `feature/rol-liquidador` (esta sección) a `main` en ambos repos — ninguna de las dos está
+   mergeada todavía.
+3. Fase 2 del Liquidador: motor de cálculo real (sueldo básico + extras + presentismo + plus de
+   novedades) y el panel que muestre el total por empleado/quincena (hoy Fase 1 solo tiene los
+   catálogos, sin ningún cálculo).
+4. Fase 3 del Liquidador: régimen "por tantos" — pantalla para que el Liquidador cargue los km de
+   cada relevador por quincena y vea el cálculo por rango.
+5. Decidir si se dan de baja los deploys gratuitos de Vercel/Render (§33) ahora que la VPS con
+   dominio propio está funcionando, o se dejan como respaldo.

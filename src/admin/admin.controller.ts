@@ -77,6 +77,9 @@ export class AdminController {
     return this.service.updateProvincia(id, dto);
   }
 
+  // Liquidador necesita leer el catálogo para asignar montos a los tipos con
+  // generaPlus (ver ADR-009) — el resto de /admin sigue siendo solo Admin.
+  @Roles('Admin', 'Liquidador')
   @Get('tipos-novedad')
   getTiposNovedad() { return this.service.getTiposNovedad(); }
 

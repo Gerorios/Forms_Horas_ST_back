@@ -7,6 +7,7 @@ import { RegistrosHorasModule } from './registros-horas/registros-horas.module';
 import { NovedadesModule } from './novedades/novedades.module';
 import { AdminModule } from './admin/admin.module';
 import { CatalogosModule } from './catalogos/catalogos.module';
+import { LiquidacionModule } from './liquidacion/liquidacion.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { CatalogosModule } from './catalogos/catalogos.module';
     NovedadesModule,
     AdminModule,
     CatalogosModule,
+    LiquidacionModule,
   ],
 })
 export class AppModule {}
