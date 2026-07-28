@@ -38,6 +38,7 @@ model snuempleados {
   usuarioApp           Usuario?
   registrosHoras       RegistroHoras[]    @relation("Operario")
   novedades            Novedad[]          @relation("NovedadOperario")
+  perfilLiquidacion    PerfilLiquidacion?
 }
 
 // ------------------------------------------------------------
@@ -161,8 +162,94 @@ model TipoNovedad {
 
   novedades Novedad[]
   habilitaciones TipoNovedadHabilitado[]
+  montosPlusVigentes MontoNovedadPlus[]
 
   @@map("sth_tipos_novedad")
+}
+
+// ------------------------------------------------------------
+// LIQUIDACIÓN (ver ADR-009)
+// ------------------------------------------------------------
+enum RegimenLiquidacion {
+  jornalizado
+  fijo
+  por_tantos
+}
+
+// Cómo cobra un empleado sus horas extras: "en B" (sin descuentos, pago
+// informal) o como parte del sueldo formal (con descuentos). Es un dato fijo
+// por empleado, no por quincena.
+enum ModalidadHoraExtra {
+  en_b
+  con_descuentos
+}
+
+// 1:1 con snuempleados (no con Usuario: la mayoría de los empleados no tiene
+// login). Un empleado sin fila acá (ej. administrativos) no aparece en el
+// panel de Liquidador — exclusión por omisión, ver ADR-009.
+model PerfilLiquidacion {
+  cuil               String              @id @db.Char(13)
+  regimen            RegimenLiquidacion
+  categoriaUocraId   Int?                @map("categoria_uocra_id")
+  modalidadHoraExtra ModalidadHoraExtra? @map("modalidad_hora_extra")
+
+  empleado  snuempleados    @relation(fields: [cuil], references: [cuil])
+  categoria CategoriaUocra? @relation(fields: [categoriaUocraId], references: [id])
+
+  @@map("sth_perfiles_liquidacion")
+}
+
+model CategoriaUocra {
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activo Boolean @default(true)
+
+  tarifas  TarifaCategoriaUocra[]
+  perfiles PerfilLiquidacion[]
+
+  @@map("sth_categorias_uocra")
+}
+
+// Patrón "tarifa vigente": se toma la fila con vigenteDesde más reciente ≤ la
+// fecha de la quincena que se liquida. Se repite igual en MontoNovedadPlus y
+// RangoKmPorTantos. (El multiplicador de hora extra es fijo en 1.5, no
+// versionado — no todo monto de este dominio necesita esta tabla).
+model TarifaCategoriaUocra {
+  id               Int      @id @default(autoincrement())
+  categoriaUocraId Int      @map("categoria_uocra_id")
+  vigenteDesde     DateTime @map("vigente_desde") @db.Date
+  importeHora      Decimal  @map("importe_hora") @db.Decimal(12, 2)
+
+  categoria CategoriaUocra @relation(fields: [categoriaUocraId], references: [id])
+
+  @@unique([categoriaUocraId, vigenteDesde])
+  @@map("sth_tarifas_categoria_uocra")
+}
+
+// Monto por día para TipoNovedad con generaPlus = true (Guardia Pasiva, Viáticos, etc.).
+model MontoNovedadPlus {
+  id            Int      @id @default(autoincrement())
+  tipoNovedadId Int      @map("tipo_novedad_id")
+  vigenteDesde  DateTime @map("vigente_desde") @db.Date
+  montoPorDia   Decimal  @map("monto_por_dia") @db.Decimal(12, 2)
+
+  tipoNovedad TipoNovedad @relation(fields: [tipoNovedadId], references: [id])
+
+  @@unique([tipoNovedadId, vigenteDesde])
+  @@map("sth_montos_novedad_plus")
+}
+
+// Régimen "por tantos" (hoy solo relevamiento de fugas, medido en km). Se paga
+// todo el total de km al precio del rango en que cae (no progresivo). kmHasta
+// null = sin techo (el rango más alto).
+model RangoKmPorTantos {
+  id           Int      @id @default(autoincrement())
+  vigenteDesde DateTime @map("vigente_desde") @db.Date
+  kmDesde      Decimal  @map("km_desde") @db.Decimal(8, 2)
+  kmHasta      Decimal? @map("km_hasta") @db.Decimal(8, 2)
+  precioPorKm  Decimal  @map("precio_por_km") @db.Decimal(12, 2)
+
+  @@map("sth_rangos_km_por_tantos")
 }
 
 // ------------------------------------------------------------

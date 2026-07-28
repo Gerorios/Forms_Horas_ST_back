@@ -12,3 +12,6 @@ dist
 .claude/settings.local.json
 .claude/skills/
 .superpowers/
+
+# Infra de producción: IPs, accesos, claves — no subir a GitHub
+docs/infraestructura-produccion.md
