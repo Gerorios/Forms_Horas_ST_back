@@ -71,7 +71,7 @@ model Usuario {
 
   contratosHabilitados  ContratoHabilitado[]
   tiposNovedadHabilitados TipoNovedadHabilitado[]
-  contratosComoJefe     Contrato[]      @relation("JefeContrato")
+  contratosComoJefe     ContratoJefe[]
   registrosCargados     RegistroHoras[] @relation("CargadoPor")
   registrosAprobados    RegistroHoras[] @relation("AprobadoPor")
   novedadesCargadas     Novedad[]       @relation("NovedadCargadoPor")
@@ -96,6 +96,22 @@ model ContratoHabilitado {
   @@map("sth_contratos_habilitados")
 }
 
+// M:N — un contrato puede tener varios Jefes de Contrato; cualquiera de ellos
+// aprueba/desaprueba/reabre/corrige (el primero que resuelve, resuelve para
+// todos). Reemplaza la vieja columna 1:N sth_contratos.jefe_contrato_cuil
+// (sigue existiendo en la BD, sin modelar acá, hasta el DROP post-deploy —
+// ver ADR-012).
+model ContratoJefe {
+  contratoId  Int    @map("contrato_id")
+  usuarioCuil String @map("usuario_cuil") @db.Char(13)
+
+  contrato Contrato @relation(fields: [contratoId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioCuil], references: [cuil])
+
+  @@id([contratoId, usuarioCuil])
+  @@map("sth_contratos_jefes")
+}
+
 // M:N — qué tipos de novedad puede cargar cada usuario. Por ahora solo se usa
 // para JefeCuadrilla (Supervisor/JefeContrato/Admin no se restringen, ver
 // ADR-007); vacío = no puede cargar ninguna novedad.
@@ -114,13 +130,12 @@ model TipoNovedadHabilitado {
 // CATÁLOGOS / ADMINISTRACIÓN
 // ------------------------------------------------------------
 model Contrato {
-  id               Int     @id @default(autoincrement())
-  codigo           String  @unique
-  nombre           String
-  jefeContratoCuil String? @map("jefe_contrato_cuil") @db.Char(13)
-  activo           Boolean @default(true)
+  id     Int     @id @default(autoincrement())
+  codigo String  @unique
+  nombre String
+  activo Boolean @default(true)
 
-  jefeContrato         Usuario?           @relation("JefeContrato", fields: [jefeContratoCuil], references: [cuil])
+  jefes                ContratoJefe[]
   tareas               TareaCatalogo[]
   usuariosHabilitados ContratoHabilitado[]
   registrosHoras       RegistroHoras[]
