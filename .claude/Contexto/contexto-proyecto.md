@@ -1051,3 +1051,109 @@ por log de arranque de Nest; frontend 185/185 tests (incluye test nuevo de
    cada relevador por quincena y vea el cálculo por rango.
 5. Decidir si se dan de baja los deploys gratuitos de Vercel/Render (§33) ahora que la VPS con
    dominio propio está funcionando, o se dejan como respaldo.
+
+---
+
+## 36. Liquidador — Fase 2 completa: motor de cálculo real (2026-07-28/29)
+
+Todo en la misma rama sin mergear todavía, `feature/liquidacion-perfiles-masivo`, en ambos repos
+(nombre desactualizado — arrancó siendo solo el fix de asignación masiva de perfiles y terminó
+albergando toda la Fase 2). **Nada de esto está en `main` todavía.**
+
+### Perfiles de empleados: de "uno por uno" a listado completo
+
+El usuario probó la Fase 1 y pidió: la asignación de a un empleado por vez no servía con ~230
+empleados reales. Se rehizo `/liquidacion/perfiles` como un **listado completo con checkboxes**
+(paginado de a 20, buscador por nombre, filtros independientes por régimen/categoría/modalidad,
+cada uno con opción "sin asignar/sin categoría/sin modalidad" para encontrar pendientes de
+revisar) + un panel de asignación en bloque que aplica régimen/categoría/modalidad a todos los
+tildados de una (`POST /liquidacion/perfiles/masivo`, transaccional).
+
+### ADR-010 corregido: "ronda mensual" (no día) + huecos nunca implícitos
+
+El usuario encontró mal el date-picker de día de la Fase 1 ("no corresponde elegir un día, los
+ajustes son mensuales") y pidió detectar huecos. Se rediseñó como **una ronda mensual única**
+(mes/año, no día) que junta las 3 tarifas en una sola pantalla `/liquidacion/tarifas`. Nueva tabla
+`RondaTarifas { anio, mes }` registra qué períodos quedaron cargados. Si hay un hueco (se saltearon
+meses), esos meses se completan **automáticamente copiando el último valor conocido** — no hay
+otra opción para ellos (nadie puede recordar retroactivamente un valor distinto); para el mes que
+sí se está cargando, se prellena con el último valor y se puede dejar igual (copiar) o cambiar
+(cargar nuevo). Confirmado también que las 3 tarifas se ajustan siempre **juntas, en una sola
+ronda** (no por separado).
+
+### ADR-011: hallazgos reales del excel de liquidación del usuario
+
+El usuario pasó un extracto real de su excel de liquidación (columnas CATEGORÍA, HORAS TOTAL,
+HORAS CCT, TIPO, PRECIO BRUTO, TOTAL BRUTO, PRODUCTIVIDAD, GUARDIAS, Hs EXTRAS, PRESENTISMO,
+NOVEDADES, NO REMUNERATIVO, TOTAL) y se contrastó fórmula por fórmula:
+
+- **Confirmado exacto**: HORAS CCT = `min(horas, 88)`; TOTAL BRUTO = `tarifa × horas CCT`; Hs
+  EXTRAS = `horas - 88`; $$ Hs Extras = `extras × tarifa × 1.5`; PRESENTISMO = `20% × básico`.
+- **Corrección de régimen**: son **5, no 4** — se agrega **`mensualizado`** (sueldo bruto fijo
+  cargado a mano **cada quincena**, sin categoría ni fórmula de horas; sí genera presentismo). El
+  excel mostraba "Jornalizado/X Tanto" para gente con productividad extra — resultó ser solo una
+  anotación del administrativo anterior ("hay que convertir a horas"), no un régimen doble;
+  `por_tantos` sigue siendo exclusivo como ya estaba.
+- **Corrección de "por tantos"**: el monto de km **se convierte a horas equivalentes**
+  (`monto ÷ tarifa de su categoría`) y de ahí se corre la misma fórmula de jornalizado — por eso
+  **sí necesita categoría UOCRA** (ADR-009 decía que no aplicaba, estaba mal). Estas horas
+  equivalentes **reemplazan** cualquier hora real declarada, no se suman.
+- **`modalidadHoraExtra` renombrado a `modalidadPago`**: cubre horas extra **y** presentismo
+  juntos (confirmado por el texto "Hs Extra y Presentismo en B" del excel), no solo extras.
+- **Nuevo: `MontoMensualizado`** (por cuil + quincena, cambia seguido) y **`KmPorTantos`** (por
+  cuil + quincena, carga manual de km) — a diferencia de las tarifas (mensuales), estos dos son
+  **por quincena**.
+- **Nuevo: `BonoNoRemunerativo`** (por categoría + mes, opcional): bono extraordinario de UOCRA,
+  puede ser monto fijo o % **sobre la tarifa por hora** (no sobre el básico ya multiplicado).
+- La columna "NOVEDADES" del excel es solo **texto descriptivo** para el recibo, no un monto a
+  calcular.
+
+### Motor de cálculo (`CalculoService`) y pantalla "Liquidar quincena"
+
+Nueva pantalla principal `/liquidacion/quincena` (ahora la página de inicio de la sección,
+reemplaza a Categorías como default): elegís año/mes/quincena (1ra = 1 al 15, 2da = 16 a fin de
+mes), cargás inline los montos mensualizados y km por tantos que falten para esa quincena
+específica, y ves la tabla completa calculada por empleado (básico, extras, presentismo, plus de
+novedades, no remunerativo, texto de novedades, total) — con aviso de qué datos le faltan a quién
+(sin categoría/tarifa, sin monto mensualizado cargado, sin km cargado).
+
+**Alertas antes de liquidar** (pedido explícito tras probar): el usuario notó que solo veía horas
+de gente con categoría, y necesitaba distinguir "sin horas porque nadie aprobó todavía" de "sin
+horas porque nunca declaró nada" de "es fijo, no le corresponde tener horas". Se agregó una sección
+de alertas arriba de la tabla con 3 grupos: (1) empleados con horas cargadas (aprobadas o
+pendientes) que no tienen perfil de liquidación asignado, con link a Perfiles; (2) perfiles
+incompletos (falta categoría y/o modalidad de pago); (3) jornalizados con 0hs aprobadas,
+distinguiendo si tienen pendientes de aprobar vs. si nunca declararon nada en el período (a
+fijo/mensualizado/por_tantos/administrativo no se los marca, no dependen de horas reales).
+
+### Bug real encontrado y corregido: timeout de transacción con muchos empleados
+
+Al probar asignar régimen/categoría a **todos** los operarios de una (~120), la asignación fallaba
+siempre ("No se pudo asignar"). Root cause en el log del backend: `PrismaClientKnownRequestError
+P2028` — el timeout por defecto de una transacción interactiva de Prisma es **5000ms**, y con ~120
+upserts contra la base remota se pasa ese límite. Ya había pasado antes con la carga masiva de
+horas (`registros-horas.service.ts`) y se resuelve igual: pasar `{ timeout: 30000, maxWait: 10000
+}` como segunda opción de `$transaction`. Se aplicó a las 4 transacciones del módulo de liquidación
+(asignación masiva de perfiles, ronda de tarifas, montos mensualizados, km por tantos).
+
+**Nota de datos:** durante el diagnóstico se escribieron 2 filas de prueba en `PerfilLiquidacion`
+(GUERRERO ALBERTO DAVID y TORRES RAMON FERNANDO, régimen jornalizado/categoría 1/en B) — avisado
+al usuario, a revisar/corregir si no son los valores reales que corresponden. Los otros 16
+perfiles que el usuario ya había cargado con éxito (en tandas chicas, bajo el límite de 5s) no se
+tocaron.
+
+**Verificación:** backend `tsc --noEmit` limpio; frontend 201/201 tests (confirmado con re-run
+aislado que 2 fallas puntuales en una corrida fueron flakiness de entorno/paralelismo, no
+regresión real — mismo patrón ya visto antes en la sesión).
+
+**Pendiente para retomar:**
+1. Commitear y pushear todo esto (esta sección se escribió como parte de ese pedido) — ambos repos
+   siguen en `feature/liquidacion-perfiles-masivo` sin mergear a `main`.
+2. Probar en el navegador que el fix del timeout realmente resuelve la asignación masiva a todos
+   los operarios (el usuario iba a reintentar después del fix).
+3. El usuario mencionó que después de esto necesita hacer **una migración de la base de datos**
+   (no se dio detalle todavía de qué migración ni por qué — a preguntar/retomar cuando lo pida).
+4. Régimen `fijo` (tarifa×88hs) quedó confirmado como caso real distinto de `mensualizado`, pero
+   no hay ningún empleado de prueba con ese régimen todavía para validar el cálculo en vivo.
+5. `BonoNoRemunerativo` y `MontoMensualizado`/`KmPorTantos` están implementados pero sin datos de
+   prueba cargados — falta verificar el cálculo end-to-end con casos reales de cada uno.

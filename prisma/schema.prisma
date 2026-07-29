@@ -38,6 +38,8 @@ model snuempleados {
   registrosHoras       RegistroHoras[]    @relation("Operario")
   novedades            Novedad[]          @relation("NovedadOperario")
   perfilLiquidacion    PerfilLiquidacion?
+  montosMensualizados  MontoMensualizado[]
+  kmPorTantos          KmPorTantos[]
 }
 
 // ------------------------------------------------------------
@@ -178,13 +180,22 @@ model TipoNovedad {
 enum RegimenLiquidacion {
   jornalizado
   fijo
+  // Sueldo bruto fijo cargado a mano por el Liquidador cada quincena (no
+  // depende de categoría UOCRA ni de horas). Ver ADR-011.
+  mensualizado
   por_tantos
+  // Se liquida por otro circuito (fuera de esta app). Categoría UOCRA y
+  // modalidad de pago no aplican. Igual queda con PerfilLiquidacion
+  // asignado, a diferencia de un administrativo aún no revisado (que
+  // simplemente no tiene fila todavía) — ver ADR-009.
+  administrativo
 }
 
-// Cómo cobra un empleado sus horas extras: "en B" (sin descuentos, pago
-// informal) o como parte del sueldo formal (con descuentos). Es un dato fijo
-// por empleado, no por quincena.
-enum ModalidadHoraExtra {
+// Cómo cobra un empleado sus horas extras Y presentismo juntos (no por
+// separado): "en B" (sin descuentos, pago informal) o como parte del sueldo
+// formal (con descuentos). Es un dato fijo por empleado, no por quincena.
+// Renombrado desde "modalidadHoraExtra" — ver ADR-011.
+enum ModalidadPago {
   en_b
   con_descuentos
 }
@@ -193,10 +204,10 @@ enum ModalidadHoraExtra {
 // login). Un empleado sin fila acá (ej. administrativos) no aparece en el
 // panel de Liquidador — exclusión por omisión, ver ADR-009.
 model PerfilLiquidacion {
-  cuil               String              @id @db.Char(13)
-  regimen            RegimenLiquidacion
-  categoriaUocraId   Int?                @map("categoria_uocra_id")
-  modalidadHoraExtra ModalidadHoraExtra? @map("modalidad_hora_extra")
+  cuil             String             @id @db.Char(13)
+  regimen          RegimenLiquidacion
+  categoriaUocraId Int?               @map("categoria_uocra_id")
+  modalidadPago    ModalidadPago?     @map("modalidad_pago")
 
   empleado  snuempleados    @relation(fields: [cuil], references: [cuil])
   categoria CategoriaUocra? @relation(fields: [categoriaUocraId], references: [id])
@@ -209,8 +220,9 @@ model CategoriaUocra {
   nombre String  @unique
   activo Boolean @default(true)
 
-  tarifas  TarifaCategoriaUocra[]
-  perfiles PerfilLiquidacion[]
+  tarifas             TarifaCategoriaUocra[]
+  perfiles            PerfilLiquidacion[]
+  bonosNoRemunerativos BonoNoRemunerativo[]
 
   @@map("sth_categorias_uocra")
 }
@@ -255,6 +267,74 @@ model RangoKmPorTantos {
   precioPorKm  Decimal  @map("precio_por_km") @db.Decimal(12, 2)
 
   @@map("sth_rangos_km_por_tantos")
+}
+
+// Registra qué (mes, año) quedaron efectivamente cargados en la ronda mensual
+// de tarifas (categorías UOCRA + montos de novedad con plus + rangos de km +
+// bono no remunerativo, todas juntas). Garantiza que nunca haya un mes sin
+// resolver explícitamente — ver ADR-010.
+model RondaTarifas {
+  anio     Int
+  mes      Int
+  creadaEn DateTime @default(now()) @map("creada_en")
+
+  @@id([anio, mes])
+  @@map("sth_rondas_tarifas")
+}
+
+enum TipoBonoNoRemunerativo {
+  monto_fijo
+  porcentaje
+}
+
+// Bono extraordinario que UOCRA otorga de vez en cuando, por categoría — no
+// cuenta para aguinaldo ni otros cálculos legales. Si es "porcentaje", se
+// aplica sobre la tarifa por hora de la categoría (no sobre el básico ya
+// multiplicado por horas). Parte de la ronda mensual de tarifas (ADR-010),
+// pero opcional: 0 si UOCRA no anunció nada ese mes. Ver ADR-011.
+model BonoNoRemunerativo {
+  id               Int                    @id @default(autoincrement())
+  categoriaUocraId Int                    @map("categoria_uocra_id")
+  vigenteDesde     DateTime               @map("vigente_desde") @db.Date
+  tipo             TipoBonoNoRemunerativo
+  valor            Decimal                @db.Decimal(12, 2)
+
+  categoria CategoriaUocra @relation(fields: [categoriaUocraId], references: [id])
+
+  @@unique([categoriaUocraId, vigenteDesde])
+  @@map("sth_bonos_no_remunerativos")
+}
+
+// Monto bruto de un empleado "mensualizado" para una quincena puntual — a
+// diferencia de las tarifas de arriba (que valen para todo el mes), este
+// cambia seguido y se carga por quincena. Ver ADR-011.
+model MontoMensualizado {
+  cuil     String @db.Char(13)
+  anio     Int
+  mes      Int
+  quincena Int
+  monto    Decimal @db.Decimal(12, 2)
+
+  empleado snuempleados @relation(fields: [cuil], references: [cuil])
+
+  @@id([cuil, anio, mes, quincena])
+  @@map("sth_montos_mensualizados")
+}
+
+// Km totales de relevamiento de fugas de un empleado "por tantos" en una
+// quincena puntual — el Liquidador lo carga a mano (se mide en otra app, no
+// en esta). Ver ADR-009 y ADR-011.
+model KmPorTantos {
+  cuil     String  @db.Char(13)
+  anio     Int
+  mes      Int
+  quincena Int
+  kmTotal  Decimal @map("km_total") @db.Decimal(8, 2)
+
+  empleado snuempleados @relation(fields: [cuil], references: [cuil])
+
+  @@id([cuil, anio, mes, quincena])
+  @@map("sth_km_por_tantos")
 }
 
 // ------------------------------------------------------------

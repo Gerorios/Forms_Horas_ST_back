@@ -1,12 +1,14 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { LiquidacionService } from './liquidacion.service';
+import { CalculoService } from './calculo.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
-  CreateTarifaCategoriaDto,
-  CreateMontoNovedadPlusDto,
-  CreateRangoKmDto,
+  CargarRondaTarifasDto,
   UpsertPerfilLiquidacionDto,
+  UpsertPerfilesMasivoDto,
+  CargarMontosMensualizadosDto,
+  CargarKmPorTantosDto,
 } from './dto/liquidacion.dto';
 import { ToggleActivoDto } from '../admin/dto/catalogo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,7 +19,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @Roles('Admin', 'Liquidador')
 @Controller('liquidacion')
 export class LiquidacionController {
-  constructor(private service: LiquidacionService) {}
+  constructor(
+    private service: LiquidacionService,
+    private calculo: CalculoService,
+  ) {}
 
   @Get('categorias-uocra')
   getCategorias() {
@@ -39,39 +44,27 @@ export class LiquidacionController {
     return this.service.updateCategoria(id, dto);
   }
 
-  @Get('tarifas-categoria')
-  getTarifas(@Query('categoriaUocraId', new ParseIntPipe({ optional: true })) categoriaUocraId?: number) {
-    return this.service.getTarifas(categoriaUocraId);
+  // ---- Ronda mensual de tarifas (ver ADR-010) ----
+
+  @Get('tarifas/estado')
+  getEstadoTarifas() {
+    return this.service.getEstadoTarifas();
   }
 
-  @Post('tarifas-categoria')
-  createTarifa(@Body() dto: CreateTarifaCategoriaDto) {
-    return this.service.createTarifa(dto);
-  }
-
-  @Get('montos-novedad-plus')
-  getMontosNovedadPlus(@Query('tipoNovedadId', new ParseIntPipe({ optional: true })) tipoNovedadId?: number) {
-    return this.service.getMontosNovedadPlus(tipoNovedadId);
-  }
-
-  @Post('montos-novedad-plus')
-  createMontoNovedadPlus(@Body() dto: CreateMontoNovedadPlusDto) {
-    return this.service.createMontoNovedadPlus(dto);
-  }
-
-  @Get('rangos-km')
-  getRangosKm() {
-    return this.service.getRangosKm();
-  }
-
-  @Post('rangos-km')
-  createRangoKm(@Body() dto: CreateRangoKmDto) {
-    return this.service.createRangoKm(dto);
+  @Post('tarifas/ronda')
+  cargarRondaTarifas(@Body() dto: CargarRondaTarifasDto) {
+    return this.service.cargarRondaTarifas(dto);
   }
 
   @Get('perfiles')
   getPerfiles() {
     return this.service.getPerfiles();
+  }
+
+  @Post('perfiles/masivo')
+  upsertPerfilesMasivo(@Body() dto: UpsertPerfilesMasivoDto) {
+    const { cuils, ...resto } = dto;
+    return this.service.upsertPerfilesMasivo(cuils, resto);
   }
 
   @Post('perfiles/:cuil')
@@ -82,5 +75,55 @@ export class LiquidacionController {
   @Delete('perfiles/:cuil')
   deletePerfil(@Param('cuil') cuil: string) {
     return this.service.deletePerfil(cuil);
+  }
+
+  // ---- Datos variables por quincena (mensualizado / por tantos) — ver ADR-011 ----
+
+  @Get('quincena/montos-mensualizados')
+  getMontosMensualizados(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.getMontosMensualizados(anio, mes, quincena);
+  }
+
+  @Post('quincena/montos-mensualizados')
+  cargarMontosMensualizados(@Body() dto: CargarMontosMensualizadosDto) {
+    return this.service.cargarMontosMensualizados(dto);
+  }
+
+  @Get('quincena/km-por-tantos')
+  getKmPorTantos(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.getKmPorTantos(anio, mes, quincena);
+  }
+
+  @Post('quincena/km-por-tantos')
+  cargarKmPorTantos(@Body() dto: CargarKmPorTantosDto) {
+    return this.service.cargarKmPorTantos(dto);
+  }
+
+  // ---- Cálculo de la quincena ----
+
+  @Get('quincena/calculo')
+  calcularQuincena(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.calculo.calcularQuincena(anio, mes, quincena);
+  }
+
+  @Get('quincena/alertas')
+  getAlertasQuincena(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.calculo.getAlertasQuincena(anio, mes, quincena);
   }
 }

@@ -21,10 +21,21 @@ ADR-008) alcanza para esto y **no alcanza**:
 
 El panel cubre **todos los empleados activos de `snuempleados`**, tengan o no
 `Usuario`/login (la mayoría de los operarios no tienen login — ver ADR-008).
-Se excluye a los administrativos **por omisión**: solo aparecen los empleados
-a los que el Liquidador/Admin les asignó explícitamente un régimen y una
-categoría UOCRA. No se deriva de ningún campo de texto de `snuempleados`
-(frágil, fuera de nuestro control).
+La pantalla de asignación (`/liquidacion/perfiles`) muestra el listado
+**completo** de empleados activos (con paginación y búsqueda), para que el
+Liquidador los revise y clasifique a todos, uno por uno o en tandas.
+
+La exclusión final del panel de liquidación combina dos casos:
+1. **Por omisión** — el empleado todavía no tiene `PerfilLiquidacion`
+   asignado (no fue revisado todavía).
+2. **Régimen `administrativo`** — fue revisado y se confirmó explícitamente
+   que se liquida por otro circuito (fuera de esta app). A diferencia del
+   caso 1, acá sí queda una fila en `PerfilLiquidacion` — sirve para que el
+   Liquidador vea que ya lo procesó y no lo confunda con un pendiente de
+   revisar.
+
+No se deriva ningún caso de campos de texto de `snuempleados` (frágil, fuera
+de nuestro control).
 
 ### Régimen y categoría — catálogo propio
 
@@ -32,10 +43,15 @@ Se agrega una tabla **`PerfilLiquidacion`** (1:1 con `snuempleados.cuil`, no
 con `Usuario.cuil`):
 ```
 cuil (PK, FK a snuempleados)
-regimen: jornalizado | fijo | por_tantos
-categoriaUocraId (FK, nullable — no aplica a "por_tantos" hoy)
-modalidadHoraExtra: en_b | con_descuentos (nullable — ver más abajo)
+regimen: jornalizado | fijo | por_tantos | administrativo
+categoriaUocraId (FK, nullable — no aplica a "por_tantos" ni "administrativo")
+modalidadHoraExtra: en_b | con_descuentos (nullable — no aplica a "administrativo")
 ```
+
+`administrativo` se agregó como 4to valor de régimen (no como una Categoría
+UOCRA más) porque semánticamente no es una tarifa por hora — es "esta
+persona no entra en este circuito de liquidación". Con este régimen,
+categoría UOCRA y modalidad de hora extra no se piden.
 
 ### Patrón recurrente: "tarifa vigente por mes"
 
