@@ -6,7 +6,7 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 
 - **Operario** — Empleado que trabaja y cuyas horas se registran. **No carga**; solo **consulta sus propias** horas (read-only, con detalle). Requiere login para consultar (provisión de usuarios diferida).
 - **Jefe de Cuadrilla (JefeCuadrilla)** — Persona responsable que **carga** las horas del equipo (para cualquier empleado activo). Consulta **sus propias** horas y **las que cargó**. Opcionalmente puede cargar novedades, pero solo de los **tipos que le habilitaron** (ver `Tipo de novedad habilitado`, ADR-007) — sin ninguno habilitado, no ve la opción.
-- **Jefe de Contrato (JefeContrato)** — Aprueba/desaprueba, reabre y edita registros de sus contratos. También puede cargar. (3 personas)
+- **Jefe de Contrato (JefeContrato)** — Aprueba/desaprueba, reabre y edita registros de sus contratos. También puede cargar. Un contrato puede tener **varios** Jefes de Contrato (M:N, `sth_contratos_jefes`): cualquiera de ellos puede resolver — el primero que aprueba/desaprueba/reabre/corrige lo hace para todos, y queda registrado en `aprobadoPorCuil` quién fue puntualmente. Ver ADR-012.
 - **Supervisor** — Carga novedades, de cualquier tipo, sin restricción.
 - **Higiene y Seguridad (HyS)** — Aprueba específicamente las Ausencias.
 - **Admin (IT)** — Acceso total; administra catálogos y usuarios. (1 persona)
