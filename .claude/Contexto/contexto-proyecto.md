@@ -1157,3 +1157,42 @@ regresión real — mismo patrón ya visto antes en la sesión).
    no hay ningún empleado de prueba con ese régimen todavía para validar el cálculo en vivo.
 5. `BonoNoRemunerativo` y `MontoMensualizado`/`KmPorTantos` están implementados pero sin datos de
    prueba cargados — falta verificar el cálculo end-to-end con casos reales de cada uno.
+
+---
+
+## 37. PENDIENTE: redeploy de la VPS — /admin/usuarios roto en producción (2026-07-29)
+
+**Bug en producción (diagnóstico completo, fix aún NO aplicado):** en producción
+(misregistros.serytec.com.ar), Admin → Usuarios tira `Cannot read properties of null (reading
+'apellido_nombre')` y la página no carga. Root cause (via systematic-debugging, evidencia
+verificada): la VPS corre código **anterior al merge de ADR-008** (deploy 2026-07-27; los merges
+de ADR-008 y rol Liquidador a `main` fueron el 2026-07-28 13:04). El backend viejo trae `empleado`
+por relación Prisma directa en `getUsuarios`/`perfil` → devuelve `empleado: null` para usuarios
+fuera de nómina, y el frontend hace `u.empleado.apellido_nombre` sin guard (`admin/usuarios/
+page.tsx:58`). En la BD compartida hay **2 usuarios sin fila en `snuempleados`**:
+`ccastillo@laasturianasrl.com` (CASTILLO CRISTIAN, JefeCuadrilla, real — el que rompe desde que
+existe) y `liquidador@test.local` (seed de prueba, ver abajo). El código actual de `main` ya no
+tiene el bug (join a mano con fallback a `nombreFueraNomina`). Solo se cae esa página; el resto de
+producción funciona.
+
+**Fix acordado (quedó frenado a pedido del usuario, estaba presentando):** SSH a la VPS →
+`git pull` + `npm install` + build + `pm2 restart` en ambos repos (`forms-horas-back`,
+`forms-horas-front`). El usuario pidió **aviso antes de cada `pm2 restart`** (corte breve).
+Esto lleva a producción ADR-008 + Liquidador Fase 1; la Fase 2 sigue en la rama
+`feature/liquidacion-perfiles-masivo` sin mergear. ⚠️ `docs/infraestructura-produccion.md`
+(gitignored, con IP/SSH/rutas) **no está en esta copia del repo** — pedir los datos de acceso.
+
+**Seed de prueba nuevo (reversible, borrar al terminar de testear):** usuario
+`liquidador@test.local` / `liq12345`, rol Liquidador, fuera de nómina (CUIL ficticio 20999999991,
+nombre "Liquidador de Prueba") — creado para testear la Fase 2 en local. Como la BD es compartida,
+también es visible desde producción.
+
+**Migración a BD dedicada: evaluada y en pausa (decisión del usuario).** IT ofreció una BD nueva
+exclusiva para este sistema. Se analizó con grilling: el condicionante es `snuempleados` (el ERP
+la sincroniza solo en `testing`). Opciones vistas: (a) IT sincroniza `snuempleados` también en la
+BD nueva → independencia real y conserva FKs (pedirle a IT: insert/update + soft-delete vía
+`borrado`, nunca DELETE físico ni DROP); (b) vista SQL apuntando a `testing.snuempleados` (mismo
+servidor) → funciona pero pierde las FKs a empleados y no independiza nada. El usuario frenó por
+la pérdida de FKs (opción b); se le explicó que (a) las conserva. **Decisión: no hacer nada por
+ahora.** Si se retoma, el camino recomendado es (a) con mudanza completa de datos (estructura +
+maestros + transaccionales).
