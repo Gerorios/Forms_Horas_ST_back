@@ -1228,3 +1228,34 @@ executing-plans).
 (`claude-code-admin@forms-horas-vps`) en el VPS de producción 179.198.99.30 — se le estaba
 pidiendo a Rodrigo Carrazana agregarla a `authorized_keys`; al probar, verificar espacio en
 disco (`df -h /`) para dimensionar las fotos de tickets.
+
+## 39. MIGRACIÓN EJECUTADA: producción en BD dedicada `Horas_Sertec` (2026-07-31)
+
+**Hecha en vivo con grilling previo (6 decisiones) y corte de ~4 minutos.** Producción dejó de usar
+la BD compartida `testing` y ahora corre contra **`Horas_Sertec`** (mismo servidor MySQL
+191.101.235.7, usuario `root_SerTec` — credenciales en el `.env` del VPS, NO commiteadas).
+
+- **Disparador:** IT cumplió la "opción (a)" del §37 — `snuempleados` se sincroniza ahora en
+  `Horas_Sertec` (verificado: 231 filas, `graba` al 31/07, estructura idéntica con `borrado`;
+  `testing` quedó en 230 filas al 27/07, o sea el ERP ya apunta a la nueva).
+- **Qué se migró:** las **24 tablas `sth_` completas con histórico** (310 registros de horas, 168
+  auditorías, 70 usuarios, todos los maestros/tarifas — 1 MB total), copiadas con backend detenido
+  y verificación de conteos origen=destino tabla por tabla (script `migrar-sth.cjs`, corrió desde
+  la máquina local con doble conexión porque `root_SerTec` no puede leer `testing`).
+- **Secuencia ejecutada:** backup `.env` → `pm2 stop forms-horas-back` → copia (segundos) →
+  `DATABASE_URL` nuevo (⚠️ el `#` de la contraseña va URL-encodeado como `%23`) → `pm2 restart` →
+  verificado pool de conexiones del VPS contra `Horas_Sertec` vía SHOW PROCESSLIST.
+- **Rollback disponible:** `testing` quedó intacta + `.env.bak-testing-20260731` en el VPS —
+  volver atrás es restaurar ese archivo y reiniciar pm2.
+- **Nuevos roles de las bases:** `Horas_Sertec` = producción (solo datos reales); `testing` =
+  pruebas/desarrollo (el `.env` local sigue apuntando ahí, sin tocar). ⚠️ Su `snuempleados` ya no
+  se sincroniza — foto congelada al 27/07, suficiente para pruebas.
+- **Regla nueva de esquema:** todo cambio de DDL (ej. tablas del módulo combustible, ADR-013) se
+  aplica en LAS DOS bases: primero `testing` (probar), después `Horas_Sertec` (deploy).
+- **Pendiente coordinado:** los consumidores externos que lean tablas `sth_` (preliquidador de
+  Rodrigo / tableros PBI) deben repuntar a `Horas_Sertec` — quedó a cargo del usuario/Rodrigo/IT.
+  Decisión consciente: producción usa `root_SerTec` (admin de esa BD); pedir a IT un usuario
+  dedicado con permisos solo sobre `Horas_Sertec` quedó como mejora opcional.
+- **Además:** §37 resuelto antes de esto — Rodrigo ya había redeployado producción (main al día,
+  bug /admin/usuarios arreglado), y el acceso SSH propio quedó operativo
+  (`ssh -i ~/.ssh/forms_horas_vps2 coworker@179.198.99.30`, ver memoria vps-accesos).
