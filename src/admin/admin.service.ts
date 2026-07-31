@@ -282,6 +282,33 @@ export class AdminService {
     return { creados, omitidos };
   }
 
+  // --- Estaciones de servicio (ADR-013) ---
+  getEstacionesServicio() {
+    return this.prisma.estacionServicio.findMany({ orderBy: { nombre: 'asc' } });
+  }
+  crearEstacionServicio(dto: { nombre: string; localidad?: string }) {
+    return this.prisma.estacionServicio.create({ data: { nombre: dto.nombre, localidad: dto.localidad } });
+  }
+  actualizarEstacionServicio(id: number, dto: { nombre?: string; localidad?: string }) {
+    return this.prisma.estacionServicio.update({ where: { id }, data: dto });
+  }
+  toggleEstacionServicio(id: number, activo: boolean) {
+    return this.prisma.estacionServicio.update({ where: { id }, data: { activo } });
+  }
+  // --- Tipos de combustible (ADR-013) ---
+  getTiposCombustible() {
+    return this.prisma.tipoCombustible.findMany({ orderBy: { nombre: 'asc' } });
+  }
+  crearTipoCombustible(dto: { nombre: string }) {
+    return this.prisma.tipoCombustible.create({ data: { nombre: dto.nombre } });
+  }
+  actualizarTipoCombustible(id: number, dto: { nombre?: string }) {
+    return this.prisma.tipoCombustible.update({ where: { id }, data: dto });
+  }
+  toggleTipoCombustible(id: number, activo: boolean) {
+    return this.prisma.tipoCombustible.update({ where: { id }, data: { activo } });
+  }
+
   private async generarEmail(legajo: number, cuil: string): Promise<string> {
     const base = legajo && legajo > 0 ? String(legajo) : cuil;
     let email = `${base}@st.local`;
