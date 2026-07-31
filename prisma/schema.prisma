@@ -149,8 +149,9 @@ model TareaCatalogo {
   nombre     String
   activo     Boolean @default(true)
 
-  contrato  Contrato        @relation(fields: [contratoId], references: [id])
-  registros RegistroTarea[]
+  contrato           Contrato                @relation(fields: [contratoId], references: [id])
+  registros          RegistroTarea[]
+  cargasCombustible  CargaCombustibleTarea[]
 
   @@map("sth_tareas_catalogo")
 }
@@ -161,7 +162,8 @@ model Movil {
   descripcion   String?
   activo        Boolean @default(true)
 
-  registros RegistroMovil[]
+  registros          RegistroMovil[]
+  cargasCombustible  CargaCombustible[]
 
   @@map("sth_moviles")
 }
@@ -170,7 +172,8 @@ model Provincia {
   id     Int    @id @default(autoincrement())
   nombre String @unique
 
-  registros RegistroHoras[]
+  registros          RegistroHoras[]
+  cargasCombustible  CargaCombustible[]
 
   @@map("sth_provincias")
 }
@@ -455,6 +458,84 @@ model Novedad {
 }
 
 // ------------------------------------------------------------
+// COMBUSTIBLE
+// ------------------------------------------------------------
+enum MedioPagoCombustible {
+  cuenta_corriente
+  caja
+}
+
+enum EstadoCargaCombustible {
+  activa
+  anulada
+}
+
+model EstacionServicio {
+  id        Int     @id @default(autoincrement())
+  nombre    String  @unique
+  localidad String?
+  activo    Boolean @default(true)
+
+  cargas CargaCombustible[]
+
+  @@map("sth_estaciones_servicio")
+}
+
+model TipoCombustible {
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activo Boolean @default(true)
+
+  cargas CargaCombustible[]
+
+  @@map("sth_tipos_combustible")
+}
+
+model CargaCombustible {
+  id                Int                    @id @default(autoincrement())
+  fechaCarga        DateTime               @map("fecha_carga") @db.Date
+  cargadoPorCuil    String                 @map("cargado_por_cuil") @db.Char(13)
+  movilId           Int                    @map("movil_id")
+  litros            Decimal                @db.Decimal(8, 2)
+  monto             Decimal                @db.Decimal(12, 2)
+  km                Int
+  medioPago         MedioPagoCombustible   @map("medio_pago")
+  nroComprobante    String                 @map("nro_comprobante") @db.VarChar(50)
+  estacionId        Int                    @map("estacion_id")
+  tipoCombustibleId Int                    @map("tipo_combustible_id")
+  provinciaId       Int                    @map("provincia_id")
+  observaciones     String?                @db.Text
+  fotoPath          String                 @map("foto_path") @db.VarChar(255)
+  estado            EstadoCargaCombustible @default(activa)
+  motivoAnulacion   String?                @map("motivo_anulacion") @db.Text
+  anuladaPorCuil    String?                @map("anulada_por_cuil") @db.Char(13)
+  anuladaEn         DateTime?              @map("anulada_en")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  movil           Movil                   @relation(fields: [movilId], references: [id])
+  estacion        EstacionServicio        @relation(fields: [estacionId], references: [id])
+  tipoCombustible TipoCombustible         @relation(fields: [tipoCombustibleId], references: [id])
+  provincia       Provincia               @relation(fields: [provinciaId], references: [id])
+  tareas          CargaCombustibleTarea[]
+
+  @@index([cargadoPorCuil, fechaCarga])
+  @@index([movilId, fechaCarga])
+  @@map("sth_cargas_combustible")
+}
+
+model CargaCombustibleTarea {
+  cargaId Int @map("carga_id")
+  tareaId Int @map("tarea_id")
+
+  carga CargaCombustible @relation(fields: [cargaId], references: [id])
+  tarea TareaCatalogo    @relation(fields: [tareaId], references: [id])
+
+  @@id([cargaId, tareaId])
+  @@map("sth_carga_combustible_tareas")
+}
+
+// ------------------------------------------------------------
 // AUDITORÍA
 // ------------------------------------------------------------
 enum AccionAuditoria {
@@ -463,6 +544,7 @@ enum AccionAuditoria {
   aprobar
   desaprobar
   reabrir
+  anular
 }
 
 model Auditoria {
