@@ -7,6 +7,10 @@ import { TICKET_STORAGE } from './storage/ticket-storage.interface';
 
 @Module({
   controllers: [CargasCombustibleController],
-  providers: [CargasCombustibleService, ExtraccionTicketService, { provide: TICKET_STORAGE, useClass: FsTicketStorage }],
+  providers: [
+    CargasCombustibleService,
+    ExtraccionTicketService,
+    { provide: TICKET_STORAGE, useFactory: () => new FsTicketStorage() },
+  ],
 })
 export class CargasCombustibleModule {}

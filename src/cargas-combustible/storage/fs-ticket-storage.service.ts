@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
@@ -38,8 +38,11 @@ export class FsTicketStorage implements TicketStorage {
       const buffer = await readFile(absoluto);
       const ext = path.split('.').pop() ?? '';
       return { buffer, mimetype: MIME_POR_EXT[ext] ?? 'application/octet-stream' };
-    } catch {
-      throw new NotFoundException('Ticket no encontrado');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        throw new NotFoundException('Ticket no encontrado');
+      }
+      throw new InternalServerErrorException('Error al leer el ticket');
     }
   }
 

@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength, Min } from 'class-validator';
+import { parseJsonArraySeguro } from './parse-json-array-seguro';
 
 export class CreateCargaCombustibleDto {
   @IsDateString() fechaCarga: string;
@@ -13,13 +14,6 @@ export class CreateCargaCombustibleDto {
   @Type(() => Number) @IsInt() tipoCombustibleId: number;
   @Type(() => Number) @IsInt() provinciaId: number;
   @IsOptional() @IsString() observaciones?: string;
-  @Transform(({ value }) => {
-    if (typeof value !== 'string') return value;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  })
+  @Transform(parseJsonArraySeguro)
   @IsArray() @ArrayNotEmpty() @IsInt({ each: true }) tareaIds: number[];
 }
