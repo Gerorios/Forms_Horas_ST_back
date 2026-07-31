@@ -71,7 +71,7 @@ export class CargasCombustibleService {
       where: {
         ...alcance,
         ...(filtro.desde || filtro.hasta ? { fechaCarga: { ...(filtro.desde && { gte: new Date(filtro.desde) }), ...(filtro.hasta && { lte: new Date(filtro.hasta) }) } } : {}),
-        ...(filtro.movilId && { movilId: filtro.movilId }),
+        ...(filtro.movilId !== undefined && { movilId: filtro.movilId }),
         ...(filtro.estado && { estado: filtro.estado }),
       },
       include: this.includeDetalle,
@@ -79,14 +79,12 @@ export class CargasCombustibleService {
     });
   }
 
-  private async puedeVer(carga: { cargadoPorCuil: string; tareas: { tarea?: { contratoId?: number } | null; tareaId?: number }[] }, usuario: { cuil: string; rol: string }) {
+  private async puedeVer(carga: { cargadoPorCuil: string; tareas: { tarea?: { contrato?: { id: number } | null } | null }[] }, usuario: { cuil: string; rol: string }) {
     if (usuario.rol === 'Admin') return true;
     if (usuario.rol === 'JefeContrato') {
       const contratos = await this.prisma.contratoJefe.findMany({ where: { usuarioCuil: usuario.cuil }, select: { contratoId: true } });
       const set = new Set(contratos.map((c) => c.contratoId));
-      const tareaIds = carga.tareas.map((t) => t.tareaId).filter((x): x is number => x !== undefined);
-      const tareas = await this.prisma.tareaCatalogo.findMany({ where: { id: { in: tareaIds } }, select: { contratoId: true } });
-      return tareas.some((t) => set.has(t.contratoId));
+      return carga.tareas.some((t) => t.tarea?.contrato && set.has(t.tarea.contrato.id));
     }
     return carga.cargadoPorCuil === usuario.cuil;
   }
