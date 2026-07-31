@@ -1,3 +1,4 @@
+import { Test } from '@nestjs/testing';
 import { ExtraccionTicketService } from './extraccion-ticket.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -30,6 +31,35 @@ describe('ExtraccionTicketService', () => {
   it('si la API tira error devuelve ilegible (degradación)', async () => {
     const clienteMock = { messages: { create: jest.fn().mockRejectedValue(new Error('overloaded')) } };
     const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+    expect(await service.extraer(foto)).toEqual({ legible: false, sugerencias: null });
+  });
+
+  it('parsea la respuesta aunque venga envuelta en fences con newline final', async () => {
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '```json\n{"legible":true,"litros":40.5,"monto":52000,"fecha":"2026-07-30","nroComprobante":"0001-00001234","tipoCombustible":"gasoil","estacion":"YPF Centenario"}\n```\n' }],
+    }) } };
+    const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.legible).toBe(true);
+    expect(r.sugerencias).toEqual({
+      litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
+      nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
+    });
+  });
+});
+
+describe('ExtraccionTicketService — resolución de dependencias vía Nest DI', () => {
+  it('resuelve sin ANTHROPIC_CLIENT registrado (no debe tirar UnknownDependenciesException)', async () => {
+    const prismaMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [ExtraccionTicketService, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+
+    const service = moduleRef.get(ExtraccionTicketService);
+    expect(service).toBeInstanceOf(ExtraccionTicketService);
     expect(await service.extraer(foto)).toEqual({ legible: false, sugerencias: null });
   });
 });

@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+
+export const ANTHROPIC_CLIENT = 'ANTHROPIC_CLIENT';
 
 const PROMPT = `Analizá esta foto de un ticket/remito/factura de una estación de servicio argentina.
 Respondé SOLO un JSON (sin markdown) con esta forma exacta:
@@ -26,7 +28,7 @@ export class ExtraccionTicketService {
   private readonly logger = new Logger(ExtraccionTicketService.name);
   private readonly cliente?: Anthropic;
 
-  constructor(private prisma: PrismaService, cliente?: Anthropic) {
+  constructor(private prisma: PrismaService, @Optional() @Inject(ANTHROPIC_CLIENT) cliente?: Anthropic) {
     this.cliente = cliente ?? (process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : undefined);
   }
 
@@ -43,7 +45,7 @@ export class ExtraccionTicketService {
       });
       const texto = respuesta.content.find((b) => b.type === 'text');
       if (!texto || texto.type !== 'text') return { legible: false, sugerencias: null };
-      const json = JSON.parse(texto.text.replace(/^```json?\s*|\s*```$/g, ''));
+      const json = JSON.parse(texto.text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
       if (!json.legible) return { legible: false, sugerencias: null };
 
       const [estaciones, tipos] = await Promise.all([
