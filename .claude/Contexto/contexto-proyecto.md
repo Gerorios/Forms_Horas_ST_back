@@ -1259,3 +1259,31 @@ la BD compartida `testing` y ahora corre contra **`Horas_Sertec`** (mismo servid
 - **Además:** §37 resuelto antes de esto — Rodrigo ya había redeployado producción (main al día,
   bug /admin/usuarios arreglado), y el acceso SSH propio quedó operativo
   (`ssh -i ~/.ssh/forms_horas_vps2 coworker@179.198.99.30`, ver memoria vps-accesos).
+
+## 40. Módulo Carga de Combustible IMPLEMENTADO — ramas listas para merge (2026-07-31)
+
+**Plan ejecutado completo** (12 tasks, subagent-driven con revisión por task + revisión final de
+rama por repo). Ramas `feature/modulo-combustible` en ambos repos, con draft PRs abiertos.
+
+- **Backend** (12 commits sobre main): schema Prisma + DDL manual (`docs/sql/2026-07-30-cargas-
+  combustible.sql`, **ya aplicado en `testing`**, ⚠️ pendiente aplicarlo en `Horas_Sertec` al
+  deployar), catálogos admin/catalogos de estaciones y tipos de combustible, `TicketStorage` en
+  filesystem (token DI + useFactory), módulo cargas-combustible completo (alta multipart con foto
+  obligatoria, listado por rol, detalle, foto autenticada, edición con diff de auditoría simétrico,
+  anulación con motivo), extracción IA (`claude-haiku-4-5`, solo sugiere, degrada sin API key).
+  29 tests jest (los primeros del backend), tsc y build verdes.
+- **Frontend** (7 commits sobre main): tipos/hooks/nav, páginas admin de ambos catálogos, form
+  foto-first con sugerencias IA (badges con refs puras), advertencia blanda de km, listado/detalle
+  con visor de ticket, edición completa (incl. móvil/tareas) y anulación. 222 tests vitest, tsc y
+  build verdes (2 flaky preexistentes ajenos al módulo, re-run OK).
+- **Hallazgos clave de las revisiones** (ya corregidos): 2 bugs Critical de DI que dejaban la app
+  sin bootear (cliente Anthropic y FsTicketStorage con useClass — ambos venían del código del plan;
+  ahora hay test de DI del módulo real como regresión), JSON.parse sin guard en ambos DTOs,
+  auditoría asimétrica, race de sugerencias IA, `leer()` que mapeaba todo error a 404 (ahora solo
+  ENOENT).
+- **Pendientes para el deploy** (checklist Task 12): aplicar el SQL en `Horas_Sertec`; crear
+  `TICKETS_DIR` en el VPS (writable por el servicio, incluido en backup) y setear la env;
+  `ANTHROPIC_API_KEY` opcional; seed de estaciones reales vía UI de admin; **e2e manual en browser
+  pendiente** (3 roles, y el flujo IA con/sin API key — no se pudo automatizar en esta sesión).
+- Minors diferidos documentados en los PRs (foto huérfana si falla la transacción de crear,
+  P2002→500 en catálogos —patrón preexistente—, formato moneda, tests de permisos de página FE).
