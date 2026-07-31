@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, Request, Res, UploadedFile, UseGuards, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request, Res, UploadedFile, UseGuards, UseInterceptors, BadRequestException } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -6,6 +6,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CargasCombustibleService } from './cargas-combustible.service';
 import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
+import { UpdateCargaCombustibleDto } from './dto/update-carga-combustible.dto';
+import { AnularCargaDto } from './dto/anular-carga.dto';
 import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
@@ -48,5 +50,18 @@ export class CargasCombustibleController {
     res.setHeader('Content-Type', mimetype);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(buffer);
+  }
+
+  @Patch(':id')
+  @Roles('JefeCuadrilla', 'Admin')
+  @UseInterceptors(FileInterceptor('foto', { limits: { fileSize: MAX_FOTO_BYTES } }))
+  editar(@Param('id', ParseIntPipe) id: number, @UploadedFile() foto: Express.Multer.File | undefined, @Body() dto: UpdateCargaCombustibleDto, @Request() req) {
+    return this.service.editar(id, dto, foto && { buffer: foto.buffer, mimetype: foto.mimetype }, { cuil: req.user.cuil, rol: req.user.rol });
+  }
+
+  @Patch(':id/anular')
+  @Roles('JefeCuadrilla', 'Admin')
+  anular(@Param('id', ParseIntPipe) id: number, @Body() dto: AnularCargaDto, @Request() req) {
+    return this.service.anular(id, dto.motivo, { cuil: req.user.cuil, rol: req.user.rol });
   }
 }

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CargasCombustibleService } from './cargas-combustible.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TICKET_STORAGE } from './storage/ticket-storage.interface';
@@ -104,6 +104,50 @@ describe('CargasCombustibleService', () => {
       const r = await service.ticket(1, { cuil: '20-1-1', rol: 'JefeCuadrilla' });
       expect(storageMock.leer).toHaveBeenCalledWith('2026/07/a.jpg');
       expect(r.mimetype).toBe('image/jpeg');
+    });
+  });
+
+  describe('editar / anular', () => {
+    const usuario = { cuil: '20-1-1', rol: 'JefeCuadrilla' };
+    const cargaExistente = {
+      id: 1, cargadoPorCuil: '20-1-1', estado: 'activa', litros: 40, monto: 50000, km: 100,
+      fotoPath: '2026/07/a.jpg', tareas: [{ tareaId: 10 }],
+    };
+
+    beforeEach(() => {
+      prismaMock.cargaCombustible.findUnique.mockResolvedValue(cargaExistente);
+      prismaMock.cargaCombustible.update = jest.fn().mockResolvedValue({ ...cargaExistente, litros: 45 });
+    });
+
+    it('edita campos y audita el diff', async () => {
+      await service.editar(1, { litros: 45 }, undefined, usuario);
+      expect(prismaMock.cargaCombustible.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 1 }, data: expect.objectContaining({ litros: 45 }),
+      }));
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ accion: 'editar', registroId: 1 }),
+      }));
+    });
+
+    it('rechaza editar una carga anulada', async () => {
+      prismaMock.cargaCombustible.findUnique.mockResolvedValue({ ...cargaExistente, estado: 'anulada' });
+      await expect(service.editar(1, { litros: 45 }, undefined, usuario)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rechaza editar una carga ajena (no Admin)', async () => {
+      prismaMock.cargaCombustible.findUnique.mockResolvedValue({ ...cargaExistente, cargadoPorCuil: 'otro' });
+      await expect(service.editar(1, { litros: 45 }, undefined, usuario)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('anula con motivo y audita', async () => {
+      await service.anular(1, 'Carga duplicada', usuario);
+      expect(prismaMock.cargaCombustible.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({ estado: 'anulada', motivoAnulacion: 'Carga duplicada', anuladaPorCuil: '20-1-1' }),
+      }));
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ accion: 'anular' }),
+      }));
     });
   });
 });

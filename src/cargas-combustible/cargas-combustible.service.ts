@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { PrismaService } from '../prisma/prisma.service';
 import { TICKET_STORAGE, TicketStorage } from './storage/ticket-storage.interface';
 import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
+import { UpdateCargaCombustibleDto } from './dto/update-carga-combustible.dto';
 import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
 @Injectable()
@@ -99,5 +100,54 @@ export class CargasCombustibleService {
   async ticket(id: number, usuario: { cuil: string; rol: string }) {
     const carga = await this.detalle(id, usuario);
     return this.storage.leer(carga.fotoPath);
+  }
+
+  private puedeModificar(carga: { cargadoPorCuil: string; estado: string }, usuario: { cuil: string; rol: string }) {
+    if (carga.estado !== 'activa') throw new BadRequestException('La carga está anulada');
+    if (usuario.rol !== 'Admin' && carga.cargadoPorCuil !== usuario.cuil) throw new ForbiddenException();
+  }
+
+  async editar(id: number, dto: UpdateCargaCombustibleDto, foto: { buffer: Buffer; mimetype: string } | undefined, usuario: { cuil: string; rol: string }) {
+    const carga = await this.prisma.cargaCombustible.findUnique({ where: { id }, include: { tareas: true } });
+    if (!carga) throw new NotFoundException('Carga de combustible no encontrada');
+    this.puedeModificar(carga, usuario);
+    if (dto.tareaIds) await this.validarTareasHabilitadas(dto.tareaIds, usuario.rol === 'Admin' ? carga.cargadoPorCuil : usuario.cuil);
+
+    const data: Record<string, unknown> = {};
+    for (const campo of ['movilId', 'litros', 'monto', 'km', 'medioPago', 'nroComprobante', 'estacionId', 'tipoCombustibleId', 'provinciaId', 'observaciones'] as const) {
+      if (dto[campo] !== undefined) data[campo] = dto[campo];
+    }
+    if (dto.fechaCarga !== undefined) data.fechaCarga = new Date(dto.fechaCarga);
+    if (foto) {
+      if (foto.mimetype !== 'image/jpeg' && foto.mimetype !== 'image/png') throw new BadRequestException('La foto debe ser JPEG o PNG');
+      data.fotoPath = await this.storage.guardar(foto.buffer, foto.mimetype); // la anterior se conserva como respaldo
+    }
+    if (dto.tareaIds) data.tareas = { deleteMany: {}, createMany: { data: dto.tareaIds.map((tareaId) => ({ tareaId })) } };
+
+    return this.prisma.$transaction(async (tx) => {
+      const actualizada = await tx.cargaCombustible.update({ where: { id }, data });
+      await tx.auditoria.create({ data: {
+        tabla: 'sth_cargas_combustible', registroId: id, usuarioCuil: usuario.cuil, accion: 'editar',
+        valorAnterior: JSON.stringify({ litros: carga.litros, monto: carga.monto, km: carga.km, fotoPath: carga.fotoPath, tareaIds: carga.tareas.map((t) => t.tareaId) }),
+        valorNuevo: JSON.stringify({ ...data, tareas: undefined, tareaIds: dto.tareaIds }),
+      }});
+      return actualizada;
+    });
+  }
+
+  async anular(id: number, motivo: string, usuario: { cuil: string; rol: string }) {
+    const carga = await this.prisma.cargaCombustible.findUnique({ where: { id }, include: { tareas: true } });
+    if (!carga) throw new NotFoundException('Carga de combustible no encontrada');
+    this.puedeModificar(carga, usuario);
+    return this.prisma.$transaction(async (tx) => {
+      const anulada = await tx.cargaCombustible.update({ where: { id }, data: {
+        estado: 'anulada', motivoAnulacion: motivo, anuladaPorCuil: usuario.cuil, anuladaEn: new Date(),
+      }});
+      await tx.auditoria.create({ data: {
+        tabla: 'sth_cargas_combustible', registroId: id, usuarioCuil: usuario.cuil, accion: 'anular',
+        campo: 'estado', valorAnterior: 'activa', valorNuevo: 'anulada',
+      }});
+      return anulada;
+    });
   }
 }
