@@ -15,7 +15,8 @@ describe('CargasCombustibleService', () => {
   const prismaMock: any = {
     tareaCatalogo: { findMany: jest.fn() },
     contratoHabilitado: { findMany: jest.fn() },
-    cargaCombustible: { create: jest.fn(), findFirst: jest.fn() },
+    contratoJefe: { findMany: jest.fn() },
+    cargaCombustible: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
@@ -72,5 +73,37 @@ describe('CargasCombustibleService', () => {
   it('ultimoKm devuelve null si el móvil no tiene cargas', async () => {
     prismaMock.cargaCombustible.findFirst.mockResolvedValue(null);
     expect(await service.ultimoKm(1)).toEqual({ km: null, fechaCarga: null });
+  });
+
+  describe('listar / detalle / ticket', () => {
+    it('JefeCuadrilla solo ve sus propias cargas', async () => {
+      prismaMock.cargaCombustible.findMany.mockResolvedValue([]);
+      await service.listar({}, { cuil: '20-1-1', rol: 'JefeCuadrilla' });
+      expect(prismaMock.cargaCombustible.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ cargadoPorCuil: '20-1-1' }),
+      }));
+    });
+
+    it('JefeContrato ve cargas con tareas de sus contratos', async () => {
+      prismaMock.contratoJefe.findMany.mockResolvedValue([{ contratoId: 5 }]);
+      prismaMock.cargaCombustible.findMany.mockResolvedValue([]);
+      await service.listar({}, { cuil: '20-2-2', rol: 'JefeContrato' });
+      expect(prismaMock.cargaCombustible.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ tareas: { some: { tarea: { contratoId: { in: [5] } } } } }),
+      }));
+    });
+
+    it('detalle niega acceso a un JefeCuadrilla ajeno', async () => {
+      prismaMock.cargaCombustible.findUnique.mockResolvedValue({ id: 1, cargadoPorCuil: 'otro', tareas: [] });
+      await expect(service.detalle(1, { cuil: '20-1-1', rol: 'JefeCuadrilla' })).rejects.toThrow(ForbiddenException);
+    });
+
+    it('ticket devuelve el buffer del storage', async () => {
+      prismaMock.cargaCombustible.findUnique.mockResolvedValue({ id: 1, cargadoPorCuil: '20-1-1', fotoPath: '2026/07/a.jpg', tareas: [] });
+      storageMock.leer.mockResolvedValue({ buffer: Buffer.from('img'), mimetype: 'image/jpeg' });
+      const r = await service.ticket(1, { cuil: '20-1-1', rol: 'JefeCuadrilla' });
+      expect(storageMock.leer).toHaveBeenCalledWith('2026/07/a.jpg');
+      expect(r.mimetype).toBe('image/jpeg');
+    });
   });
 });

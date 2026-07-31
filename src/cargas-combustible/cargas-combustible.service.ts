@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TICKET_STORAGE, TicketStorage } from './storage/ticket-storage.interface';
 import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
+import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
 @Injectable()
 export class CargasCombustibleService {
@@ -45,5 +46,60 @@ export class CargasCombustibleService {
       select: { km: true, fechaCarga: true },
     });
     return ultima ? { km: ultima.km, fechaCarga: ultima.fechaCarga } : { km: null, fechaCarga: null };
+  }
+
+  private readonly includeDetalle = {
+    movil: { select: { id: true, identificador: true } },
+    estacion: { select: { id: true, nombre: true } },
+    tipoCombustible: { select: { id: true, nombre: true } },
+    provincia: { select: { id: true, nombre: true } },
+    tareas: { include: { tarea: { select: { id: true, nombre: true, contrato: { select: { id: true, codigo: true } } } } } },
+  } as const;
+
+  private async whereAlcance(usuario: { cuil: string; rol: string }) {
+    if (usuario.rol === 'Admin') return {};
+    if (usuario.rol === 'JefeContrato') {
+      const contratos = await this.prisma.contratoJefe.findMany({ where: { usuarioCuil: usuario.cuil }, select: { contratoId: true } });
+      return { tareas: { some: { tarea: { contratoId: { in: contratos.map((c) => c.contratoId) } } } } };
+    }
+    return { cargadoPorCuil: usuario.cuil };
+  }
+
+  async listar(filtro: FiltroCargasDto, usuario: { cuil: string; rol: string }) {
+    const alcance = await this.whereAlcance(usuario);
+    return this.prisma.cargaCombustible.findMany({
+      where: {
+        ...alcance,
+        ...(filtro.desde || filtro.hasta ? { fechaCarga: { ...(filtro.desde && { gte: new Date(filtro.desde) }), ...(filtro.hasta && { lte: new Date(filtro.hasta) }) } } : {}),
+        ...(filtro.movilId && { movilId: filtro.movilId }),
+        ...(filtro.estado && { estado: filtro.estado }),
+      },
+      include: this.includeDetalle,
+      orderBy: [{ fechaCarga: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  private async puedeVer(carga: { cargadoPorCuil: string; tareas: { tarea?: { contratoId?: number } | null; tareaId?: number }[] }, usuario: { cuil: string; rol: string }) {
+    if (usuario.rol === 'Admin') return true;
+    if (usuario.rol === 'JefeContrato') {
+      const contratos = await this.prisma.contratoJefe.findMany({ where: { usuarioCuil: usuario.cuil }, select: { contratoId: true } });
+      const set = new Set(contratos.map((c) => c.contratoId));
+      const tareaIds = carga.tareas.map((t) => t.tareaId).filter((x): x is number => x !== undefined);
+      const tareas = await this.prisma.tareaCatalogo.findMany({ where: { id: { in: tareaIds } }, select: { contratoId: true } });
+      return tareas.some((t) => set.has(t.contratoId));
+    }
+    return carga.cargadoPorCuil === usuario.cuil;
+  }
+
+  async detalle(id: number, usuario: { cuil: string; rol: string }) {
+    const carga = await this.prisma.cargaCombustible.findUnique({ where: { id }, include: this.includeDetalle });
+    if (!carga) throw new NotFoundException('Carga de combustible no encontrada');
+    if (!(await this.puedeVer(carga as any, usuario))) throw new ForbiddenException();
+    return carga;
+  }
+
+  async ticket(id: number, usuario: { cuil: string; rol: string }) {
+    const carga = await this.detalle(id, usuario);
+    return this.storage.leer(carga.fotoPath);
   }
 }

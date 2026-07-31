@@ -1,10 +1,12 @@
-import { Body, Controller, Get, ParseIntPipe, Post, Query, Request, UploadedFile, UseGuards, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, Request, Res, UploadedFile, UseGuards, UseInterceptors, BadRequestException } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CargasCombustibleService } from './cargas-combustible.service';
 import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
+import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
 
@@ -25,5 +27,26 @@ export class CargasCombustibleController {
   @Roles('JefeCuadrilla', 'Admin')
   ultimoKm(@Query('movilId', ParseIntPipe) movilId: number) {
     return this.service.ultimoKm(movilId);
+  }
+
+  @Get()
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  listar(@Query() filtro: FiltroCargasDto, @Request() req) {
+    return this.service.listar(filtro, { cuil: req.user.cuil, rol: req.user.rol });
+  }
+
+  @Get(':id')
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  detalle(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    return this.service.detalle(id, { cuil: req.user.cuil, rol: req.user.rol });
+  }
+
+  @Get(':id/ticket')
+  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  async ticket(@Param('id', ParseIntPipe) id: number, @Request() req, @Res() res: Response) {
+    const { buffer, mimetype } = await this.service.ticket(id, { cuil: req.user.cuil, rol: req.user.rol });
+    res.setHeader('Content-Type', mimetype);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(buffer);
   }
 }
