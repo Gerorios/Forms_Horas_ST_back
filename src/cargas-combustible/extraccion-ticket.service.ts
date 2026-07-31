@@ -32,9 +32,9 @@ export class ExtraccionTicketService {
     this.cliente = cliente ?? (process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : undefined);
   }
 
-  async extraer(foto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' }): Promise<ExtraccionTicket> {
-    if (!this.cliente) return { legible: false, sugerencias: null };
-    try {
+  // Proveedor primario: Anthropic. Alternativo: OpenAI (OPENAI_API_KEY), mismo contrato y degradación.
+  private async llamarModelo(foto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' }): Promise<string | null> {
+    if (this.cliente) {
       const respuesta = await this.cliente.messages.create({
         model: 'claude-haiku-4-5',
         max_tokens: 512,
@@ -44,8 +44,35 @@ export class ExtraccionTicketService {
         ]}],
       });
       const texto = respuesta.content.find((b) => b.type === 'text');
-      if (!texto || texto.type !== 'text') return { legible: false, sugerencias: null };
-      const json = JSON.parse(texto.text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
+      return texto && texto.type === 'text' ? texto.text : null;
+    }
+    if (process.env.OPENAI_API_KEY) {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 512,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: `data:${foto.mimetype};base64,${foto.buffer.toString('base64')}` } },
+            { type: 'text', text: PROMPT },
+          ]}],
+        }),
+      });
+      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const data = await res.json();
+      return typeof data?.choices?.[0]?.message?.content === 'string' ? data.choices[0].message.content : null;
+    }
+    return null;
+  }
+
+  async extraer(foto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' }): Promise<ExtraccionTicket> {
+    if (!this.cliente && !process.env.OPENAI_API_KEY) return { legible: false, sugerencias: null };
+    try {
+      const texto = await this.llamarModelo(foto);
+      if (!texto) return { legible: false, sugerencias: null };
+      const json = JSON.parse(texto.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
       if (!json.legible) return { legible: false, sugerencias: null };
 
       const [estaciones, tipos] = await Promise.all([

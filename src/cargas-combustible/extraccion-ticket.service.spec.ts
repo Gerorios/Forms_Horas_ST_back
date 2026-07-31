@@ -10,6 +10,10 @@ describe('ExtraccionTicketService', () => {
     tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
   };
 
+  beforeEach(() => {
+    delete process.env.OPENAI_API_KEY;
+  });
+
   it('sin API key devuelve ilegible sin llamar a la API', async () => {
     const service = new ExtraccionTicketService(prismaMock as PrismaService, undefined);
     expect(await service.extraer(foto)).toEqual({ legible: false, sugerencias: null });
@@ -45,6 +49,41 @@ describe('ExtraccionTicketService', () => {
       litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
       nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
     });
+  });
+  it('usa OpenAI como proveedor alternativo cuando solo hay OPENAI_API_KEY', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"legible":true,"litros":40.5,"monto":52000,"fecha":"2026-07-30","nroComprobante":"0001-00001234","tipoCombustible":"gasoil","estacion":"YPF Centenario"}' } }] }),
+    });
+    const fetchOriginal = global.fetch;
+    global.fetch = fetchMock as any;
+    try {
+      const service = new ExtraccionTicketService(prismaMock as PrismaService, undefined);
+      const r = await service.extraer(foto);
+      expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/chat/completions', expect.objectContaining({ method: 'POST' }));
+      expect(r.legible).toBe(true);
+      expect(r.sugerencias).toEqual({
+        litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
+        nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
+      });
+    } finally {
+      global.fetch = fetchOriginal;
+      delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('si OpenAI responde error HTTP degrada a ilegible', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const fetchOriginal = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'unauthorized' }) as any;
+    try {
+      const service = new ExtraccionTicketService(prismaMock as PrismaService, undefined);
+      expect(await service.extraer(foto)).toEqual({ legible: false, sugerencias: null });
+    } finally {
+      global.fetch = fetchOriginal;
+      delete process.env.OPENAI_API_KEY;
+    }
   });
 });
 
