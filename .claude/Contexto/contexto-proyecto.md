@@ -1196,3 +1196,35 @@ servidor) → funciona pero pierde las FKs a empleados y no independiza nada. El
 la pérdida de FKs (opción b); se le explicó que (a) las conserva. **Decisión: no hacer nada por
 ahora.** Si se retoma, el camino recomendado es (a) con mudanza completa de datos (estructura +
 maestros + transaccionales).
+
+## 38. Módulo Carga de Combustible — diseño cerrado y plan listo, SIN ejecutar (2026-07-30/31)
+
+**Sesión de grilling + domain-modeling completa.** Reemplazo del Google Forms de cargas de
+combustible por un módulo integrado. Todas las decisiones quedaron en
+`docs/adr/2026-07-30-adr-013-modulo-carga-de-combustible.md` y el glosario actualizado
+(PR #11, rama `docs/adr-013-combustible`). Resumen: registra solo JefeCuadrilla (+Admin),
+JefeContrato consulta en solo lectura sus contratos, sin flujo de aprobación, catálogo
+`Movil` reusado (identificador = patente), tareas M:N pudiendo mezclar contratos (sin
+prorrateo), medios de pago fijos (cuenta_corriente→remito / caja→factura, comprobante
+SIEMPRE obligatorio), catálogos administrables nuevos (estaciones de servicio y tipos de
+combustible: gasoil, gasoil premium, súper, premium, GNC), validación blanda de km (avisa
+si retrocede, no bloquea), edición con auditoría + anulación con motivo (sin borrado
+físico), UNA foto de ticket obligatoria en filesystem del VPS tras interfaz `TicketStorage`
+(migrable a nube), asistente de IA con visión (API Anthropic, `claude-haiku-4-5`) que
+pre-rellena el formulario pero SOLO sugiere — sin API key el módulo funciona igual. Sin
+export propio (análisis por tablero Power BI contra la BD).
+
+**Plan de implementación registrado (12 tasks TDD, backend+frontend):**
+`docs/superpowers/plans/2026-07-30-modulo-carga-combustible.md`. Incluye schema Prisma +
+DDL manual (`docs/sql/2026-07-30-cargas-combustible.sql`, BD compartida — aplicar a mano
+como ADR-012), primeros specs de jest del backend, y checklist de deploy (TICKETS_DIR +
+backup de la carpeta, ANTHROPIC_API_KEY opcional, seed de estaciones vía UI).
+
+**⚠️ Pedido explícito del usuario: NO ejecutar el plan todavía** — solo quedó armado y
+registrado. Ejecutar recién cuando lo pida (con superpowers:subagent-driven-development o
+executing-plans).
+
+**Pendiente externo:** autorizar la clave SSH `~/.ssh/forms_horas_vps.pub`
+(`claude-code-admin@forms-horas-vps`) en el VPS de producción 179.198.99.30 — se le estaba
+pidiendo a Rodrigo Carrazana agregarla a `authorized_keys`; al probar, verificar espacio en
+disco (`df -h /`) para dimensionar las fotos de tickets.
