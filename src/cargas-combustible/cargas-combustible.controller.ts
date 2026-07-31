@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CargasCombustibleService } from './cargas-combustible.service';
+import { ExtraccionTicketService } from './extraccion-ticket.service';
 import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
 import { UpdateCargaCombustibleDto } from './dto/update-carga-combustible.dto';
 import { AnularCargaDto } from './dto/anular-carga.dto';
@@ -15,7 +16,7 @@ const MAX_FOTO_BYTES = 5 * 1024 * 1024;
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('cargas-combustible')
 export class CargasCombustibleController {
-  constructor(private readonly service: CargasCombustibleService) {}
+  constructor(private readonly service: CargasCombustibleService, private readonly extraccion: ExtraccionTicketService) {}
 
   @Post()
   @Roles('JefeCuadrilla', 'Admin')
@@ -23,6 +24,16 @@ export class CargasCombustibleController {
   crear(@UploadedFile() foto: Express.Multer.File | undefined, @Body() dto: CreateCargaCombustibleDto, @Request() req) {
     if (!foto) throw new BadRequestException('La foto del ticket es obligatoria');
     return this.service.crear(dto, { buffer: foto.buffer, mimetype: foto.mimetype }, req.user.cuil);
+  }
+
+  @Post('extraer-ticket')
+  @Roles('JefeCuadrilla', 'Admin')
+  @UseInterceptors(FileInterceptor('foto', { limits: { fileSize: MAX_FOTO_BYTES } }))
+  extraerTicket(@UploadedFile() foto: Express.Multer.File | undefined) {
+    if (!foto || (foto.mimetype !== 'image/jpeg' && foto.mimetype !== 'image/png')) {
+      throw new BadRequestException('La foto debe ser JPEG o PNG');
+    }
+    return this.extraccion.extraer({ buffer: foto.buffer, mimetype: foto.mimetype });
   }
 
   @Get('ultimo-km')
