@@ -5,6 +5,8 @@ import { CreateCargaCombustibleDto } from './dto/create-carga-combustible.dto';
 import { UpdateCargaCombustibleDto } from './dto/update-carga-combustible.dto';
 import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
+const TABLA_AUDITORIA = 'sth_cargas_combustible';
+
 @Injectable()
 export class CargasCombustibleService {
   constructor(
@@ -35,7 +37,7 @@ export class CargasCombustibleService {
           tareas: { createMany: { data: dto.tareaIds.map((tareaId) => ({ tareaId })) } },
         },
       });
-      await tx.auditoria.create({ data: { tabla: 'sth_cargas_combustible', registroId: carga.id, usuarioCuil: cuil, accion: 'crear' } });
+      await tx.auditoria.create({ data: { tabla: TABLA_AUDITORIA, registroId: carga.id, usuarioCuil: cuil, accion: 'crear' } });
       return carga;
     });
   }
@@ -124,12 +126,24 @@ export class CargasCombustibleService {
     }
     if (dto.tareaIds) data.tareas = { deleteMany: {}, createMany: { data: dto.tareaIds.map((tareaId) => ({ tareaId })) } };
 
+    const valorAnterior: Record<string, unknown> = {};
+    const valorNuevo: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) {
+      if (key === 'tareas') continue;
+      valorAnterior[key] = (carga as Record<string, unknown>)[key];
+      valorNuevo[key] = data[key];
+    }
+    if (dto.tareaIds) {
+      valorAnterior.tareaIds = carga.tareas.map((t) => t.tareaId);
+      valorNuevo.tareaIds = dto.tareaIds;
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const actualizada = await tx.cargaCombustible.update({ where: { id }, data });
       await tx.auditoria.create({ data: {
-        tabla: 'sth_cargas_combustible', registroId: id, usuarioCuil: usuario.cuil, accion: 'editar',
-        valorAnterior: JSON.stringify({ litros: carga.litros, monto: carga.monto, km: carga.km, fotoPath: carga.fotoPath, tareaIds: carga.tareas.map((t) => t.tareaId) }),
-        valorNuevo: JSON.stringify({ ...data, tareas: undefined, tareaIds: dto.tareaIds }),
+        tabla: TABLA_AUDITORIA, registroId: id, usuarioCuil: usuario.cuil, accion: 'editar',
+        valorAnterior: JSON.stringify(valorAnterior),
+        valorNuevo: JSON.stringify(valorNuevo),
       }});
       return actualizada;
     });
@@ -144,7 +158,7 @@ export class CargasCombustibleService {
         estado: 'anulada', motivoAnulacion: motivo, anuladaPorCuil: usuario.cuil, anuladaEn: new Date(),
       }});
       await tx.auditoria.create({ data: {
-        tabla: 'sth_cargas_combustible', registroId: id, usuarioCuil: usuario.cuil, accion: 'anular',
+        tabla: TABLA_AUDITORIA, registroId: id, usuarioCuil: usuario.cuil, accion: 'anular',
         campo: 'estado', valorAnterior: 'activa', valorNuevo: 'anulada',
       }});
       return anulada;

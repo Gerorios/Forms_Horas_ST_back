@@ -111,7 +111,7 @@ describe('CargasCombustibleService', () => {
     const usuario = { cuil: '20-1-1', rol: 'JefeCuadrilla' };
     const cargaExistente = {
       id: 1, cargadoPorCuil: '20-1-1', estado: 'activa', litros: 40, monto: 50000, km: 100,
-      fotoPath: '2026/07/a.jpg', tareas: [{ tareaId: 10 }],
+      nroComprobante: 'FC 0001-00000001', fotoPath: '2026/07/a.jpg', tareas: [{ tareaId: 10 }],
     };
 
     beforeEach(() => {
@@ -127,6 +127,22 @@ describe('CargasCombustibleService', () => {
       expect(prismaMock.auditoria.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ accion: 'editar', registroId: 1 }),
       }));
+      const { valorAnterior, valorNuevo } = prismaMock.auditoria.create.mock.calls[0][0].data;
+      const anterior = JSON.parse(valorAnterior);
+      const nuevo = JSON.parse(valorNuevo);
+      expect(Object.keys(anterior).sort()).toEqual(Object.keys(nuevo).sort());
+      expect(anterior).toEqual({ litros: 40 });
+      expect(nuevo).toEqual({ litros: 45 });
+    });
+
+    it('audita simétricamente un campo fuera del subset viejo (nroComprobante)', async () => {
+      await service.editar(1, { nroComprobante: 'FC 0001-99999999' }, undefined, usuario);
+      const { valorAnterior, valorNuevo } = prismaMock.auditoria.create.mock.calls[0][0].data;
+      const anterior = JSON.parse(valorAnterior);
+      const nuevo = JSON.parse(valorNuevo);
+      expect(Object.keys(anterior).sort()).toEqual(Object.keys(nuevo).sort());
+      expect(anterior).toEqual({ nroComprobante: 'FC 0001-00000001' });
+      expect(nuevo).toEqual({ nroComprobante: 'FC 0001-99999999' });
     });
 
     it('rechaza editar una carga anulada', async () => {
