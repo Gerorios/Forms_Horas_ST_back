@@ -13,6 +13,13 @@ export class CreateCargaCombustibleDto {
   @Type(() => Number) @IsInt() tipoCombustibleId: number;
   @Type(() => Number) @IsInt() provinciaId: number;
   @IsOptional() @IsString() observaciones?: string;
-  @Transform(({ value }) => (typeof value === 'string' ? JSON.parse(value) : value))
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  })
   @IsArray() @ArrayNotEmpty() @IsInt({ each: true }) tareaIds: number[];
 }
