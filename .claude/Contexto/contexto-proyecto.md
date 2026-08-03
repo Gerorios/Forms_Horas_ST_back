@@ -1335,6 +1335,35 @@ Desvío aceptado del spec: íconos en módulo aparte `nav-icons.tsx` en vez de d
 (`extraccion-ticket.service.ts`) por su cuenta: ahora es un prompt largo con clasificación de
 tipo de comprobante (REMITO/FACTURA/TIQUE), reglas anti-confusión (CAE/CUIT/REGISTRO), campos
 extra (precioLitro, cae, confianzaNumero, lineaOrigenNumero...) y chequeo de coherencia
-litros×precio≈monto. OJO: `extraer()` sigue mapeando solo los campos originales (litros,
-monto, fecha, nroComprobante, tipoCombustible, estacion) — los campos nuevos del JSON se
-ignoran; si se quieren usar hay que extender el mapeo y el DTO/frontend.
+litros×precio≈monto.
+
+## 42. Extracción v2 + gating Admin-only + sidebar mergeado (2026-08-03)
+
+**Pedido del usuario tras revisar su prompt nuevo: aprovechar los campos y restringir el módulo.**
+Spec: `docs/superpowers/specs/2026-08-03-extraccion-v2-y-gating-admin-design.md`; plan:
+`docs/superpowers/plans/2026-08-03-extraccion-v2-y-gating-admin.md`. Ejecutado con subagentes
+Sonnet (SDD, review final Opus). Rama `feature/modulo-combustible` en AMBOS repos.
+
+- **Backend** (commits fa96362, 7ace900, dcec636): `ExtraccionTicket.sugerencias` ampliado con
+  `tipoComprobante`, `medioPagoSugerido` (derivado en backend: REMITO→cuenta_corriente,
+  FACTURA_*/TIQUE→caja), `confianzaNumero`, `lineaOrigenNumero` (trunc 200), `precioLitro`,
+  `advertenciaCoherencia` (calculada server-side, umbral 5%). max_tokens Anthropic 512→1024.
+  Gating temporal: las 8 rutas de cargas-combustible.controller → `@Roles('Admin')` (roles
+  originales documentados en comentario para revertir; catálogos /catalogos/* sin tocar).
+  Tests: 43 verdes, incl. metadata Reflect de los 8 handlers y assert del body OpenAI
+  (gpt-5.1 + max_completion_tokens, sin max_tokens).
+- **Frontend** (commits 811fedd merge sidebar, a57a706, b26a024, 85bfbdc): nav `/combustible`
+  solo Admin (comentario TEMPORAL con originales). Form nueva carga: preselección de medio de
+  pago sugerido (solo si no fue tocado; a propósito re-sugerible con foto nueva), aviso blando
+  por contradicción foto↔medio de pago, chip de confianza (tokens approved/warn/danger) +
+  "Leído de: «...»", advertencia de coherencia bajo monto que se limpia al editar monto/litros
+  o re-extraer. Nada bloquea el submit (criterio ADR-013).
+- **Sidebar plegable mergeado** a feature/modulo-combustible (811fedd) — la rama
+  feature/sidebar-plegable ya no hace falta.
+- **Review final (Opus): mergeable.** Hallazgo informativo pendiente (preexistente): el gating
+  del frontend es solo visual — `canAccess` de guards.ts no está cableado a ninguna ruta; un
+  no-Admin que tipee /combustible ve la página pero TODAS las llamadas dan 403 del backend
+  (sin fuga de datos). Si se quiere guard de ruta real, es trabajo aparte.
+- **Nota entorno:** vitest bajo carga da timeouts de 5s flaky en corridas combinadas (no es
+  regresión; aislado todo verde). El bug del botón "guardar carga" del §41 sigue SIN
+  diagnosticar (quedó interrumpido dos veces).
