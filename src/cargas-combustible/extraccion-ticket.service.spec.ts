@@ -4,6 +4,12 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const foto = { buffer: Buffer.from('img'), mimetype: 'image/jpeg' as const };
 
+const jsonModelo = (extra: object) => JSON.stringify({
+  legible: true, litros: 62.575, monto: 168013.88, fecha: '2026-07-15',
+  nroComprobante: 'R 0021-00059874', tipoCombustible: 'gasoil', estacion: 'YPF Centenario',
+  ...extra,
+});
+
 describe('ExtraccionTicketService', () => {
   const prismaMock: any = {
     estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
@@ -29,6 +35,8 @@ describe('ExtraccionTicketService', () => {
     expect(r.sugerencias).toEqual({
       litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
       nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
+      tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
+      lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
     });
   });
 
@@ -48,6 +56,8 @@ describe('ExtraccionTicketService', () => {
     expect(r.sugerencias).toEqual({
       litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
       nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
+      tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
+      lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
     });
   });
   it('usa OpenAI como proveedor alternativo cuando solo hay OPENAI_API_KEY', async () => {
@@ -66,6 +76,8 @@ describe('ExtraccionTicketService', () => {
       expect(r.sugerencias).toEqual({
         litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
         nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
+        tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
+        lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
       });
     } finally {
       global.fetch = fetchOriginal;
@@ -84,6 +96,91 @@ describe('ExtraccionTicketService', () => {
       global.fetch = fetchOriginal;
       delete process.env.OPENAI_API_KEY;
     }
+  });
+
+  it('deriva medioPagoSugerido cuenta_corriente para REMITO', async () => {
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ tipoComprobante: 'REMITO' }) }],
+    }) } };
+    const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.tipoComprobante).toBe('REMITO');
+    expect(r.sugerencias?.medioPagoSugerido).toBe('cuenta_corriente');
+  });
+
+  it('deriva medioPagoSugerido caja para FACTURA_B y TIQUE', async () => {
+    for (const tipoComprobante of ['FACTURA_B', 'TIQUE']) {
+      const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: jsonModelo({ tipoComprobante }) }],
+      }) } };
+      const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+      const r = await service.extraer(foto);
+      expect(r.sugerencias?.tipoComprobante).toBe(tipoComprobante);
+      expect(r.sugerencias?.medioPagoSugerido).toBe('caja');
+    }
+  });
+
+  it('tipoComprobante inválido o ausente → null y medioPagoSugerido null', async () => {
+    for (const extra of [{ tipoComprobante: 'CUALQUIERA' }, {}]) {
+      const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: jsonModelo(extra) }],
+      }) } };
+      const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+      const r = await service.extraer(foto);
+      expect(r.sugerencias?.tipoComprobante).toBeNull();
+      expect(r.sugerencias?.medioPagoSugerido).toBeNull();
+    }
+  });
+
+  it('confianzaNumero passthrough validado, inválido → null', async () => {
+    const clienteAlta = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ confianzaNumero: 'alta' }) }],
+    }) } };
+    const serviceAlta = new ExtraccionTicketService(prismaMock as PrismaService, clienteAlta as any);
+    const rAlta = await serviceAlta.extraer(foto);
+    expect(rAlta.sugerencias?.confianzaNumero).toBe('alta');
+
+    const clienteInvalido = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ confianzaNumero: 'altísima' }) }],
+    }) } };
+    const serviceInvalido = new ExtraccionTicketService(prismaMock as PrismaService, clienteInvalido as any);
+    const rInvalido = await serviceInvalido.extraer(foto);
+    expect(rInvalido.sugerencias?.confianzaNumero).toBeNull();
+  });
+
+  it('lineaOrigenNumero se trunca a 200 chars', async () => {
+    const larga = 'x'.repeat(300);
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ lineaOrigenNumero: larga }) }],
+    }) } };
+    const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.lineaOrigenNumero).toHaveLength(200);
+  });
+
+  it('advertenciaCoherencia cuando litros×precio difiere >5% del monto', async () => {
+    const clienteCierra = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ precioLitro: 2685 }) }],
+    }) } };
+    const serviceCierra = new ExtraccionTicketService(prismaMock as PrismaService, clienteCierra as any);
+    const rCierra = await serviceCierra.extraer(foto);
+    expect(rCierra.sugerencias?.advertenciaCoherencia).toBeNull();
+
+    const clienteNoCierra = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ precioLitro: 3000 }) }],
+    }) } };
+    const serviceNoCierra = new ExtraccionTicketService(prismaMock as PrismaService, clienteNoCierra as any);
+    const rNoCierra = await serviceNoCierra.extraer(foto);
+    expect(rNoCierra.sugerencias?.advertenciaCoherencia).not.toBeNull();
+    expect(rNoCierra.sugerencias?.advertenciaCoherencia).toContain('187725.00');
+    expect(rNoCierra.sugerencias?.advertenciaCoherencia).toContain('168013.88');
+
+    const clienteSinPrecio = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({}) }],
+    }) } };
+    const serviceSinPrecio = new ExtraccionTicketService(prismaMock as PrismaService, clienteSinPrecio as any);
+    const rSinPrecio = await serviceSinPrecio.extraer(foto);
+    expect(rSinPrecio.sugerencias?.advertenciaCoherencia).toBeNull();
   });
 });
 
