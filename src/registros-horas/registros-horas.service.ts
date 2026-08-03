@@ -12,6 +12,16 @@ import { UpdateRegistroHorasDto } from './dto/update-registro-horas.dto';
 import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
+import { EmpleadosService } from '../empleados/empleados.service';
+import { rangoQuincena } from '../common/quincena';
+
+// Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
+// tiene más horas que esto — se bloquea la carga en vez de solo avisar).
+const UMBRAL_ALERTA_HORAS = 16;
+const TECHO_HORAS_IMPOSIBLE = 24;
+// Horas extra por quincena (régimen jornalizado/fijo), ver ADR-009 — señal
+// distinta de la alerta diaria: acá interesa el acumulado del período.
+const UMBRAL_HORAS_EXTRA_QUINCENA = 88;
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -23,7 +33,10 @@ const INCLUDE_BASICO = {
 
 @Injectable()
 export class RegistrosHorasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private empleados: EmpleadosService,
+  ) {}
 
   async create(dto: CreateRegistroHorasDto, cargadoPorCuil: string) {
     const habilitado = await this.prisma.contratoHabilitado.findUnique({
@@ -47,7 +60,12 @@ export class RegistrosHorasService {
       _sum: { horas: true },
     });
     const totalHoras = Number(horasDelDia._sum.horas ?? 0) + Number(dto.horas);
-    const alertaHoras = totalHoras > 16;
+    const alertaHoras = totalHoras > UMBRAL_ALERTA_HORAS;
+    if (totalHoras > TECHO_HORAS_IMPOSIBLE) {
+      throw new BadRequestException(
+        `Con esta carga, este operario tendría ${totalHoras}hs el ${dto.fecha} entre todos los contratos — no es humanamente posible en un día. Puede haber una carga duplicada en otro contrato o lote.`,
+      );
+    }
 
     return this.prisma.registroHoras.create({
       data: {
@@ -103,14 +121,22 @@ export class RegistrosHorasService {
 
     // Alerta >16 hs por operario/día: se calcula ANTES de la transacción
     // (son lecturas) para no agotar el timeout de la transacción interactiva.
+    // >24hs (techo imposible) bloquea la carga entera, ninguno se crea.
     const alertaPorOperario = new Map<string, boolean>();
+    const excedidos: string[] = [];
     for (const operarioCuil of dto.operarioCuils) {
       const previas = await this.prisma.registroHoras.aggregate({
         where: { operarioCuil, fecha, estado: { not: 'desaprobado' } },
         _sum: { horas: true },
       });
       const totalDia = Number(previas._sum.horas ?? 0) + horasBatchPorOperario;
-      alertaPorOperario.set(operarioCuil, totalDia > 16);
+      alertaPorOperario.set(operarioCuil, totalDia > UMBRAL_ALERTA_HORAS);
+      if (totalDia > TECHO_HORAS_IMPOSIBLE) excedidos.push(operarioCuil);
+    }
+    if (excedidos.length) {
+      throw new BadRequestException(
+        `Estos operarios superarían las ${TECHO_HORAS_IMPOSIBLE}hs el ${dto.fecha} entre todos los contratos — no es humanamente posible: ${excedidos.join(', ')}. Puede haber una carga duplicada en otro contrato o lote.`,
+      );
     }
 
     const loteId = randomUUID();
@@ -328,8 +354,13 @@ export class RegistrosHorasService {
             },
             _sum: { horas: true },
           });
-          const alertaHoras =
-            Number(previas._sum.horas ?? 0) + Number(dto.horasCorregidas) > 16;
+          const totalDia = Number(previas._sum.horas ?? 0) + Number(dto.horasCorregidas);
+          if (totalDia > TECHO_HORAS_IMPOSIBLE) {
+            throw new BadRequestException(
+              `Con esta corrección, ${original.operarioCuil} tendría ${totalDia}hs el día — no es humanamente posible. Puede haber una carga duplicada en otro contrato o lote.`,
+            );
+          }
+          const alertaHoras = totalDia > UMBRAL_ALERTA_HORAS;
 
           const nueva = await tx.registroHoras.create({
             data: {
@@ -464,7 +495,13 @@ export class RegistrosHorasService {
       },
       _sum: { horas: true },
     });
-    const alertaHoras = Number(previas._sum.horas ?? 0) + Number(horas) > 16;
+    const totalDia = Number(previas._sum.horas ?? 0) + Number(horas);
+    if (totalDia > TECHO_HORAS_IMPOSIBLE) {
+      throw new BadRequestException(
+        `Con esta edición, ${registro.operarioCuil} tendría ${totalDia}hs el día — no es humanamente posible. Puede haber una carga duplicada en otro contrato o lote.`,
+      );
+    }
+    const alertaHoras = totalDia > UMBRAL_ALERTA_HORAS;
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.movilIds !== undefined) {
@@ -528,24 +565,42 @@ export class RegistrosHorasService {
     }, { timeout: 30000, maxWait: 10000 });
   }
 
-  async porAprobar(usuario: { cuil: string; rol: string }, estadoQuery?: string) {
+  async porAprobar(
+    usuario: { cuil: string; rol: string },
+    estadoQuery?: string,
+    filtros?: { contratoId?: number; operarioCuil?: string; cargadoPorCuil?: string; fecha?: string },
+  ) {
     const ESTADOS_VALIDOS = ['pendiente', 'aprobado', 'desaprobado'] as const;
     const estado = (estadoQuery ?? 'pendiente') as (typeof ESTADOS_VALIDOS)[number];
     if (!ESTADOS_VALIDOS.includes(estado)) {
       throw new BadRequestException('estado inválido');
     }
 
-    // 1) Contratos de los que el usuario es jefe (Admin = todos)
+    // 1) Contratos de los que el usuario es jefe (Admin = todos). El filtro de
+    // contrato se resuelve acá, intersectando con "mis contratos" — nunca deja
+    // filtrar por un contrato ajeno.
     const contratos = await this.prisma.contrato.findMany({
       where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
       select: { id: true },
     });
-    const misContratoIds = contratos.map((c) => c.id);
+    let misContratoIds = contratos.map((c) => c.id);
+    if (filtros?.contratoId) {
+      misContratoIds = misContratoIds.filter((id) => id === filtros.contratoId);
+    }
     if (misContratoIds.length === 0) return [];
 
-    // 2) Lotes con al menos una fila en ese estado en mis contratos
+    // 2) Lotes con al menos una fila que matchee el estado + filtros, en mis
+    // contratos. Los filtros deciden qué LOTES entran (no recortan filas
+    // dentro de un lote que ya calificó — el contexto completo del envío
+    // sigue mostrándose igual que antes, ver ADR-004).
     const lotes = await this.prisma.registroHoras.findMany({
-      where: { estado, contratoId: { in: misContratoIds } },
+      where: {
+        estado,
+        contratoId: { in: misContratoIds },
+        ...(filtros?.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
+        ...(filtros?.cargadoPorCuil ? { cargadoPorCuil: filtros.cargadoPorCuil } : {}),
+        ...(filtros?.fecha ? { fecha: new Date(filtros.fecha) } : {}),
+      },
       select: { loteId: true },
       distinct: ['loteId'],
     });
@@ -555,11 +610,165 @@ export class RegistrosHorasService {
     const loteIds = lotes.map((l) => l.loteId);
     const filas = await this.prisma.registroHoras.findMany({
       where: { estado, loteId: { in: loteIds } },
-      include: INCLUDE_BASICO,
+      include: {
+        ...INCLUDE_BASICO,
+        cargadoPor: { select: { cuil: true, email: true, nombreFueraNomina: true } },
+        aprobadoPor: { select: { cuil: true, email: true, nombreFueraNomina: true } },
+      },
       orderBy: [{ fecha: 'desc' }, { loteId: 'asc' }, { operarioCuil: 'asc' }],
     });
 
     const setIds = new Set(misContratoIds);
-    return filas.map((f) => ({ ...f, accionable: setIds.has(f.contratoId) }));
+
+    // Auditoría: nombre para mostrar de quien cargó/aprobó. snuempleados no
+    // tiene FK física (ADR-008): se resuelve a mano, con fallback a
+    // nombreFueraNomina — mismo criterio que admin.service.ts.
+    const cuilsUsuarios = new Set<string>();
+    for (const f of filas) {
+      cuilsUsuarios.add(f.cargadoPorCuil);
+      if (f.aprobadoPorCuil) cuilsUsuarios.add(f.aprobadoPorCuil);
+    }
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: [...cuilsUsuarios] } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+    const nombreUsuario = (u: { cuil: string; nombreFueraNomina: string | null }) =>
+      nombrePorCuil.get(u.cuil) ?? u.nombreFueraNomina ?? '';
+
+    // Total real de horas del operario ese día, cruzando TODOS los contratos y
+    // lotes (no solo los de este jefe) — reemplaza el string fijo que hoy
+    // pinta el frontend. Se recalcula acá en vez de confiar en el
+    // `alertaHoras` grabado al momento de cargar, que queda desactualizado si
+    // una carga posterior en OTRO lote sube el total del día (ver glosario,
+    // "Ideas a futuro — Duplicación de horas entre contratos"). De paso se
+    // arma el set de loteIds por operario+fecha: más de uno es la señal de
+    // duplicación cruzada (mismo operario/día repartido en envíos distintos).
+    const operarioCuils = [...new Set(filas.map((f) => f.operarioCuil))];
+    const fechas = [...new Set(filas.map((f) => f.fecha.toISOString()))].map((s) => new Date(s));
+    const filasDelDia = await this.prisma.registroHoras.findMany({
+      where: {
+        operarioCuil: { in: operarioCuils },
+        fecha: { in: fechas },
+        estado: { not: 'desaprobado' },
+      },
+      select: { operarioCuil: true, fecha: true, horas: true, loteId: true },
+    });
+    const clave = (operarioCuil: string, fecha: Date) => `${operarioCuil}_${fecha.toISOString()}`;
+    const totalPorClave = new Map<string, number>();
+    const lotesPorClave = new Map<string, Set<string>>();
+    for (const r of filasDelDia) {
+      const k = clave(r.operarioCuil, r.fecha);
+      totalPorClave.set(k, (totalPorClave.get(k) ?? 0) + Number(r.horas));
+      if (!lotesPorClave.has(k)) lotesPorClave.set(k, new Set());
+      lotesPorClave.get(k)!.add(r.loteId);
+    }
+
+    return filas.map((f) => {
+      const k = clave(f.operarioCuil, f.fecha);
+      return {
+        ...f,
+        accionable: setIds.has(f.contratoId),
+        cargadoPor: { cuil: f.cargadoPor.cuil, nombre: nombreUsuario(f.cargadoPor) },
+        aprobadoPor: f.aprobadoPor
+          ? { cuil: f.aprobadoPor.cuil, nombre: nombreUsuario(f.aprobadoPor) }
+          : null,
+        totalHorasDia: totalPorClave.get(k) ?? Number(f.horas),
+        duplicadoCruzado: (lotesPorClave.get(k)?.size ?? 1) > 1,
+      };
+    });
+  }
+
+  /**
+   * Panel general del Jefe de Contrato: resumen por operario de la quincena,
+   * scopeado a "mis contratos" (mismo criterio que porAprobar). Pensado para
+   * el control que antes se hacía por el tablero de Looker antes del cierre
+   * de quincena.
+   */
+  async resumenOperarios(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+  ) {
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+
+    const contratos = await this.prisma.contrato.findMany({
+      where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    if (misContratoIds.length === 0) return [];
+
+    const filas = await this.prisma.registroHoras.findMany({
+      where: { contratoId: { in: misContratoIds }, fecha: { gte: desde, lte: hasta } },
+      select: { operarioCuil: true, horas: true, estado: true },
+    });
+
+    type Acumulado = {
+      totalHoras: number;
+      pendiente: number;
+      aprobado: number;
+      desaprobado: number;
+    };
+    const porOperario = new Map<string, Acumulado>();
+    for (const f of filas) {
+      let acc = porOperario.get(f.operarioCuil);
+      if (!acc) {
+        acc = { totalHoras: 0, pendiente: 0, aprobado: 0, desaprobado: 0 };
+        porOperario.set(f.operarioCuil, acc);
+      }
+      if (f.estado !== 'desaprobado') acc.totalHoras += Number(f.horas);
+      acc[f.estado as 'pendiente' | 'aprobado' | 'desaprobado'] += 1;
+    }
+
+    const cuils = [...porOperario.keys()];
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: cuils } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+
+    return cuils
+      .map((cuil) => {
+        const acc = porOperario.get(cuil)!;
+        return {
+          cuil,
+          apellido_nombre: nombrePorCuil.get(cuil) ?? '',
+          ...acc,
+          superaHorasExtra: acc.totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
+        };
+      })
+      .sort((a, b) => a.apellido_nombre.localeCompare(b.apellido_nombre));
+  }
+
+  /**
+   * Empleados activos (snuempleados) sin ningún RegistroHoras en la quincena
+   * — sin importar contrato ni estado (un rechazo también cuenta como "algo
+   * se cargó"; acá interesa la ausencia total). No se scopea a "mis
+   * contratos": la ausencia de carga no le pertenece a ningún contrato en
+   * particular, y como los operarios son multidisciplinarios no hay un
+   * padrón fijo por contrato — se comparte entre todos los Jefes de
+   * Contrato y Admin para que cualquiera pueda notarlo y coordinar.
+   */
+  async sinCarga(anio: number, mes: number, quincena: number) {
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const [activos, conCarga] = await Promise.all([
+      this.empleados.findActivos(),
+      this.prisma.registroHoras.findMany({
+        where: { fecha: { gte: desde, lte: hasta } },
+        select: { operarioCuil: true },
+        distinct: ['operarioCuil'],
+      }),
+    ]);
+    const cuilsConCarga = new Set(conCarga.map((c) => c.operarioCuil));
+    return activos
+      .filter((e) => !cuilsConCarga.has(e.cuil))
+      .map((e) => ({
+        cuil: e.cuil,
+        apellido_nombre: e.apellido_nombre,
+        legajo: e.legajo,
+        cargo: e.cargo,
+      }));
   }
 }

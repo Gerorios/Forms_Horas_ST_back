@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { rangoQuincena } from '../common/quincena';
 
 /**
  * Motor de cálculo de liquidación por quincena. Ver ADR-009, ADR-010 y
@@ -10,9 +11,7 @@ export class CalculoService {
   constructor(private prisma: PrismaService) {}
 
   private rangoQuincena(anio: number, mes: number, quincena: number): { desde: Date; hasta: Date } {
-    const desde = new Date(anio, mes - 1, quincena === 1 ? 1 : 16);
-    const hasta = quincena === 1 ? new Date(anio, mes - 1, 15) : new Date(anio, mes, 0);
-    return { desde, hasta };
+    return rangoQuincena(anio, mes, quincena);
   }
 
   private async tarifaVigente(categoriaUocraId: number, anio: number, mes: number) {

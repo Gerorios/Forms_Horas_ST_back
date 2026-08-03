@@ -40,8 +40,20 @@ export class RegistrosHorasController {
 
   @Get('por-aprobar')
   @Roles('JefeContrato', 'Admin')
-  porAprobar(@Query('estado') estado: string | undefined, @Request() req) {
-    return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol }, estado);
+  porAprobar(
+    @Query('estado') estado: string | undefined,
+    @Query('contratoId', new ParseIntPipe({ optional: true })) contratoId: number | undefined,
+    @Query('operarioCuil') operarioCuil: string | undefined,
+    @Query('cargadoPorCuil') cargadoPorCuil: string | undefined,
+    @Query('fecha') fecha: string | undefined,
+    @Request() req,
+  ) {
+    return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol }, estado, {
+      contratoId,
+      operarioCuil,
+      cargadoPorCuil,
+      fecha,
+    });
   }
 
   @Patch(':id')
@@ -88,5 +100,26 @@ export class RegistrosHorasController {
   @Roles('JefeContrato', 'Admin')
   reabrir(@Param('id', ParseIntPipe) id: number, @Request() req) {
     return this.service.reabrir(id, { cuil: req.user.cuil, rol: req.user.rol });
+  }
+
+  @Get('resumen-operarios')
+  @Roles('JefeContrato', 'Admin')
+  resumenOperarios(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+    @Request() req,
+  ) {
+    return this.service.resumenOperarios({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena);
+  }
+
+  @Get('sin-carga')
+  @Roles('JefeContrato', 'Admin')
+  sinCarga(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.sinCarga(anio, mes, quincena);
   }
 }
