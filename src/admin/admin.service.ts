@@ -13,19 +13,34 @@ export class AdminService {
     return this.prisma.rol.findMany({ orderBy: { nombre: 'asc' } });
   }
 
-  getContratos() {
-    return this.prisma.contrato.findMany({
-      include: { jefeContrato: { select: { cuil: true, email: true } } },
+  async getContratos() {
+    const contratos = await this.prisma.contrato.findMany({
+      include: { jefes: { select: { usuarioCuil: true } } },
       orderBy: { codigo: 'asc' },
     });
+    return contratos.map(({ jefes, ...c }) => ({
+      ...c,
+      jefesCuils: jefes.map((j) => j.usuarioCuil),
+    }));
   }
 
   createContrato(dto: CreateContratoDto) {
     return this.prisma.contrato.create({ data: dto });
   }
 
-  updateContrato(id: number, dto: UpdateContratoDto) {
-    return this.prisma.contrato.update({ where: { id }, data: dto });
+  async updateContrato(id: number, dto: UpdateContratoDto) {
+    const { jefesCuils, ...rest } = dto;
+
+    if (jefesCuils !== undefined) {
+      await this.prisma.contratoJefe.deleteMany({ where: { contratoId: id } });
+      if (jefesCuils.length) {
+        await this.prisma.contratoJefe.createMany({
+          data: jefesCuils.map((usuarioCuil) => ({ contratoId: id, usuarioCuil })),
+        });
+      }
+    }
+
+    return this.prisma.contrato.update({ where: { id }, data: rest });
   }
 
   getTareas(contratoId?: number) {
@@ -127,7 +142,9 @@ export class AdminService {
         contratosHabilitados: {
           select: { contratoId: true, contrato: { select: { codigo: true } } },
         },
-        contratosComoJefe: { select: { id: true, codigo: true } },
+        contratosComoJefe: {
+          select: { contrato: { select: { id: true, codigo: true } } },
+        },
         tiposNovedadHabilitados: {
           select: { tipoNovedadId: true, tipoNovedad: { select: { nombre: true } } },
         },
@@ -143,8 +160,9 @@ export class AdminService {
     });
     const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
 
-    return usuarios.map(({ nombreFueraNomina, ...u }) => ({
+    return usuarios.map(({ nombreFueraNomina, contratosComoJefe, ...u }) => ({
       ...u,
+      contratosComoJefe: contratosComoJefe.map((cj) => cj.contrato),
       empleado: { apellido_nombre: nombrePorCuil.get(u.cuil) ?? nombreFueraNomina ?? '' },
     }));
   }
@@ -180,9 +198,8 @@ export class AdminService {
     });
 
     if (dto.contratosJefeIds?.length) {
-      await this.prisma.contrato.updateMany({
-        where: { id: { in: dto.contratosJefeIds } },
-        data: { jefeContratoCuil: dto.cuil },
+      await this.prisma.contratoJefe.createMany({
+        data: dto.contratosJefeIds.map((contratoId) => ({ contratoId, usuarioCuil: dto.cuil })),
       });
     }
 
@@ -213,16 +230,15 @@ export class AdminService {
     }
 
     if (contratosJefeIds !== undefined) {
-      // Un contrato tiene un solo Jefe: asignar acá puede quitarle el contrato
-      // a quien lo tuviera antes (mismo comportamiento que /admin/contratos).
-      await this.prisma.contrato.updateMany({
-        where: { id: { in: contratosJefeIds } },
-        data: { jefeContratoCuil: cuil },
-      });
-      await this.prisma.contrato.updateMany({
-        where: { jefeContratoCuil: cuil, NOT: { id: { in: contratosJefeIds } } },
-        data: { jefeContratoCuil: null },
-      });
+      // Set completo de contratos de los que este usuario es Jefe (M:N, ver
+      // ADR-012): solo toca filas de este cuil, sin afectar a otros jefes del
+      // mismo contrato.
+      await this.prisma.contratoJefe.deleteMany({ where: { usuarioCuil: cuil } });
+      if (contratosJefeIds.length) {
+        await this.prisma.contratoJefe.createMany({
+          data: contratosJefeIds.map((contratoId) => ({ contratoId, usuarioCuil: cuil })),
+        });
+      }
     }
 
     return this.prisma.usuario.update({ where: { cuil }, data });

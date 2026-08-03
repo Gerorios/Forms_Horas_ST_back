@@ -6,10 +6,6 @@ export class CreateContratoDto {
 
   @IsString()
   nombre: string;
-
-  @IsOptional()
-  @IsString()
-  jefeContratoCuil?: string;
 }
 
 export class UpdateContratoDto {
@@ -18,10 +14,14 @@ export class UpdateContratoDto {
   nombre?: string;
 
   @IsOptional()
-  @IsString()
-  jefeContratoCuil?: string | null;
-
-  @IsOptional()
   @IsBoolean()
   activo?: boolean;
+
+  /**
+   * Reemplaza el set COMPLETO de Jefes de Contrato de este contrato (M:N, ver
+   * ADR-012). `[]` lo deja sin jefes; `undefined` no toca la relación.
+   */
+  @IsOptional()
+  @IsString({ each: true })
+  jefesCuils?: string[];
 }

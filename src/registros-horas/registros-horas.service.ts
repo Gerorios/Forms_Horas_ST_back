@@ -203,12 +203,12 @@ export class RegistrosHorasService {
   ) {
     const registro = await this.prisma.registroHoras.findUnique({
       where: { id },
-      include: { contrato: { select: { jefeContratoCuil: true } } },
+      include: { contrato: { select: { jefes: { select: { usuarioCuil: true } } } } },
     });
     if (!registro) throw new NotFoundException('Registro no encontrado');
     if (
       usuario.rol !== 'Admin' &&
-      registro.contrato.jefeContratoCuil !== usuario.cuil
+      !registro.contrato.jefes.some((j) => j.usuarioCuil === usuario.cuil)
     ) {
       throw new ForbiddenException('No sos jefe del contrato de este registro');
     }
@@ -263,7 +263,10 @@ export class RegistrosHorasService {
       where: {
         loteId,
         estado: 'pendiente',
-        contrato: usuario.rol === 'Admin' ? undefined : { jefeContratoCuil: usuario.cuil },
+        contrato:
+          usuario.rol === 'Admin'
+            ? undefined
+            : { jefes: { some: { usuarioCuil: usuario.cuil } } },
       },
       select: { id: true },
     });
@@ -318,7 +321,10 @@ export class RegistrosHorasService {
         loteId,
         contratoId: dto.contratoId,
         estado: 'pendiente',
-        contrato: usuario.rol === 'Admin' ? undefined : { jefeContratoCuil: usuario.cuil },
+        contrato:
+          usuario.rol === 'Admin'
+            ? undefined
+            : { jefes: { some: { usuarioCuil: usuario.cuil } } },
       },
       include: { tareas: true, moviles: true },
     });
@@ -419,12 +425,12 @@ export class RegistrosHorasService {
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
     const registro = await this.prisma.registroHoras.findUnique({
       where: { id },
-      include: { contrato: { select: { jefeContratoCuil: true } } },
+      include: { contrato: { select: { jefes: { select: { usuarioCuil: true } } } } },
     });
     if (!registro) throw new NotFoundException('Registro no encontrado');
     if (
       usuario.rol !== 'Admin' &&
-      registro.contrato.jefeContratoCuil !== usuario.cuil
+      !registro.contrato.jefes.some((j) => j.usuarioCuil === usuario.cuil)
     ) {
       throw new ForbiddenException('No sos jefe del contrato de este registro');
     }
@@ -580,7 +586,10 @@ export class RegistrosHorasService {
     // contrato se resuelve acá, intersectando con "mis contratos" — nunca deja
     // filtrar por un contrato ajeno.
     const contratos = await this.prisma.contrato.findMany({
-      where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
+      where:
+        usuario.rol === 'Admin'
+          ? {}
+          : { jefes: { some: { usuarioCuil: usuario.cuil } } },
       select: { id: true },
     });
     let misContratoIds = contratos.map((c) => c.id);

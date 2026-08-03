@@ -1157,3 +1157,105 @@ regresión real — mismo patrón ya visto antes en la sesión).
    no hay ningún empleado de prueba con ese régimen todavía para validar el cálculo en vivo.
 5. `BonoNoRemunerativo` y `MontoMensualizado`/`KmPorTantos` están implementados pero sin datos de
    prueba cargados — falta verificar el cálculo end-to-end con casos reales de cada uno.
+
+---
+
+## 37. PENDIENTE: redeploy de la VPS — /admin/usuarios roto en producción (2026-07-29)
+
+**Bug en producción (diagnóstico completo, fix aún NO aplicado):** en producción
+(misregistros.serytec.com.ar), Admin → Usuarios tira `Cannot read properties of null (reading
+'apellido_nombre')` y la página no carga. Root cause (via systematic-debugging, evidencia
+verificada): la VPS corre código **anterior al merge de ADR-008** (deploy 2026-07-27; los merges
+de ADR-008 y rol Liquidador a `main` fueron el 2026-07-28 13:04). El backend viejo trae `empleado`
+por relación Prisma directa en `getUsuarios`/`perfil` → devuelve `empleado: null` para usuarios
+fuera de nómina, y el frontend hace `u.empleado.apellido_nombre` sin guard (`admin/usuarios/
+page.tsx:58`). En la BD compartida hay **2 usuarios sin fila en `snuempleados`**:
+`ccastillo@laasturianasrl.com` (CASTILLO CRISTIAN, JefeCuadrilla, real — el que rompe desde que
+existe) y `liquidador@test.local` (seed de prueba, ver abajo). El código actual de `main` ya no
+tiene el bug (join a mano con fallback a `nombreFueraNomina`). Solo se cae esa página; el resto de
+producción funciona.
+
+**Fix acordado (quedó frenado a pedido del usuario, estaba presentando):** SSH a la VPS →
+`git pull` + `npm install` + build + `pm2 restart` en ambos repos (`forms-horas-back`,
+`forms-horas-front`). El usuario pidió **aviso antes de cada `pm2 restart`** (corte breve).
+Esto lleva a producción ADR-008 + Liquidador Fase 1; la Fase 2 sigue en la rama
+`feature/liquidacion-perfiles-masivo` sin mergear. ⚠️ `docs/infraestructura-produccion.md`
+(gitignored, con IP/SSH/rutas) **no está en esta copia del repo** — pedir los datos de acceso.
+
+**Seed de prueba nuevo (reversible, borrar al terminar de testear):** usuario
+`liquidador@test.local` / `liq12345`, rol Liquidador, fuera de nómina (CUIL ficticio 20999999991,
+nombre "Liquidador de Prueba") — creado para testear la Fase 2 en local. Como la BD es compartida,
+también es visible desde producción.
+
+**Migración a BD dedicada: evaluada y en pausa (decisión del usuario).** IT ofreció una BD nueva
+exclusiva para este sistema. Se analizó con grilling: el condicionante es `snuempleados` (el ERP
+la sincroniza solo en `testing`). Opciones vistas: (a) IT sincroniza `snuempleados` también en la
+BD nueva → independencia real y conserva FKs (pedirle a IT: insert/update + soft-delete vía
+`borrado`, nunca DELETE físico ni DROP); (b) vista SQL apuntando a `testing.snuempleados` (mismo
+servidor) → funciona pero pierde las FKs a empleados y no independiza nada. El usuario frenó por
+la pérdida de FKs (opción b); se le explicó que (a) las conserva. **Decisión: no hacer nada por
+ahora.** Si se retoma, el camino recomendado es (a) con mudanza completa de datos (estructura +
+maestros + transaccionales).
+
+## 38. Módulo Carga de Combustible — diseño cerrado y plan listo, SIN ejecutar (2026-07-30/31)
+
+**Sesión de grilling + domain-modeling completa.** Reemplazo del Google Forms de cargas de
+combustible por un módulo integrado. Todas las decisiones quedaron en
+`docs/adr/2026-07-30-adr-013-modulo-carga-de-combustible.md` y el glosario actualizado
+(PR #11, rama `docs/adr-013-combustible`). Resumen: registra solo JefeCuadrilla (+Admin),
+JefeContrato consulta en solo lectura sus contratos, sin flujo de aprobación, catálogo
+`Movil` reusado (identificador = patente), tareas M:N pudiendo mezclar contratos (sin
+prorrateo), medios de pago fijos (cuenta_corriente→remito / caja→factura, comprobante
+SIEMPRE obligatorio), catálogos administrables nuevos (estaciones de servicio y tipos de
+combustible: gasoil, gasoil premium, súper, premium, GNC), validación blanda de km (avisa
+si retrocede, no bloquea), edición con auditoría + anulación con motivo (sin borrado
+físico), UNA foto de ticket obligatoria en filesystem del VPS tras interfaz `TicketStorage`
+(migrable a nube), asistente de IA con visión (API Anthropic, `claude-haiku-4-5`) que
+pre-rellena el formulario pero SOLO sugiere — sin API key el módulo funciona igual. Sin
+export propio (análisis por tablero Power BI contra la BD).
+
+**Plan de implementación registrado (12 tasks TDD, backend+frontend):**
+`docs/superpowers/plans/2026-07-30-modulo-carga-combustible.md`. Incluye schema Prisma +
+DDL manual (`docs/sql/2026-07-30-cargas-combustible.sql`, BD compartida — aplicar a mano
+como ADR-012), primeros specs de jest del backend, y checklist de deploy (TICKETS_DIR +
+backup de la carpeta, ANTHROPIC_API_KEY opcional, seed de estaciones vía UI).
+
+**⚠️ Pedido explícito del usuario: NO ejecutar el plan todavía** — solo quedó armado y
+registrado. Ejecutar recién cuando lo pida (con superpowers:subagent-driven-development o
+executing-plans).
+
+**Pendiente externo:** autorizar la clave SSH `~/.ssh/forms_horas_vps.pub`
+(`claude-code-admin@forms-horas-vps`) en el VPS de producción 179.198.99.30 — se le estaba
+pidiendo a Rodrigo Carrazana agregarla a `authorized_keys`; al probar, verificar espacio en
+disco (`df -h /`) para dimensionar las fotos de tickets.
+
+## 39. MIGRACIÓN EJECUTADA: producción en BD dedicada `Horas_Sertec` (2026-07-31)
+
+**Hecha en vivo con grilling previo (6 decisiones) y corte de ~4 minutos.** Producción dejó de usar
+la BD compartida `testing` y ahora corre contra **`Horas_Sertec`** (mismo servidor MySQL
+191.101.235.7, usuario `root_SerTec` — credenciales en el `.env` del VPS, NO commiteadas).
+
+- **Disparador:** IT cumplió la "opción (a)" del §37 — `snuempleados` se sincroniza ahora en
+  `Horas_Sertec` (verificado: 231 filas, `graba` al 31/07, estructura idéntica con `borrado`;
+  `testing` quedó en 230 filas al 27/07, o sea el ERP ya apunta a la nueva).
+- **Qué se migró:** las **24 tablas `sth_` completas con histórico** (310 registros de horas, 168
+  auditorías, 70 usuarios, todos los maestros/tarifas — 1 MB total), copiadas con backend detenido
+  y verificación de conteos origen=destino tabla por tabla (script `migrar-sth.cjs`, corrió desde
+  la máquina local con doble conexión porque `root_SerTec` no puede leer `testing`).
+- **Secuencia ejecutada:** backup `.env` → `pm2 stop forms-horas-back` → copia (segundos) →
+  `DATABASE_URL` nuevo (⚠️ el `#` de la contraseña va URL-encodeado como `%23`) → `pm2 restart` →
+  verificado pool de conexiones del VPS contra `Horas_Sertec` vía SHOW PROCESSLIST.
+- **Rollback disponible:** `testing` quedó intacta + `.env.bak-testing-20260731` en el VPS —
+  volver atrás es restaurar ese archivo y reiniciar pm2.
+- **Nuevos roles de las bases:** `Horas_Sertec` = producción (solo datos reales); `testing` =
+  pruebas/desarrollo (el `.env` local sigue apuntando ahí, sin tocar). ⚠️ Su `snuempleados` ya no
+  se sincroniza — foto congelada al 27/07, suficiente para pruebas.
+- **Regla nueva de esquema:** todo cambio de DDL (ej. tablas del módulo combustible, ADR-013) se
+  aplica en LAS DOS bases: primero `testing` (probar), después `Horas_Sertec` (deploy).
+- **Pendiente coordinado:** los consumidores externos que lean tablas `sth_` (preliquidador de
+  Rodrigo / tableros PBI) deben repuntar a `Horas_Sertec` — quedó a cargo del usuario/Rodrigo/IT.
+  Decisión consciente: producción usa `root_SerTec` (admin de esa BD); pedir a IT un usuario
+  dedicado con permisos solo sobre `Horas_Sertec` quedó como mejora opcional.
+- **Además:** §37 resuelto antes de esto — Rodrigo ya había redeployado producción (main al día,
+  bug /admin/usuarios arreglado), y el acceso SSH propio quedó operativo
+  (`ssh -i ~/.ssh/forms_horas_vps2 coworker@179.198.99.30`, ver memoria vps-accesos).
