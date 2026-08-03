@@ -1287,3 +1287,39 @@ rama por repo). Ramas `feature/modulo-combustible` en ambos repos, con draft PRs
   pendiente** (3 roles, y el flujo IA con/sin API key — no se pudo automatizar en esta sesión).
 - Minors diferidos documentados en los PRs (foto huérfana si falla la transacción de crear,
   P2002→500 en catálogos —patrón preexistente—, formato moneda, tests de permisos de página FE).
+
+## 41. E2E manual de combustible en curso + IA con OpenAI gpt-5.1 + sidebar plegable (2026-08-03)
+
+**Entorno local levantado para el e2e manual del módulo combustible** (ambos repos en
+`feature/modulo-combustible`, BD `testing`): hubo que `npm install` en Backend (multer nuevo en la
+rama) y se liberó el worktree `.claude/worktrees/combustible-docs` para poder checkoutear la rama.
+El redeploy de la VPS del §37 está confirmado hecho (Rodrigo, ver §39).
+
+**Extracción de tickets por IA — ajustes tras probar con foto real** (ticket de "Estación de
+Serv. 2001", en el repo Backend como `WhatsApp Image 2026-07-31 at 2.4*.jpeg`):
+- El usuario cargó su `OPENAI_API_KEY` en el `.env` local (⚠️ quedó pegada en la conversación de
+  Claude, se le recomendó rotarla al terminar; también quedó en texto plano una credencial de
+  login en un GET del log del frontend).
+- **Bug 1 — remito mal leído:** el prompt decía "número de factura o remito tal como figura" y el
+  modelo agarraba el `N°` del documento genérico del encabezado (00182384) en vez de la línea
+  `REMITO : R 0021 - 00059874`. Fix: prompt explícito (priorizar línea REMITO completa; nunca el
+  N° suelto ni códigos REGISTRO del controlador fiscal).
+- **Modelo mejorado a pedido:** proveedor OpenAI pasó de `gpt-4o-mini` a **`gpt-5.1`** (mejor
+  visión). Ojo: la serie gpt-5 usa `max_completion_tokens` (no `max_tokens`) — con el parámetro
+  viejo la API da 400. Verificado con llamada real: lee perfecto litros/monto/fecha/remito.
+  `estacion` dio null (es texto "ESTACIÓN DE SERV. 2001" y además debe matchear el catálogo, aún
+  vacío). Anthropic sigue siendo el proveedor primario si hubiera `ANTHROPIC_API_KEY`.
+- **Gotcha de entorno Windows:** al matar `npm run start:dev` el proceso node hijo sobrevive y
+  deja el puerto 3001 ocupado → el relanzamiento muere con EADDRINUSE y parece que "no toma los
+  cambios de .env". Fix: matar el pid que escucha en 3001 antes de relanzar.
+- **Bug reportado SIN diagnosticar todavía:** "el botón de guardar carga no funciona
+  correctamente" — quedó interrumpido el diagnóstico (logs de backend sin errores hasta ahí, el
+  frontend navegaba bien a /combustible/nueva). RETOMAR con systematic-debugging.
+
+**Sidebar plegable (escritorio) — diseño aprobado, plan listo, implementación en curso:**
+al usuario le molesta el sidebar fijo de 240px ("todo colapsado en el medio"). Eligió riel de
+íconos (~56px) vs. ocultarlo del todo. Spec:
+`docs/superpowers/specs/2026-08-03-sidebar-plegable-design.md`; plan (2 tasks TDD):
+`docs/superpowers/plans/2026-08-03-sidebar-plegable.md`. Rama `feature/sidebar-plegable` del
+Frontend (sale de `feature/modulo-combustible`). Ejecución con subagentes (Sonnet) a pedido del
+usuario. Persistencia en localStorage `sidebar-plegado`; móvil no cambia.
