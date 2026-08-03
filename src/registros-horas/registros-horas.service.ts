@@ -703,7 +703,10 @@ export class RegistrosHorasService {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
     const contratos = await this.prisma.contrato.findMany({
-      where: usuario.rol === 'Admin' ? {} : { jefeContratoCuil: usuario.cuil },
+      where:
+        usuario.rol === 'Admin'
+          ? {}
+          : { jefes: { some: { usuarioCuil: usuario.cuil } } },
       select: { id: true },
     });
     const misContratoIds = contratos.map((c) => c.id);
