@@ -72,6 +72,10 @@ describe('ExtraccionTicketService', () => {
       const service = new ExtraccionTicketService(prismaMock as PrismaService, undefined);
       const r = await service.extraer(foto);
       expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/chat/completions', expect.objectContaining({ method: 'POST' }));
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.model).toBe('gpt-5.1');
+      expect(body.max_completion_tokens).toBeDefined();
+      expect(body).not.toHaveProperty('max_tokens');
       expect(r.legible).toBe(true);
       expect(r.sugerencias).toEqual({
         litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
