@@ -113,7 +113,7 @@ export class ExtraccionTicketService {
           max_completion_tokens: 2048,
           response_format: { type: 'json_object' },
           messages: [{ role: 'user', content: [
-            { type: 'image_url', image_url: { url: `data:${foto.mimetype};base64,${foto.buffer.toString('base64')}` } },
+            { type: 'image_url', image_url: { url: `data:${foto.mimetype};base64,${foto.buffer.toString('base64')}`, detail: 'high' } },
             { type: 'text', text: PROMPT },
           ]}],
         }),
