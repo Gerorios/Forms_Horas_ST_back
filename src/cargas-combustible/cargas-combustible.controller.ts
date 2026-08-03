@@ -13,13 +13,16 @@ import { FiltroCargasDto } from './dto/filtro-cargas.dto';
 
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
 
+// TEMPORAL: gating Admin-only en las 8 rutas de este controller hasta afinar el módulo (spec 2026-08-03).
+// Roles originales: POST, extraer-ticket, ultimo-km, PATCH :id, PATCH :id/anular = JefeCuadrilla+Admin;
+// GET lista, GET :id, GET :id/ticket = JefeCuadrilla+JefeContrato+Admin.
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('cargas-combustible')
 export class CargasCombustibleController {
   constructor(private readonly service: CargasCombustibleService, private readonly extraccion: ExtraccionTicketService) {}
 
   @Post()
-  @Roles('JefeCuadrilla', 'Admin')
+  @Roles('Admin')
   @UseInterceptors(FileInterceptor('foto', { limits: { fileSize: MAX_FOTO_BYTES } }))
   crear(@UploadedFile() foto: Express.Multer.File | undefined, @Body() dto: CreateCargaCombustibleDto, @Request() req) {
     if (!foto) throw new BadRequestException('La foto del ticket es obligatoria');
@@ -27,7 +30,7 @@ export class CargasCombustibleController {
   }
 
   @Post('extraer-ticket')
-  @Roles('JefeCuadrilla', 'Admin')
+  @Roles('Admin')
   @UseInterceptors(FileInterceptor('foto', { limits: { fileSize: MAX_FOTO_BYTES } }))
   extraerTicket(@UploadedFile() foto: Express.Multer.File | undefined) {
     if (!foto || (foto.mimetype !== 'image/jpeg' && foto.mimetype !== 'image/png')) {
@@ -37,25 +40,25 @@ export class CargasCombustibleController {
   }
 
   @Get('ultimo-km')
-  @Roles('JefeCuadrilla', 'Admin')
+  @Roles('Admin')
   ultimoKm(@Query('movilId', ParseIntPipe) movilId: number) {
     return this.service.ultimoKm(movilId);
   }
 
   @Get()
-  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  @Roles('Admin')
   listar(@Query() filtro: FiltroCargasDto, @Request() req) {
     return this.service.listar(filtro, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Get(':id')
-  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  @Roles('Admin')
   detalle(@Param('id', ParseIntPipe) id: number, @Request() req) {
     return this.service.detalle(id, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Get(':id/ticket')
-  @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
+  @Roles('Admin')
   async ticket(@Param('id', ParseIntPipe) id: number, @Request() req, @Res() res: Response) {
     const { buffer, mimetype } = await this.service.ticket(id, { cuil: req.user.cuil, rol: req.user.rol });
     res.setHeader('Content-Type', mimetype);
@@ -64,14 +67,14 @@ export class CargasCombustibleController {
   }
 
   @Patch(':id')
-  @Roles('JefeCuadrilla', 'Admin')
+  @Roles('Admin')
   @UseInterceptors(FileInterceptor('foto', { limits: { fileSize: MAX_FOTO_BYTES } }))
   editar(@Param('id', ParseIntPipe) id: number, @UploadedFile() foto: Express.Multer.File | undefined, @Body() dto: UpdateCargaCombustibleDto, @Request() req) {
     return this.service.editar(id, dto, foto && { buffer: foto.buffer, mimetype: foto.mimetype }, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/anular')
-  @Roles('JefeCuadrilla', 'Admin')
+  @Roles('Admin')
   anular(@Param('id', ParseIntPipe) id: number, @Body() dto: AnularCargaDto, @Request() req) {
     return this.service.anular(id, dto.motivo, { cuil: req.user.cuil, rol: req.user.rol });
   }
