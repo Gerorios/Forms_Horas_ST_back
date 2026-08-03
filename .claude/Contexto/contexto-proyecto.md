@@ -1365,5 +1365,32 @@ Sonnet (SDD, review final Opus). Rama `feature/modulo-combustible` en AMBOS repo
   no-Admin que tipee /combustible ve la página pero TODAS las llamadas dan 403 del backend
   (sin fuga de datos). Si se quiere guard de ruta real, es trabajo aparte.
 - **Nota entorno:** vitest bajo carga da timeouts de 5s flaky en corridas combinadas (no es
-  regresión; aislado todo verde). El bug del botón "guardar carga" del §41 sigue SIN
-  diagnosticar (quedó interrumpido dos veces).
+  regresión; aislado todo verde). El "bug" del botón guardar carga del §41 resultó NO ser un
+  bug (confirmado por el usuario, falsa alarma).
+
+## 43. DEPLOY: combustible + sidebar + extracción v2 EN PRODUCCIÓN (2026-08-03)
+
+**PRs #12 de ambos repos mergeados a main** (backend `eddf77e`, frontend `d75fb1b`) y
+**deployados a la VPS** el mismo día. Secuencia ejecutada: pull+install+build ambos repos
+(hizo falta `npx prisma generate` — el cliente viejo no tenía los modelos nuevos), DDL
+`docs/sql/2026-07-30-cargas-combustible.sql` aplicado en **`Horas_Sertec`** vía
+`sudo npx prisma db execute --file ...` (sin cliente mysql en la VPS; prisma.config.ts carga
+el .env solo), `.env` de producción ampliado con `TICKETS_DIR=/var/www/forms-horas-tickets`
+(dir creado, 92GB libres) y `OPENAI_API_KEY` (la del usuario — extracción con gpt-5.1),
+`pm2 restart` de ambos (avisado antes, como siempre). Verificado: rutas de combustible
+montadas, app started sin errores, front 200, API 401 sin token.
+
+**Datos de infra descubiertos en este deploy** (guardados también en memoria vps-accesos):
+repos en `/var/www/Forms_Horas_ST_back` y `/var/www/Forms_Horas_ST_Frontend`; pm2 corre bajo
+**root** (`sudo pm2 ...`; el pm2 de coworker está vacío); apps `forms-horas-back` y
+`forms-horas-front`.
+
+**Pendiente post-deploy:**
+1. Cargar las estaciones de servicio reales vía Admin → Estaciones en producción (los tipos
+   de combustible ya quedaron seedeados por el SQL).
+2. Rotar la OPENAI_API_KEY (quedó pegada en la conversación de Claude) y actualizarla en el
+   .env de la VPS.
+3. Smoke test funcional como Admin en producción: carga con foto + extracción IA end-to-end.
+4. Recordar: combustible está gateado a SOLO Admin (temporal); revertir roles cuando se afine
+   el módulo (originales documentados en §42 y en comentarios del código).
+5. Backup: incluir `/var/www/forms-horas-tickets` en la rutina de backups del VPS.
