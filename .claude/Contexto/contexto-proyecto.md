@@ -1316,10 +1316,25 @@ Serv. 2001", en el repo Backend como `WhatsApp Image 2026-07-31 at 2.4*.jpeg`):
   correctamente" — quedó interrumpido el diagnóstico (logs de backend sin errores hasta ahí, el
   frontend navegaba bien a /combustible/nueva). RETOMAR con systematic-debugging.
 
-**Sidebar plegable (escritorio) — diseño aprobado, plan listo, implementación en curso:**
+**Sidebar plegable (escritorio) — IMPLEMENTADO y revisado, pendiente merge:**
 al usuario le molesta el sidebar fijo de 240px ("todo colapsado en el medio"). Eligió riel de
 íconos (~56px) vs. ocultarlo del todo. Spec:
 `docs/superpowers/specs/2026-08-03-sidebar-plegable-design.md`; plan (2 tasks TDD):
 `docs/superpowers/plans/2026-08-03-sidebar-plegable.md`. Rama `feature/sidebar-plegable` del
-Frontend (sale de `feature/modulo-combustible`). Ejecución con subagentes (Sonnet) a pedido del
-usuario. Persistencia en localStorage `sidebar-plegado`; móvil no cambia.
+Frontend (sale de `feature/modulo-combustible`, commits 2c3466e + f524830 + fdbe4ee).
+Ejecutado con subagentes Sonnet (SDD: implementer + review por task + review final Opus +
+fix wave). Resultado: `nav-icons.tsx` (mapa href→SVG, 8 íconos), AppShell con toggle chevron,
+persistencia localStorage `sidebar-plegado` ("1"/"0"), main `md:pl-60`↔`md:pl-14`, móvil
+intacto. Tests 229→235 verdes, tsc limpio. Review final: mergeable; minors aceptados: flash
+de primer paint al restaurar preferencia (prescripto por spec), aria-hidden inconsistente
+preexistente en svgs del archivo, jsdom no ejercita clases responsive (límite conocido).
+Desvío aceptado del spec: íconos en módulo aparte `nav-icons.tsx` en vez de dentro de
+`nav.ts` (mantiene nav.ts como .ts puro).
+
+**Además, en paralelo, el usuario reescribió el PROMPT de extracción de tickets**
+(`extraccion-ticket.service.ts`) por su cuenta: ahora es un prompt largo con clasificación de
+tipo de comprobante (REMITO/FACTURA/TIQUE), reglas anti-confusión (CAE/CUIT/REGISTRO), campos
+extra (precioLitro, cae, confianzaNumero, lineaOrigenNumero...) y chequeo de coherencia
+litros×precio≈monto. OJO: `extraer()` sigue mapeando solo los campos originales (litros,
+monto, fecha, nroComprobante, tipoCombustible, estacion) — los campos nuevos del JSON se
+ignoran; si se quieren usar hay que extender el mapeo y el DTO/frontend.
