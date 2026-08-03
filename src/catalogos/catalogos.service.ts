@@ -35,4 +35,20 @@ export class CatalogosService {
       orderBy: { nombre: 'asc' },
     });
   }
+
+  getEstacionesServicio() {
+    return this.prisma.estacionServicio.findMany({
+      where: { activo: true },
+      select: { id: true, nombre: true, localidad: true },
+      orderBy: { nombre: 'asc' },
+    });
+  }
+
+  getTiposCombustible() {
+    return this.prisma.tipoCombustible.findMany({
+      where: { activo: true },
+      select: { id: true, nombre: true },
+      orderBy: { nombre: 'asc' },
+    });
+  }
 }

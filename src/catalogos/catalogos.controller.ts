@@ -26,4 +26,14 @@ export class CatalogosController {
   getTiposNovedad() {
     return this.service.getTiposNovedad();
   }
+
+  @Get('estaciones-servicio')
+  getEstacionesServicio() {
+    return this.service.getEstacionesServicio();
+  }
+
+  @Get('tipos-combustible')
+  getTiposCombustible() {
+    return this.service.getTiposCombustible();
+  }
 }

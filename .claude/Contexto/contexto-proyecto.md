@@ -1259,3 +1259,111 @@ la BD compartida `testing` y ahora corre contra **`Horas_Sertec`** (mismo servid
 - **Además:** §37 resuelto antes de esto — Rodrigo ya había redeployado producción (main al día,
   bug /admin/usuarios arreglado), y el acceso SSH propio quedó operativo
   (`ssh -i ~/.ssh/forms_horas_vps2 coworker@179.198.99.30`, ver memoria vps-accesos).
+
+## 40. Módulo Carga de Combustible IMPLEMENTADO — ramas listas para merge (2026-07-31)
+
+**Plan ejecutado completo** (12 tasks, subagent-driven con revisión por task + revisión final de
+rama por repo). Ramas `feature/modulo-combustible` en ambos repos, con draft PRs abiertos.
+
+- **Backend** (12 commits sobre main): schema Prisma + DDL manual (`docs/sql/2026-07-30-cargas-
+  combustible.sql`, **ya aplicado en `testing`**, ⚠️ pendiente aplicarlo en `Horas_Sertec` al
+  deployar), catálogos admin/catalogos de estaciones y tipos de combustible, `TicketStorage` en
+  filesystem (token DI + useFactory), módulo cargas-combustible completo (alta multipart con foto
+  obligatoria, listado por rol, detalle, foto autenticada, edición con diff de auditoría simétrico,
+  anulación con motivo), extracción IA (`claude-haiku-4-5`, solo sugiere, degrada sin API key).
+  29 tests jest (los primeros del backend), tsc y build verdes.
+- **Frontend** (7 commits sobre main): tipos/hooks/nav, páginas admin de ambos catálogos, form
+  foto-first con sugerencias IA (badges con refs puras), advertencia blanda de km, listado/detalle
+  con visor de ticket, edición completa (incl. móvil/tareas) y anulación. 222 tests vitest, tsc y
+  build verdes (2 flaky preexistentes ajenos al módulo, re-run OK).
+- **Hallazgos clave de las revisiones** (ya corregidos): 2 bugs Critical de DI que dejaban la app
+  sin bootear (cliente Anthropic y FsTicketStorage con useClass — ambos venían del código del plan;
+  ahora hay test de DI del módulo real como regresión), JSON.parse sin guard en ambos DTOs,
+  auditoría asimétrica, race de sugerencias IA, `leer()` que mapeaba todo error a 404 (ahora solo
+  ENOENT).
+- **Pendientes para el deploy** (checklist Task 12): aplicar el SQL en `Horas_Sertec`; crear
+  `TICKETS_DIR` en el VPS (writable por el servicio, incluido en backup) y setear la env;
+  `ANTHROPIC_API_KEY` opcional; seed de estaciones reales vía UI de admin; **e2e manual en browser
+  pendiente** (3 roles, y el flujo IA con/sin API key — no se pudo automatizar en esta sesión).
+- Minors diferidos documentados en los PRs (foto huérfana si falla la transacción de crear,
+  P2002→500 en catálogos —patrón preexistente—, formato moneda, tests de permisos de página FE).
+
+## 41. E2E manual de combustible en curso + IA con OpenAI gpt-5.1 + sidebar plegable (2026-08-03)
+
+**Entorno local levantado para el e2e manual del módulo combustible** (ambos repos en
+`feature/modulo-combustible`, BD `testing`): hubo que `npm install` en Backend (multer nuevo en la
+rama) y se liberó el worktree `.claude/worktrees/combustible-docs` para poder checkoutear la rama.
+El redeploy de la VPS del §37 está confirmado hecho (Rodrigo, ver §39).
+
+**Extracción de tickets por IA — ajustes tras probar con foto real** (ticket de "Estación de
+Serv. 2001", en el repo Backend como `WhatsApp Image 2026-07-31 at 2.4*.jpeg`):
+- El usuario cargó su `OPENAI_API_KEY` en el `.env` local (⚠️ quedó pegada en la conversación de
+  Claude, se le recomendó rotarla al terminar; también quedó en texto plano una credencial de
+  login en un GET del log del frontend).
+- **Bug 1 — remito mal leído:** el prompt decía "número de factura o remito tal como figura" y el
+  modelo agarraba el `N°` del documento genérico del encabezado (00182384) en vez de la línea
+  `REMITO : R 0021 - 00059874`. Fix: prompt explícito (priorizar línea REMITO completa; nunca el
+  N° suelto ni códigos REGISTRO del controlador fiscal).
+- **Modelo mejorado a pedido:** proveedor OpenAI pasó de `gpt-4o-mini` a **`gpt-5.1`** (mejor
+  visión). Ojo: la serie gpt-5 usa `max_completion_tokens` (no `max_tokens`) — con el parámetro
+  viejo la API da 400. Verificado con llamada real: lee perfecto litros/monto/fecha/remito.
+  `estacion` dio null (es texto "ESTACIÓN DE SERV. 2001" y además debe matchear el catálogo, aún
+  vacío). Anthropic sigue siendo el proveedor primario si hubiera `ANTHROPIC_API_KEY`.
+- **Gotcha de entorno Windows:** al matar `npm run start:dev` el proceso node hijo sobrevive y
+  deja el puerto 3001 ocupado → el relanzamiento muere con EADDRINUSE y parece que "no toma los
+  cambios de .env". Fix: matar el pid que escucha en 3001 antes de relanzar.
+- **Bug reportado SIN diagnosticar todavía:** "el botón de guardar carga no funciona
+  correctamente" — quedó interrumpido el diagnóstico (logs de backend sin errores hasta ahí, el
+  frontend navegaba bien a /combustible/nueva). RETOMAR con systematic-debugging.
+
+**Sidebar plegable (escritorio) — IMPLEMENTADO y revisado, pendiente merge:**
+al usuario le molesta el sidebar fijo de 240px ("todo colapsado en el medio"). Eligió riel de
+íconos (~56px) vs. ocultarlo del todo. Spec:
+`docs/superpowers/specs/2026-08-03-sidebar-plegable-design.md`; plan (2 tasks TDD):
+`docs/superpowers/plans/2026-08-03-sidebar-plegable.md`. Rama `feature/sidebar-plegable` del
+Frontend (sale de `feature/modulo-combustible`, commits 2c3466e + f524830 + fdbe4ee).
+Ejecutado con subagentes Sonnet (SDD: implementer + review por task + review final Opus +
+fix wave). Resultado: `nav-icons.tsx` (mapa href→SVG, 8 íconos), AppShell con toggle chevron,
+persistencia localStorage `sidebar-plegado` ("1"/"0"), main `md:pl-60`↔`md:pl-14`, móvil
+intacto. Tests 229→235 verdes, tsc limpio. Review final: mergeable; minors aceptados: flash
+de primer paint al restaurar preferencia (prescripto por spec), aria-hidden inconsistente
+preexistente en svgs del archivo, jsdom no ejercita clases responsive (límite conocido).
+Desvío aceptado del spec: íconos en módulo aparte `nav-icons.tsx` en vez de dentro de
+`nav.ts` (mantiene nav.ts como .ts puro).
+
+**Además, en paralelo, el usuario reescribió el PROMPT de extracción de tickets**
+(`extraccion-ticket.service.ts`) por su cuenta: ahora es un prompt largo con clasificación de
+tipo de comprobante (REMITO/FACTURA/TIQUE), reglas anti-confusión (CAE/CUIT/REGISTRO), campos
+extra (precioLitro, cae, confianzaNumero, lineaOrigenNumero...) y chequeo de coherencia
+litros×precio≈monto.
+
+## 42. Extracción v2 + gating Admin-only + sidebar mergeado (2026-08-03)
+
+**Pedido del usuario tras revisar su prompt nuevo: aprovechar los campos y restringir el módulo.**
+Spec: `docs/superpowers/specs/2026-08-03-extraccion-v2-y-gating-admin-design.md`; plan:
+`docs/superpowers/plans/2026-08-03-extraccion-v2-y-gating-admin.md`. Ejecutado con subagentes
+Sonnet (SDD, review final Opus). Rama `feature/modulo-combustible` en AMBOS repos.
+
+- **Backend** (commits fa96362, 7ace900, dcec636): `ExtraccionTicket.sugerencias` ampliado con
+  `tipoComprobante`, `medioPagoSugerido` (derivado en backend: REMITO→cuenta_corriente,
+  FACTURA_*/TIQUE→caja), `confianzaNumero`, `lineaOrigenNumero` (trunc 200), `precioLitro`,
+  `advertenciaCoherencia` (calculada server-side, umbral 5%). max_tokens Anthropic 512→1024.
+  Gating temporal: las 8 rutas de cargas-combustible.controller → `@Roles('Admin')` (roles
+  originales documentados en comentario para revertir; catálogos /catalogos/* sin tocar).
+  Tests: 43 verdes, incl. metadata Reflect de los 8 handlers y assert del body OpenAI
+  (gpt-5.1 + max_completion_tokens, sin max_tokens).
+- **Frontend** (commits 811fedd merge sidebar, a57a706, b26a024, 85bfbdc): nav `/combustible`
+  solo Admin (comentario TEMPORAL con originales). Form nueva carga: preselección de medio de
+  pago sugerido (solo si no fue tocado; a propósito re-sugerible con foto nueva), aviso blando
+  por contradicción foto↔medio de pago, chip de confianza (tokens approved/warn/danger) +
+  "Leído de: «...»", advertencia de coherencia bajo monto que se limpia al editar monto/litros
+  o re-extraer. Nada bloquea el submit (criterio ADR-013).
+- **Sidebar plegable mergeado** a feature/modulo-combustible (811fedd) — la rama
+  feature/sidebar-plegable ya no hace falta.
+- **Review final (Opus): mergeable.** Hallazgo informativo pendiente (preexistente): el gating
+  del frontend es solo visual — `canAccess` de guards.ts no está cableado a ninguna ruta; un
+  no-Admin que tipee /combustible ve la página pero TODAS las llamadas dan 403 del backend
+  (sin fuga de datos). Si se quiere guard de ruta real, es trabajo aparte.
+- **Nota entorno:** vitest bajo carga da timeouts de 5s flaky en corridas combinadas (no es
+  regresión; aislado todo verde). El bug del botón "guardar carga" del §41 sigue SIN
+  diagnosticar (quedó interrumpido dos veces).

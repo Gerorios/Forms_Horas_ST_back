@@ -3,6 +3,13 @@ import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
 import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CrearMovilesMasivoDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, UpdateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
 import { CreateUsuarioDto, UpdateUsuarioDto, CrearUsuariosMasivoDto } from './dto/usuario.dto';
+import {
+  CreateEstacionServicioDto,
+  UpdateEstacionServicioDto,
+  CreateTipoCombustibleDto,
+  UpdateTipoCombustibleDto,
+  ToggleActivoCombustibleDto,
+} from './dto/catalogo-combustible.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -115,5 +122,37 @@ export class AdminController {
   @Post('usuarios/masivo')
   createUsuariosMasivo(@Body() dto: CrearUsuariosMasivoDto) {
     return this.service.createUsuariosMasivo(dto.cuils);
+  }
+
+  @Get('estaciones-servicio')
+  getEstacionesServicio() { return this.service.getEstacionesServicio(); }
+
+  @Post('estaciones-servicio')
+  crearEstacionServicio(@Body() dto: CreateEstacionServicioDto) { return this.service.crearEstacionServicio(dto); }
+
+  @Patch('estaciones-servicio/:id')
+  actualizarEstacionServicio(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateEstacionServicioDto) {
+    return this.service.actualizarEstacionServicio(id, dto);
+  }
+
+  @Patch('estaciones-servicio/:id/activo')
+  toggleEstacionServicio(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleActivoCombustibleDto) {
+    return this.service.toggleEstacionServicio(id, dto.activo);
+  }
+
+  @Get('tipos-combustible')
+  getTiposCombustible() { return this.service.getTiposCombustible(); }
+
+  @Post('tipos-combustible')
+  crearTipoCombustible(@Body() dto: CreateTipoCombustibleDto) { return this.service.crearTipoCombustible(dto); }
+
+  @Patch('tipos-combustible/:id')
+  actualizarTipoCombustible(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTipoCombustibleDto) {
+    return this.service.actualizarTipoCombustible(id, dto);
+  }
+
+  @Patch('tipos-combustible/:id/activo')
+  toggleTipoCombustible(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleActivoCombustibleDto) {
+    return this.service.toggleTipoCombustible(id, dto.activo);
   }
 }
