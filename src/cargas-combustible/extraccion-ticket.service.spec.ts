@@ -76,6 +76,7 @@ describe('ExtraccionTicketService', () => {
       expect(body.model).toBe('gpt-5.1');
       expect(body.max_completion_tokens).toBeDefined();
       expect(body).not.toHaveProperty('max_tokens');
+      expect(body.messages[0].content[0].image_url.detail).toBe('high');
       expect(r.legible).toBe(true);
       expect(r.sugerencias).toEqual({
         litros: 40.5, monto: 52000, fechaCarga: '2026-07-30',
