@@ -1394,3 +1394,17 @@ repos en `/var/www/Forms_Horas_ST_back` y `/var/www/Forms_Horas_ST_Frontend`; pm
 4. Recordar: combustible está gateado a SOLO Admin (temporal); revertir roles cuando se afine
    el módulo (originales documentados en §42 y en comentarios del código).
 5. Backup: incluir `/var/www/forms-horas-tickets` en la rutina de backups del VPS.
+
+## 44. Hotfix: extracción ilegible en producción por compresión de foto (2026-08-03)
+
+Primer intento real del usuario en prod: "no lo reconoce o confianza baja". Logs limpios (la
+llamada a OpenAI funcionaba). **Root cause con evidencia reproducida** (systematic-debugging):
+`comprimir-imagen.ts` reducía a 1600px/JPEG 0.7 — una foto de celular de 4000px deja el ticket
+térmico en ~640px y el modelo pierde la letra chica. Test controlado con el ticket conocido
+degradado igual: monto 168013.88 → **16801388** (perdió el decimal), litros y tipoCombustible
+null; el remito sí lo leía. Fix (PRs #13 en ambos repos, mergeados y deployados):
+compresión a **2560px/0.85** (~600KB-1MB por foto, ~US$0,003-0,005 por extracción con gpt-5.1,
+costo despreciable) + `detail: 'high'` en la llamada de visión OpenAI (con test del body).
+Redeploy con pm2 verificado, front 200. **Pendiente: que el usuario re-pruebe con un remito
+real** — si sigue flojo, siguiente palanca: mandar la foto original sin comprimir a la
+extracción (comprimir solo para almacenar).
