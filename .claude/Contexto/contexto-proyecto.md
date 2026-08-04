@@ -1524,3 +1524,26 @@ limpio en ambos repos.
   muestra también en /aprobaciones (reversa de la decisión previa, revisable); "empleados sin
   carga" muestra la nómina activa completa a todo JefeContrato/Admin (consciente).
   El merge de los PRs #14 requirió `gh pr merge --admin` (protección de rama nueva).
+
+## 47. Rediseño del panel de Liquidación (2026-08-04)
+
+Sesión grilling + auditoría del módulo (hallazgos: motor sin tests, N+1 ~1500 queries, silencios
+de $0, centinela 1.00 en mensualizados, bono que se arrastra, presentismo acoplado a nombres de
+tipos — los últimos tres SIGUEN pendientes). Implementado en `feature/panel-liquidacion`:
+
+- **Panel de quincenas** (`GET /liquidacion/quincenas`): estados derivados `con_pendientes` /
+  `con_alertas` / `lista`, SIN marca manual de liquidada; quincenas sin registros no se listan.
+- **Detalle** (`GET /liquidacion/quincena/detalle`): tabla por empleado (con categoría visible,
+  chips: N pendientes de aprobar / duplicado cruzado / falta dato) + filas grises de empleados con
+  horas sin perfil + expand con días aprobados (fecha/contrato/tareas/cargador/importe estimado),
+  novedades con efecto, edición inline de monto/km. Mensualizado ya no muestra el centinela 1.00
+  (horas null → "—"). Endpoint viejo /quincena/calculo intacto (se puede retirar más adelante).
+- **Perf**: `calcularQuincena` refactorizado a prefetch masivo (~10 queries) — detalle de 133s a
+  ~3.5s medidos; números verificados idénticos pre/post.
+- **UI transversal**: rutas de tablas anchas (liquidación, control-general, combustible,
+  admin/usuarios) a ancho completo (RUTAS_ANCHAS en app-shell); **barra de filtros unificada**
+  (`src/components/ui/barra-filtros.tsx`, base visual: la de aprobaciones) migrada en todas las
+  secciones con filtros; filtros facetados en el detalle (empleado búsqueda + checks relacionados
+  de régimen/categoría/contrato, totales intactos con nota); tabla ordenada por nombre es-AR.
+- 8 specs backend de panel + tests FE de panel/detalle/filtros. Pendientes que siguen: tests del
+  motor de cálculo, silencios de $0 (km sin rango, plus sin monto), arrastre del bono, export.

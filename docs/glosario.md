@@ -75,3 +75,6 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
 
 (La duplicación de horas entre contratos ya está implementada — ver `Alerta cruzada (tieneAlertaCruzada)`
 en "Entidades y campos clave".)
+
+- **Estado de quincena (panel Liquidador)** — Derivado de los datos, sin cierre manual (decisión 2026-08-04): `Con pendientes` (hay registros sin aprobar en el período), `Con alertas` (sin perfil / perfil incompleto / falta dato), `Lista para liquidar`. Las quincenas sin ningún registro cargado no se listan. No existe el estado "liquidada": el panel no congela datos.
+- **Importe estimado (detalle diario del Liquidador)** — En el drill-down por empleado, cada día aprobado muestra `horas × tarifa vigente de su categoría` como referencia. Es **estimado**: los conceptos quincenales (horas extra sobre 88, presentismo, plus, bono) no se prorratean por día — el número que se paga vive en la fila de la quincena. Al filtrar por contrato, los importes siguen siendo de la quincena completa.
