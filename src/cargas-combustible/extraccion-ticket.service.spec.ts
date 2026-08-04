@@ -14,6 +14,7 @@ describe('ExtraccionTicketService', () => {
   const prismaMock: any = {
     estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
     tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+    movil: { findMany: jest.fn().mockResolvedValue([]) },
   };
 
   beforeEach(() => {
@@ -37,6 +38,7 @@ describe('ExtraccionTicketService', () => {
       nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
+      patente: null, km: null, movilId: null,
     });
   });
 
@@ -58,6 +60,7 @@ describe('ExtraccionTicketService', () => {
       nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
+      patente: null, km: null, movilId: null,
     });
   });
   it('usa OpenAI como proveedor alternativo cuando solo hay OPENAI_API_KEY', async () => {
@@ -83,6 +86,7 @@ describe('ExtraccionTicketService', () => {
         nroComprobante: '0001-00001234', tipoCombustibleId: 2, estacionId: 1,
         tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
         lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
+        patente: null, km: null, movilId: null,
       });
     } finally {
       global.fetch = fetchOriginal;
@@ -187,6 +191,48 @@ describe('ExtraccionTicketService', () => {
     const rSinPrecio = await serviceSinPrecio.extraer(foto);
     expect(rSinPrecio.sugerencias?.advertenciaCoherencia).toBeNull();
   });
+
+  it('matchea patente contra el maestro de móviles y parsea kilometraje', async () => {
+    const movilMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+      movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
+    };
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ patente: 'AB 123 CD', kilometraje: 123456 }) }],
+    }) } };
+    const service = new ExtraccionTicketService(movilMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.movilId).toBe(7);
+    expect(r.sugerencias?.patente).toBe('AB 123 CD');
+    expect(r.sugerencias?.km).toBe(123456);
+  });
+
+  it('patente leída que no está en el maestro → movilId null, patente presente', async () => {
+    const movilMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+      movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
+    };
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ patente: 'ZZ 999 ZZ', kilometraje: 100 }) }],
+    }) } };
+    const service = new ExtraccionTicketService(movilMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.movilId).toBeNull();
+    expect(r.sugerencias?.patente).toBe('ZZ 999 ZZ');
+  });
+
+  it('sin patente en la respuesta → patente y movilId null', async () => {
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({}) }],
+    }) } };
+    const service = new ExtraccionTicketService(prismaMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.patente).toBeNull();
+    expect(r.sugerencias?.movilId).toBeNull();
+    expect(r.sugerencias?.km).toBeNull();
+  });
 });
 
 describe('ExtraccionTicketService — resolución de dependencias vía Nest DI', () => {
@@ -194,6 +240,7 @@ describe('ExtraccionTicketService — resolución de dependencias vía Nest DI',
     const prismaMock: any = {
       estacionServicio: { findMany: jest.fn().mockResolvedValue([]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([]) },
+      movil: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const moduleRef = await Test.createTestingModule({
       providers: [ExtraccionTicketService, { provide: PrismaService, useValue: prismaMock }],
