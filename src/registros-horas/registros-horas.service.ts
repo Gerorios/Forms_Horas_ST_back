@@ -764,7 +764,7 @@ export class RegistrosHorasService {
     }
     const conAlertaCruzada = new Set<string>();
     for (const e of acumPorOperarioFecha.values()) {
-      if (e.total >= UMBRAL_ALERTA_HORAS || e.lotes.size > 1) conAlertaCruzada.add(e.operarioCuil);
+      if (e.lotes.size > 1) conAlertaCruzada.add(e.operarioCuil);
     }
 
     // Horas aprobadas de la quincena anterior, mismo scope de "mis
