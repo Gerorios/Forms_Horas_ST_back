@@ -1500,3 +1500,27 @@ limpio en ambos repos.
 4. Ítems de la lista original de feedback de Jefes de Contrato sin resolver: sección "otros"
    de tareas adicionales, horas distintas por operario en un mismo reporte, inspectores de
    redes.
+
+## 46. Extracción lee patente+km, feature Control general del colega mergeada, fix nginx 413 (2026-08-04)
+
+- **Fix producción (nginx):** las fotos móviles (~1.4MB) daban 413 — nginx sin `client_max_body_size`
+  (default 1MB) cortaba `/extraer-ticket` antes de llegar a la app y el front mostraba "no pudimos
+  leer el ticket". Fix: `client_max_body_size 10m;` en ambos server blocks de
+  `/etc/nginx/sites-available/misregistros.serytec.com.ar` (backup `.bak-20260804`) + reload.
+  Verificado por el usuario: la extracción volvió a funcionar desde el celular.
+- **Extracción v3 — patente y km:** el prompt ahora pide `patente` (formatos AAA 123 / AA 123 CD,
+  DOMINIO/PAT, manuscrita ok) y `kilometraje` (típico de remitos). El service matchea patente
+  normalizada (uppercase, solo A-Z0-9, match EXACTO) contra `Movil.identificador` activo →
+  `sugerencias.movilId`; el form pre-selecciona móvil y km con badge (refs espejo, solo si no
+  tocados) y muestra hint "Patente leída: «…» — no está en el maestro" si no matchea. Validado por
+  el usuario en local contra `testing`.
+- **Feature del colega (`feature/liquidacion-perfiles-masivo`, PRs #14 ambos repos) revisada,
+  corregida y mergeada a main:** panel Control general (JefeContrato/Admin), duplicado cruzado,
+  filtros server-side, comparación quincena anterior, techo 24hs. Fixes de review aplicados:
+  (BE 0cc5d6f) `tieneAlertaCruzada` SOLO por multi-lote (se quitó el OR por total de horas) +
+  primer spec de registros-horas; (FE d6df702) badge "⚠ Revisar" suprimido en mis-registros
+  (datos stubbeados, tooltip mentía) + deep-link reactivo a segundos cambios de query param.
+  **Decisiones de producto 2026-08-04 (registradas en glosario):** la alerta de duplicado SÍ se
+  muestra también en /aprobaciones (reversa de la decisión previa, revisable); "empleados sin
+  carga" muestra la nómina activa completa a todo JefeContrato/Admin (consciente).
+  El merge de los PRs #14 requirió `gh pr merge --admin` (protección de rama nueva).
