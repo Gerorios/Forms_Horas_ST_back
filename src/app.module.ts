@@ -8,6 +8,7 @@ import { NovedadesModule } from './novedades/novedades.module';
 import { AdminModule } from './admin/admin.module';
 import { CatalogosModule } from './catalogos/catalogos.module';
 import { LiquidacionModule } from './liquidacion/liquidacion.module';
+import { CargasCombustibleModule } from './cargas-combustible/cargas-combustible.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { LiquidacionModule } from './liquidacion/liquidacion.module';
     AdminModule,
     CatalogosModule,
     LiquidacionModule,
+    CargasCombustibleModule,
   ],
 })
 export class AppModule {}
