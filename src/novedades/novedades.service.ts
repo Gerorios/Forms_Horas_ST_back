@@ -53,11 +53,18 @@ export class NovedadesService {
     });
   }
 
-  findAll(filtros: { operarioCuil?: string; estadoHys?: string }) {
+  findAll(
+    filtros: { operarioCuil?: string; estadoHys?: string },
+    usuario: { cuil: string; rol: string },
+  ) {
     return this.prisma.novedad.findMany({
       where: {
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
         ...(filtros.estadoHys ? { estadoHys: filtros.estadoHys as any } : {}),
+        // JefeCuadrilla puede cargar (ver ADR-007) pero solo ve lo que él mismo
+        // cargó, no el listado completo — mismo criterio que "Cargas que hice"
+        // para horas (ADR-001). El resto de los roles con acceso ven todo.
+        ...(usuario.rol === 'JefeCuadrilla' ? { cargadoPorCuil: usuario.cuil } : {}),
       },
       include: INCLUDE_BASICO,
       orderBy: { fechaInicio: 'desc' },

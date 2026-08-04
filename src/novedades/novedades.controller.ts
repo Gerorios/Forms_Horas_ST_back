@@ -18,11 +18,13 @@ export class NovedadesController {
   }
 
   @Get()
+  @Roles('HyS', 'JefeContrato', 'Supervisor', 'Liquidador', 'Admin', 'JefeCuadrilla')
   findAll(
-    @Query('operarioCuil') operarioCuil?: string,
-    @Query('estadoHys') estadoHys?: string,
+    @Query('operarioCuil') operarioCuil: string | undefined,
+    @Query('estadoHys') estadoHys: string | undefined,
+    @Request() req,
   ) {
-    return this.service.findAll({ operarioCuil, estadoHys });
+    return this.service.findAll({ operarioCuil, estadoHys }, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/resolver-hys')
