@@ -36,8 +36,11 @@ describe('PanelService', () => {
     it('pendientes>0 devuelve estado con_pendientes', async () => {
       prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]);
-      prismaMock.registroHoras.count.mockResolvedValue(3);
-      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { fecha: new Date(2026, 7, 3), estado: 'pendiente', operarioCuil: '20-1-1' },
+        { fecha: new Date(2026, 7, 4), estado: 'pendiente', operarioCuil: '20-2-2' },
+        { fecha: new Date(2026, 7, 5), estado: 'pendiente', operarioCuil: '20-3-3' },
+      ]);
 
       const r = await service.getQuincenas(hoy);
 
@@ -48,8 +51,9 @@ describe('PanelService', () => {
     it('sin pendientes pero con alertas (empleado sin perfil) devuelve con_alertas', async () => {
       prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]); // nadie tiene perfil
-      prismaMock.registroHoras.count.mockResolvedValue(0);
-      prismaMock.registroHoras.findMany.mockResolvedValue([{ operarioCuil: '20-1-1' }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { fecha: new Date(2026, 7, 5), estado: 'aprobado', operarioCuil: '20-1-1' },
+      ]);
 
       const r = await service.getQuincenas(hoy);
 
@@ -61,8 +65,9 @@ describe('PanelService', () => {
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
         { cuil: '20-1-1', regimen: 'jornalizado', categoriaUocraId: 1, modalidadPago: 'en_b' },
       ]);
-      prismaMock.registroHoras.count.mockResolvedValue(0);
-      prismaMock.registroHoras.findMany.mockResolvedValue([{ operarioCuil: '20-1-1' }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { fecha: new Date(2026, 7, 5), estado: 'aprobado', operarioCuil: '20-1-1' },
+      ]);
 
       const r = await service.getQuincenas(hoy);
 
@@ -72,7 +77,6 @@ describe('PanelService', () => {
     it('quincena sin ningún registro cargado no se lista', async () => {
       prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]);
-      prismaMock.registroHoras.count.mockResolvedValue(0);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
 
       const r = await service.getQuincenas(hoy);
@@ -150,6 +154,42 @@ describe('PanelService', () => {
       });
       expect(r.filas[0].pendientesAprobacion).toBe(1);
       expect(r.filas[0].duplicadoCruzado).toBe(false);
+    });
+
+    it('detecta duplicado cruzado: mismo cuil+fecha cargado en 2 lotes distintos', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy
+        .mockResolvedValueOnce([]) // pendientes por cuil
+        .mockResolvedValueOnce([]); // horas aprobadas para sinPerfil
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          fecha: new Date(2026, 7, 5),
+          horas: 8,
+          estado: 'aprobado',
+          loteId: 'L1',
+          contrato: { codigo: 'CTR1' },
+          tareas: [],
+          cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
+        },
+        {
+          operarioCuil: '20-1-1',
+          fecha: new Date(2026, 7, 5),
+          horas: 8,
+          estado: 'aprobado',
+          loteId: 'L2',
+          contrato: { codigo: 'CTR1' },
+          tareas: [],
+          cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
+        },
+      ]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].duplicadoCruzado).toBe(true);
     });
 
     it('mensualizado expone horasTotal y horasCct en null (fix centinela)', async () => {

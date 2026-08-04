@@ -19,7 +19,7 @@ export class CalculoService {
     return rangoQuincena(anio, mes, quincena);
   }
 
-  /** Días de una novedad que caen dentro de [desde, hasta], recortando a los bordes. Reusado por PanelService. */
+  /** Días de una novedad que caen dentro de [desde, hasta], recortando a los bordes. Público: PanelService lo reusa para clipear el plus por novedad individual en el detalle de quincena. */
   diasClip(fechaInicio: Date, fechaFin: Date | null, desde: Date, hasta: Date): number {
     const fin = fechaFin ?? fechaInicio;
     const inicioClamp = fechaInicio > desde ? fechaInicio : desde;

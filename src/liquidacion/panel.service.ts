@@ -69,7 +69,9 @@ export class PanelService {
    * por rango) + perfilIncompleto (global, no depende del período) — el
    * `datoFaltante` granular del cálculo completo solo se evalúa en el
    * detalle de la quincena consultada (correr calcularQuincena acá sería
-   * caro para hasta 24 quincenas).
+   * caro para hasta 24 quincenas). Perf: todo el span se trae en una sola
+   * query y se bucketiza por quincena en memoria (evita hasta 48 queries
+   * secuenciales).
    */
   async getQuincenas(hoy: Date = new Date()): Promise<QuincenaResumen[]> {
     const primero = await this.prisma.registroHoras.aggregate({ _min: { fecha: true } });
@@ -87,22 +89,45 @@ export class PanelService {
       (p) => (REGIMENES_CON_CATEGORIA.has(p.regimen) && !p.categoriaUocraId) || !p.modalidadPago,
     ).length;
 
+    // Todo el span (hasta 24 quincenas) en una sola query, bucketizado en
+    // memoria por quincena — evita hasta 48 queries secuenciales (perf).
+    const ultimo = periodos[0];
+    const primeroDelSpan = periodos[periodos.length - 1];
+    const spanDesde = rangoQuincena(primeroDelSpan.anio, primeroDelSpan.mes, primeroDelSpan.quincena).desde;
+    const spanHasta = rangoQuincena(ultimo.anio, ultimo.mes, ultimo.quincena).hasta;
+
+    const registros = await this.prisma.registroHoras.findMany({
+      where: { fecha: { gte: spanDesde, lte: spanHasta } },
+      select: { fecha: true, estado: true, operarioCuil: true },
+    });
+
+    const claveDe = (anio: number, mes: number, quincena: 1 | 2) => `${anio}-${mes}-${quincena}`;
+    const claveDeFecha = (fecha: Date): string => {
+      const anio = fecha.getFullYear();
+      const mes = fecha.getMonth() + 1;
+      const quincena: 1 | 2 = fecha.getDate() <= 15 ? 1 : 2;
+      return claveDe(anio, mes, quincena);
+    };
+
+    const pendientesPorPeriodo = new Map<string, number>();
+    const cuilsPorPeriodo = new Map<string, Set<string>>();
+    for (const r of registros) {
+      const clave = claveDeFecha(r.fecha);
+      if (r.estado === 'pendiente') {
+        pendientesPorPeriodo.set(clave, (pendientesPorPeriodo.get(clave) ?? 0) + 1);
+      }
+      if (!cuilsPorPeriodo.has(clave)) cuilsPorPeriodo.set(clave, new Set());
+      cuilsPorPeriodo.get(clave)!.add(r.operarioCuil);
+    }
+
     const resultado: QuincenaResumen[] = [];
     for (const periodo of periodos) {
-      const { desde, hasta } = rangoQuincena(periodo.anio, periodo.mes, periodo.quincena);
-
-      const pendientes = await this.prisma.registroHoras.count({
-        where: { estado: 'pendiente', fecha: { gte: desde, lte: hasta } },
-      });
-
-      const cuilsConHoras = await this.prisma.registroHoras.findMany({
-        where: { fecha: { gte: desde, lte: hasta } },
-        select: { operarioCuil: true },
-        distinct: ['operarioCuil'],
-      });
+      const clave = claveDe(periodo.anio, periodo.mes, periodo.quincena);
+      const pendientes = pendientesPorPeriodo.get(clave) ?? 0;
+      const cuilsConHoras = cuilsPorPeriodo.get(clave) ?? new Set<string>();
       // Quincenas sin ningún registro cargado no se listan (decisión 2026-08-04).
-      if (pendientes === 0 && cuilsConHoras.length === 0) continue;
-      const sinPerfil = cuilsConHoras.filter((c) => !cuilsConPerfil.has(c.operarioCuil)).length;
+      if (pendientes === 0 && cuilsConHoras.size === 0) continue;
+      const sinPerfil = [...cuilsConHoras].filter((c) => !cuilsConPerfil.has(c)).length;
       const alertas = sinPerfil + perfilesIncompletos;
 
       const estado: QuincenaResumen['estado'] =
@@ -204,8 +229,18 @@ export class PanelService {
       } else if (n.tipoNovedad.nombre === 'Suspensión') {
         efecto = 'pierde presentismo (suspensión)';
       } else if (n.tipoNovedad.generaPlus) {
+        // `fila.plus` trae el total del tipo (puede sumar varias novedades del
+        // mismo tipo en la quincena) — acá se muestra el monto de ESTA
+        // novedad puntual, clipeada al rango con diasClip.
         const plusEntry = fila?.plus.find((p) => p.tipoNovedadId === n.tipoNovedadId);
-        efecto = plusEntry ? `plus $${this.num(plusEntry.monto)} (${plusEntry.dias} días)` : 'informativa';
+        if (plusEntry && plusEntry.dias > 0) {
+          const diasNovedad = this.calculo.diasClip(n.fechaInicio, n.fechaFin, desde, hasta);
+          const montoPorDia = plusEntry.monto / plusEntry.dias;
+          efecto =
+            diasNovedad > 0 ? `plus $${this.num(diasNovedad * montoPorDia)} (${diasNovedad} días)` : 'informativa';
+        } else {
+          efecto = 'informativa';
+        }
       } else {
         efecto = 'informativa';
       }
