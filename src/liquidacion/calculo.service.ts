@@ -5,6 +5,11 @@ import { rangoQuincena } from '../common/quincena';
 /**
  * Motor de cálculo de liquidación por quincena. Ver ADR-009, ADR-010 y
  * ADR-011 (fórmulas confirmadas contra datos reales del usuario).
+ *
+ * Perf: todo el período se prefetchea en un puñado de queries (catálogos
+ * versionados sin filtrar + registros/novedades del rango) y el cómputo por
+ * perfil se resuelve en memoria — evita el N+1 de una query por perfil
+ * (~120 perfiles x 4-6 queries c/u contra una BD remota).
  */
 @Injectable()
 export class CalculoService {
@@ -12,15 +17,6 @@ export class CalculoService {
 
   private rangoQuincena(anio: number, mes: number, quincena: number): { desde: Date; hasta: Date } {
     return rangoQuincena(anio, mes, quincena);
-  }
-
-  private async tarifaVigente(categoriaUocraId: number, anio: number, mes: number) {
-    const fecha = new Date(anio, mes - 1, 1);
-    const tarifa = await this.prisma.tarifaCategoriaUocra.findFirst({
-      where: { categoriaUocraId, vigenteDesde: { lte: fecha } },
-      orderBy: { vigenteDesde: 'desc' },
-    });
-    return tarifa ? Number(tarifa.importeHora) : null;
   }
 
   /** Días de una novedad que caen dentro de [desde, hasta], recortando a los bordes. Reusado por PanelService. */
@@ -32,67 +28,18 @@ export class CalculoService {
     return diff > 0 ? diff : 0;
   }
 
-  /** Monto por día vigente para un tipo de novedad con plus. Reusado por PanelService. */
-  async montoNovedadVigente(tipoNovedadId: number, anio: number, mes: number) {
-    const fecha = new Date(anio, mes - 1, 1);
-    const monto = await this.prisma.montoNovedadPlus.findFirst({
-      where: { tipoNovedadId, vigenteDesde: { lte: fecha } },
-      orderBy: { vigenteDesde: 'desc' },
-    });
-    return monto ? Number(monto.montoPorDia) : null;
-  }
-
-  private async bonoVigente(categoriaUocraId: number, anio: number, mes: number) {
-    const fecha = new Date(anio, mes - 1, 1);
-    return this.prisma.bonoNoRemunerativo.findFirst({
-      where: { categoriaUocraId, vigenteDesde: { lte: fecha } },
-      orderBy: { vigenteDesde: 'desc' },
-    });
-  }
-
-  private async rangoKmVigente(kmTotal: number, anio: number, mes: number) {
-    const fecha = new Date(anio, mes - 1, 1);
-    const ultimo = await this.prisma.rangoKmPorTantos.findFirst({
-      where: { vigenteDesde: { lte: fecha } },
-      orderBy: { vigenteDesde: 'desc' },
-    });
-    if (!ultimo) return null;
-    const rangos = await this.prisma.rangoKmPorTantos.findMany({ where: { vigenteDesde: ultimo.vigenteDesde } });
-    return (
-      rangos.find((r) => kmTotal >= Number(r.kmDesde) && (r.kmHasta == null || kmTotal <= Number(r.kmHasta))) ?? null
-    );
-  }
-
-  /** Días de una novedad (por nombre de tipo) que caen dentro del período, recortando a sus bordes. */
-  private async diasDeNovedad(cuil: string, nombreTipo: string, desde: Date, hasta: Date) {
-    const novedades = await this.prisma.novedad.findMany({
-      where: {
-        operarioCuil: cuil,
-        tipoNovedad: { nombre: nombreTipo },
-        fechaInicio: { lte: hasta },
-        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
-      },
-    });
-    let dias = 0;
-    for (const n of novedades) {
-      dias += this.diasClip(n.fechaInicio, n.fechaFin, desde, hasta);
+  /** De una lista ya cargada en memoria, la fila con vigenteDesde <= fecha más reciente. */
+  private masVigente<T extends { vigenteDesde: Date }>(rows: T[], fecha: Date): T | null {
+    let best: T | null = null;
+    for (const r of rows) {
+      if (r.vigenteDesde <= fecha && (!best || r.vigenteDesde > best.vigenteDesde)) best = r;
     }
-    return dias;
-  }
-
-  private async novedadesEnPeriodo(cuil: string, nombreTipo: string, desde: Date, hasta: Date) {
-    return this.prisma.novedad.findFirst({
-      where: {
-        operarioCuil: cuil,
-        tipoNovedad: { nombre: nombreTipo },
-        fechaInicio: { lte: hasta },
-        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
-      },
-    });
+    return best;
   }
 
   async calcularQuincena(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = this.rangoQuincena(anio, mes, quincena);
+    const fechaVigencia = new Date(anio, mes - 1, 1);
 
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: { not: 'administrativo' } },
@@ -102,6 +49,7 @@ export class CalculoService {
       },
       orderBy: { cuil: 'asc' },
     });
+    const cuils = perfiles.map((p) => p.cuil);
 
     const tiposConPlus = await this.prisma.tipoNovedad.findMany({ where: { generaPlus: true, activo: true } });
 
@@ -111,12 +59,56 @@ export class CalculoService {
     const kmsPorTantos = await this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } });
     const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
 
+    // Catálogos versionados: tablas chicas, se traen enteras (sin filtro por
+    // categoría/tipo) y se resuelve "vigente" en memoria por clave.
+    const [tarifas, montosPlus, bonos, rangosKm] = await Promise.all([
+      this.prisma.tarifaCategoriaUocra.findMany(),
+      this.prisma.montoNovedadPlus.findMany(),
+      this.prisma.bonoNoRemunerativo.findMany(),
+      this.prisma.rangoKmPorTantos.findMany(),
+    ]);
+
+    // Rango de km vigente para el mes: el "último" vigenteDesde se resuelve
+    // una sola vez sobre TODA la tabla (no por bracket) y después, dentro de
+    // esa vigencia, cada perfil busca el bracket que le corresponde por km.
+    const kmVigencia = this.masVigente(rangosKm, fechaVigencia)?.vigenteDesde ?? null;
+    const rangosKmVigentes = kmVigencia
+      ? rangosKm.filter((r) => r.vigenteDesde.getTime() === kmVigencia.getTime())
+      : [];
+
+    // Horas aprobadas del rango, sumadas por cuil en una sola query.
+    const horasAprobadas = await this.prisma.registroHoras.groupBy({
+      by: ['operarioCuil'],
+      where: { operarioCuil: { in: cuils }, estado: 'aprobado', fecha: { gte: desde, lte: hasta } },
+      _sum: { horas: true },
+    });
+    const horasAprobadasPorCuil = new Map(horasAprobadas.map((h) => [h.operarioCuil, Number(h._sum.horas ?? 0)]));
+
+    // Novedades solapadas al rango, para todos los perfiles en una sola query.
+    const novedades = await this.prisma.novedad.findMany({
+      where: {
+        operarioCuil: { in: cuils },
+        fechaInicio: { lte: hasta },
+        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
+      },
+      include: { tipoNovedad: true },
+    });
+    const novedadesPorCuil = new Map<string, typeof novedades>();
+    for (const n of novedades) {
+      if (!novedadesPorCuil.has(n.operarioCuil)) novedadesPorCuil.set(n.operarioCuil, []);
+      novedadesPorCuil.get(n.operarioCuil)!.push(n);
+    }
+
     const resultado = [];
 
     for (const perfil of perfiles) {
       const tarifaHora = perfil.categoriaUocraId
-        ? await this.tarifaVigente(perfil.categoriaUocraId, anio, mes)
+        ? (this.masVigente(
+            tarifas.filter((t) => t.categoriaUocraId === perfil.categoriaUocraId),
+            fechaVigencia,
+          )?.importeHora ?? null)
         : null;
+      const tarifaHoraNum = tarifaHora != null ? Number(tarifaHora) : null;
 
       let horasTotal = 0;
       let horasCct = 0;
@@ -126,24 +118,20 @@ export class CalculoService {
       let datoFaltante: string | null = null;
 
       if (perfil.regimen === 'jornalizado') {
-        const agg = await this.prisma.registroHoras.aggregate({
-          where: { operarioCuil: perfil.cuil, estado: 'aprobado', fecha: { gte: desde, lte: hasta } },
-          _sum: { horas: true },
-        });
-        horasTotal = Number(agg._sum.horas ?? 0);
+        horasTotal = horasAprobadasPorCuil.get(perfil.cuil) ?? 0;
         horasCct = Math.min(horasTotal, 88);
         horasExtra = Math.max(horasTotal - 88, 0);
-        if (tarifaHora != null) {
-          basico = tarifaHora * horasCct;
-          montoExtra = horasExtra * tarifaHora * 1.5;
+        if (tarifaHoraNum != null) {
+          basico = tarifaHoraNum * horasCct;
+          montoExtra = horasExtra * tarifaHoraNum * 1.5;
         } else {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
       } else if (perfil.regimen === 'fijo') {
         horasTotal = 88;
         horasCct = 88;
-        if (tarifaHora != null) {
-          basico = tarifaHora * 88;
+        if (tarifaHoraNum != null) {
+          basico = tarifaHoraNum * 88;
         } else {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
@@ -160,39 +148,43 @@ export class CalculoService {
         const kmTotal = kmPorCuil.get(perfil.cuil);
         if (kmTotal == null) {
           datoFaltante = 'Falta cargar los km de esta quincena';
-        } else if (tarifaHora == null) {
+        } else if (tarifaHoraNum == null) {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada (necesaria para convertir km a horas)';
         } else {
-          const rango = await this.rangoKmVigente(kmTotal, anio, mes);
+          const rango = rangosKmVigentes.find(
+            (r) => kmTotal >= Number(r.kmDesde) && (r.kmHasta == null || kmTotal <= Number(r.kmHasta)),
+          );
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
-          horasTotal = tarifaHora > 0 ? montoKm / tarifaHora : 0;
+          horasTotal = tarifaHoraNum > 0 ? montoKm / tarifaHoraNum : 0;
           horasCct = Math.min(horasTotal, 88);
           horasExtra = Math.max(horasTotal - 88, 0);
-          basico = tarifaHora * horasCct;
-          montoExtra = horasExtra * tarifaHora * 1.5;
+          basico = tarifaHoraNum * horasCct;
+          montoExtra = horasExtra * tarifaHoraNum * 1.5;
         }
       }
 
+      const novedadesCuil = novedadesPorCuil.get(perfil.cuil) ?? [];
+
       // Presentismo: 20% del básico, salvo Ausencia desaprobada o Suspensión en el período.
-      const ausenciaDesaprobada = await this.prisma.novedad.findFirst({
-        where: {
-          operarioCuil: perfil.cuil,
-          estadoHys: 'desaprobada',
-          tipoNovedad: { nombre: 'Ausencia' },
-          fechaInicio: { lte: hasta },
-          OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
-        },
-      });
-      const suspension = await this.novedadesEnPeriodo(perfil.cuil, 'Suspensión', desde, hasta);
+      const ausenciaDesaprobada = novedadesCuil.some(
+        (n) => n.tipoNovedad.nombre === 'Ausencia' && n.estadoHys === 'desaprobada',
+      );
+      const suspension = novedadesCuil.some((n) => n.tipoNovedad.nombre === 'Suspensión');
       const tienePresentismo = !ausenciaDesaprobada && !suspension;
       const presentismo = tienePresentismo ? basico * 0.2 : 0;
 
       // Plus de novedades (Guardia Pasiva, Viáticos, etc.)
       const plus: { tipoNovedadId: number; nombre: string; dias: number; monto: number }[] = [];
       for (const tipo of tiposConPlus) {
-        const dias = await this.diasDeNovedad(perfil.cuil, tipo.nombre, desde, hasta);
+        const dias = novedadesCuil
+          .filter((n) => n.tipoNovedadId === tipo.id)
+          .reduce((s, n) => s + this.diasClip(n.fechaInicio, n.fechaFin, desde, hasta), 0);
         if (dias > 0) {
-          const montoPorDia = await this.montoNovedadVigente(tipo.id, anio, mes);
+          const montoVigente = this.masVigente(
+            montosPlus.filter((m) => m.tipoNovedadId === tipo.id),
+            fechaVigencia,
+          );
+          const montoPorDia = montoVigente ? Number(montoVigente.montoPorDia) : null;
           plus.push({ tipoNovedadId: tipo.id, nombre: tipo.nombre, dias, monto: montoPorDia ? dias * montoPorDia : 0 });
         }
       }
@@ -201,9 +193,13 @@ export class CalculoService {
       // Bono no remunerativo (por categoría, opcional)
       let noRemunerativo = 0;
       if (perfil.categoriaUocraId) {
-        const bono = await this.bonoVigente(perfil.categoriaUocraId, anio, mes);
+        const bono = this.masVigente(
+          bonos.filter((b) => b.categoriaUocraId === perfil.categoriaUocraId),
+          fechaVigencia,
+        );
         if (bono) {
-          noRemunerativo = bono.tipo === 'monto_fijo' ? Number(bono.valor) : (tarifaHora ?? 0) * (Number(bono.valor) / 100);
+          noRemunerativo =
+            bono.tipo === 'monto_fijo' ? Number(bono.valor) : (tarifaHoraNum ?? 0) * (Number(bono.valor) / 100);
         }
       }
 
@@ -222,7 +218,7 @@ export class CalculoService {
         regimen: perfil.regimen,
         provincia: perfil.empleado.provincia,
         modalidadPago: perfil.modalidadPago,
-        precioBruto: tarifaHora,
+        precioBruto: tarifaHoraNum,
         horasTotal,
         horasCct,
         totalBruto: basico,
