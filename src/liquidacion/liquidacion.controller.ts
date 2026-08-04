@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
+import { PanelService } from './panel.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
@@ -22,6 +23,7 @@ export class LiquidacionController {
   constructor(
     private service: LiquidacionService,
     private calculo: CalculoService,
+    private panel: PanelService,
   ) {}
 
   @Get('categorias-uocra')
@@ -125,5 +127,21 @@ export class LiquidacionController {
     @Query('quincena', ParseIntPipe) quincena: number,
   ) {
     return this.calculo.getAlertasQuincena(anio, mes, quincena);
+  }
+
+  // ---- Panel de quincenas y detalle con drill-down (ver plan 2026-08-04) ----
+
+  @Get('quincenas')
+  getQuincenas() {
+    return this.panel.getQuincenas();
+  }
+
+  @Get('quincena/detalle')
+  getDetalleQuincena(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.panel.getDetalleQuincena(anio, mes, quincena);
   }
 }
