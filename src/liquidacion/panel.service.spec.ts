@@ -58,13 +58,26 @@ describe('PanelService', () => {
 
     it('sin pendientes ni alertas devuelve lista', async () => {
       prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { cuil: '20-1-1', regimen: 'jornalizado', categoriaUocraId: 1, modalidadPago: 'en_b' },
+      ]);
+      prismaMock.registroHoras.count.mockResolvedValue(0);
+      prismaMock.registroHoras.findMany.mockResolvedValue([{ operarioCuil: '20-1-1' }]);
+
+      const r = await service.getQuincenas(hoy);
+
+      expect(r[0]).toMatchObject({ estado: 'lista', alertas: 0, pendientes: 0 });
+    });
+
+    it('quincena sin ningún registro cargado no se lista', async () => {
+      prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]);
       prismaMock.registroHoras.count.mockResolvedValue(0);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
 
       const r = await service.getQuincenas(hoy);
 
-      expect(r[0]).toMatchObject({ estado: 'lista', alertas: 0, pendientes: 0 });
+      expect(r).toHaveLength(0);
     });
   });
 

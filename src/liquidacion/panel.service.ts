@@ -100,6 +100,8 @@ export class PanelService {
         select: { operarioCuil: true },
         distinct: ['operarioCuil'],
       });
+      // Quincenas sin ningún registro cargado no se listan (decisión 2026-08-04).
+      if (pendientes === 0 && cuilsConHoras.length === 0) continue;
       const sinPerfil = cuilsConHoras.filter((c) => !cuilsConPerfil.has(c.operarioCuil)).length;
       const alertas = sinPerfil + perfilesIncompletos;
 
