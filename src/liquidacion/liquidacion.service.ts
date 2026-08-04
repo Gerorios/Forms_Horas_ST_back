@@ -411,35 +411,46 @@ export class LiquidacionService {
         }
       }
 
-      // ---- Rangos km (reemplazo completo del período) ----
+      // ---- Rangos km (reemplazo completo del período; no-op si no cambió nada) ----
       const rangosViejos = await tx.rangoKmPorTantos.findMany({ where: { vigenteDesde: fecha }, orderBy: { kmDesde: 'asc' } });
-      await tx.rangoKmPorTantos.deleteMany({ where: { vigenteDesde: fecha } });
-      if (dto.rangosKm.length) {
-        await tx.rangoKmPorTantos.createMany({
-          data: dto.rangosKm.map((r) => ({
-            vigenteDesde: fecha,
-            kmDesde: r.kmDesde,
-            kmHasta: r.kmHasta ?? null,
-            precioPorKm: r.precioPorKm,
-          })),
-        });
-      }
       const rangosViejosSerializados = rangosViejos.map((r) => ({
         kmDesde: r.kmDesde.toString(),
         kmHasta: r.kmHasta?.toString() ?? null,
         precioPorKm: r.precioPorKm.toString(),
       }));
-      await tx.auditoria.create({
-        data: {
-          tabla: 'sth_rangos_km_por_tantos',
-          registroId: 0,
-          usuarioCuil,
-          accion: 'editar',
-          campo: 'rangosKm',
-          valorAnterior: JSON.stringify(rangosViejosSerializados),
-          valorNuevo: JSON.stringify(dto.rangosKm),
-        },
+      // Comparación normalizada a 2 decimales (Decimal.toString() recorta ceros: "40" vs "40.00").
+      const comparable = (r: { kmDesde: unknown; kmHasta?: unknown; precioPorKm: unknown }) => ({
+        kmDesde: Number(r.kmDesde).toFixed(2),
+        kmHasta: r.kmHasta != null ? Number(r.kmHasta).toFixed(2) : null,
+        precioPorKm: Number(r.precioPorKm).toFixed(2),
       });
+      const rangosCambiaron =
+        JSON.stringify(rangosViejosSerializados.map(comparable)) !==
+        JSON.stringify(dto.rangosKm.map(comparable));
+      if (rangosCambiaron) {
+        await tx.rangoKmPorTantos.deleteMany({ where: { vigenteDesde: fecha } });
+        if (dto.rangosKm.length) {
+          await tx.rangoKmPorTantos.createMany({
+            data: dto.rangosKm.map((r) => ({
+              vigenteDesde: fecha,
+              kmDesde: r.kmDesde,
+              kmHasta: r.kmHasta ?? null,
+              precioPorKm: r.precioPorKm,
+            })),
+          });
+        }
+        await tx.auditoria.create({
+          data: {
+            tabla: 'sth_rangos_km_por_tantos',
+            registroId: 0,
+            usuarioCuil,
+            accion: 'editar',
+            campo: 'rangosKm',
+            valorAnterior: JSON.stringify(rangosViejosSerializados),
+            valorNuevo: JSON.stringify(dto.rangosKm),
+          },
+        });
+      }
     }, { timeout: 30000, maxWait: 10000 });
 
     return this.getRondaTarifas(anio, mes);
