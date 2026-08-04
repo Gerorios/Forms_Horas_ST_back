@@ -117,6 +117,32 @@ export class CargarRondaTarifasDto {
   bonosNoRemunerativos?: BonoNoRemunerativoDto[];
 }
 
+// ---- Edición de rondas ya cargadas (amendment 2026-08-04 al ADR-010) ----
+
+export class EditarRondaTarifasDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoriaPrecioDto)
+  categorias: CategoriaPrecioDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TipoNovedadMontoDto)
+  tiposNovedad: TipoNovedadMontoDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RangoKmDto)
+  rangosKm: RangoKmDto[];
+
+  /** Opcional: una categoría ausente acá que antes tenía bono se elimina. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BonoNoRemunerativoDto)
+  bonosNoRemunerativos?: BonoNoRemunerativoDto[];
+}
+
 // ---- Datos variables por quincena (mensualizado / por tantos) — ver ADR-011 ----
 
 export class QuincenaParamsDto {

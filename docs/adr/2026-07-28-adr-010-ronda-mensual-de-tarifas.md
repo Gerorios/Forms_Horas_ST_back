@@ -72,3 +72,44 @@ tocan.
 - **Rondas independientes por tarifa** (categorías, novedades, km cada una
   con su propio ciclo) — descartada: en la práctica las 3 se ajustan juntas
   en la misma ronda mensual.
+
+## Amendment 2026-08-04 — edición de períodos cargados
+
+Decisión de producto: los valores de un período **ya cargado** ahora se
+pueden editar, no solo agregar hacia adelante. Se agregan:
+
+- `GET /liquidacion/tarifas/ronda/:anio/:mes` — trae los valores vigentes de
+  ese período puntual (tarifas por categoría, montos de novedad con plus,
+  rangos de km, bonos por categoría) para prellenar la edición. 404 si el
+  período no tiene `RondaTarifas`.
+- `PUT /liquidacion/tarifas/ronda/:anio/:mes` — sobrescribe esos valores,
+  con auditoría completa en `Auditoria` (quién, cuándo, valor anterior →
+  nuevo) por cada campo que cambió. Si el valor no cambió, no se genera
+  fila de auditoría.
+
+### Por qué
+
+La inmutabilidad estricta del diseño original resultó demasiado rígida en
+la práctica: UOCRA a veces corrige un monto que ya había publicado, o el
+Liquidador detecta un error de tipeo en una ronda cargada hace semanas, y
+la única forma de corregirlo bajo la regla vieja era esperar a la próxima
+ronda — dejando el período histórico con un valor que todos saben que está
+mal. La necesidad real de corregir precios pesa más que la garantía de
+inmutabilidad; el **rastro de auditoría reemplaza** a la inmutabilidad como
+mecanismo de confianza: "qué precio regía en tal mes" se sigue pudiendo
+responder, pero ahora es "el valor actual, más su historia de cambios en
+la auditoría" en lugar de "un valor que nunca se tocó".
+
+La UI debe avisar, al editar un período ya cargado, que el cambio puede
+implicar un **recálculo retroactivo** de liquidaciones ya calculadas con
+el valor viejo (no hay concepto de "cierre de quincena" que lo bloquee).
+
+### Qué NO cambia
+
+- La regla forward-only de `POST /liquidacion/tarifas/ronda` (carga de
+  **períodos nuevos**, con relleno automático de huecos) sigue intacta —
+  este amendment solo habilita editar valores de un período que ya tiene
+  fila en `RondaTarifas`, no saltar ni recargar rondas fuera de orden.
+- Los rangos de km, al editarse, se reemplazan por completo (no hay un id
+  estable por rango para hacer diff campo a campo) — la auditoría de ese
+  reemplazo guarda el array viejo y el nuevo completos, serializados.

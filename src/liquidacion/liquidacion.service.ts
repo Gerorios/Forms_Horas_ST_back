@@ -5,6 +5,7 @@ import {
   UpdateCategoriaUocraDto,
   UpsertPerfilLiquidacionDto,
   CargarRondaTarifasDto,
+  EditarRondaTarifasDto,
   CargarMontosMensualizadosDto,
   CargarKmPorTantosDto,
 } from './dto/liquidacion.dto';
@@ -202,6 +203,246 @@ export class LiquidacionService {
     }, { timeout: 30000, maxWait: 10000 });
 
     return { mesesCompletados: [...faltantes, objetivo] };
+  }
+
+  // ---- Edición de rondas ya cargadas (amendment 2026-08-04 al ADR-010) ----
+
+  async getRondaTarifas(anio: number, mes: number) {
+    const ronda = await this.prisma.rondaTarifas.findUnique({ where: { anio_mes: { anio, mes } } });
+    if (!ronda) throw new NotFoundException('No existe una ronda cargada para ese período');
+
+    const fecha = new Date(anio, mes - 1, 1);
+    const categoriasActivas = await this.prisma.categoriaUocra.findMany({
+      where: { activo: true },
+      orderBy: { nombre: 'asc' },
+    });
+    const categoriaIds = categoriasActivas.map((c) => c.id);
+
+    const tarifas = await this.prisma.tarifaCategoriaUocra.findMany({
+      where: { vigenteDesde: fecha, categoriaUocraId: { in: categoriaIds } },
+    });
+    const importePorCategoria = new Map(tarifas.map((t) => [t.categoriaUocraId, t.importeHora.toString()]));
+
+    const bonos = await this.prisma.bonoNoRemunerativo.findMany({
+      where: { vigenteDesde: fecha, categoriaUocraId: { in: categoriaIds } },
+    });
+    const bonoPorCategoria = new Map(bonos.map((b) => [b.categoriaUocraId, { tipo: b.tipo, valor: b.valor.toString() }]));
+
+    const tiposConPlus = await this.prisma.tipoNovedad.findMany({
+      where: { generaPlus: true, activo: true },
+      orderBy: { nombre: 'asc' },
+    });
+    const montos = await this.prisma.montoNovedadPlus.findMany({
+      where: { vigenteDesde: fecha, tipoNovedadId: { in: tiposConPlus.map((t) => t.id) } },
+    });
+    const montoPorTipo = new Map(montos.map((m) => [m.tipoNovedadId, m.montoPorDia.toString()]));
+
+    const rangosKm = await this.prisma.rangoKmPorTantos.findMany({
+      where: { vigenteDesde: fecha },
+      orderBy: { kmDesde: 'asc' },
+    });
+
+    return {
+      anio,
+      mes,
+      categorias: categoriasActivas.map((c) => ({
+        categoriaUocraId: c.id,
+        nombre: c.nombre,
+        importeHora: importePorCategoria.get(c.id) ?? null,
+      })),
+      tiposNovedad: tiposConPlus.map((t) => ({
+        tipoNovedadId: t.id,
+        nombre: t.nombre,
+        montoPorDia: montoPorTipo.get(t.id) ?? null,
+      })),
+      rangosKm: rangosKm.map((r) => ({
+        kmDesde: r.kmDesde.toString(),
+        kmHasta: r.kmHasta?.toString() ?? null,
+        precioPorKm: r.precioPorKm.toString(),
+      })),
+      bonosNoRemunerativos: categoriasActivas.map((c) => ({
+        categoriaUocraId: c.id,
+        bono: bonoPorCategoria.get(c.id) ?? null,
+      })),
+    };
+  }
+
+  async editarRondaTarifas(anio: number, mes: number, dto: EditarRondaTarifasDto, usuarioCuil: string) {
+    const ronda = await this.prisma.rondaTarifas.findUnique({ where: { anio_mes: { anio, mes } } });
+    if (!ronda) throw new NotFoundException('No existe una ronda cargada para ese período');
+
+    const fecha = new Date(anio, mes - 1, 1);
+
+    await this.prisma.$transaction(async (tx) => {
+      // ---- Tarifas por categoría ----
+      for (const c of dto.categorias) {
+        const existente = await tx.tarifaCategoriaUocra.findUnique({
+          where: { categoriaUocraId_vigenteDesde: { categoriaUocraId: c.categoriaUocraId, vigenteDesde: fecha } },
+        });
+        if (existente) {
+          if (Number(existente.importeHora) !== c.importeHora) {
+            const valorAnterior = existente.importeHora.toString();
+            await tx.tarifaCategoriaUocra.update({ where: { id: existente.id }, data: { importeHora: c.importeHora } });
+            await tx.auditoria.create({
+              data: {
+                tabla: 'sth_tarifas_categoria_uocra',
+                registroId: existente.id,
+                usuarioCuil,
+                accion: 'editar',
+                campo: 'importeHora',
+                valorAnterior,
+                valorNuevo: c.importeHora.toString(),
+              },
+            });
+          }
+        } else {
+          const creada = await tx.tarifaCategoriaUocra.create({
+            data: { categoriaUocraId: c.categoriaUocraId, vigenteDesde: fecha, importeHora: c.importeHora },
+          });
+          await tx.auditoria.create({
+            data: {
+              tabla: 'sth_tarifas_categoria_uocra',
+              registroId: creada.id,
+              usuarioCuil,
+              accion: 'crear',
+              campo: 'importeHora',
+              valorNuevo: c.importeHora.toString(),
+            },
+          });
+        }
+      }
+
+      // ---- Montos de novedad con plus ----
+      for (const t of dto.tiposNovedad) {
+        const existente = await tx.montoNovedadPlus.findUnique({
+          where: { tipoNovedadId_vigenteDesde: { tipoNovedadId: t.tipoNovedadId, vigenteDesde: fecha } },
+        });
+        if (existente) {
+          if (Number(existente.montoPorDia) !== t.montoPorDia) {
+            const valorAnterior = existente.montoPorDia.toString();
+            await tx.montoNovedadPlus.update({ where: { id: existente.id }, data: { montoPorDia: t.montoPorDia } });
+            await tx.auditoria.create({
+              data: {
+                tabla: 'sth_montos_novedad_plus',
+                registroId: existente.id,
+                usuarioCuil,
+                accion: 'editar',
+                campo: 'montoPorDia',
+                valorAnterior,
+                valorNuevo: t.montoPorDia.toString(),
+              },
+            });
+          }
+        } else {
+          const creado = await tx.montoNovedadPlus.create({
+            data: { tipoNovedadId: t.tipoNovedadId, vigenteDesde: fecha, montoPorDia: t.montoPorDia },
+          });
+          await tx.auditoria.create({
+            data: {
+              tabla: 'sth_montos_novedad_plus',
+              registroId: creado.id,
+              usuarioCuil,
+              accion: 'crear',
+              campo: 'montoPorDia',
+              valorNuevo: t.montoPorDia.toString(),
+            },
+          });
+        }
+      }
+
+      // ---- Bonos no remunerativos ----
+      const bonosExistentes = await tx.bonoNoRemunerativo.findMany({ where: { vigenteDesde: fecha } });
+      const bonoExistentePorCategoria = new Map(bonosExistentes.map((b) => [b.categoriaUocraId, b]));
+      const bonosDto = dto.bonosNoRemunerativos ?? [];
+      const categoriasConBonoEnDto = new Set(bonosDto.map((b) => b.categoriaUocraId));
+
+      for (const b of bonosDto) {
+        const existente = bonoExistentePorCategoria.get(b.categoriaUocraId);
+        if (existente) {
+          if (Number(existente.valor) !== b.valor || existente.tipo !== b.tipo) {
+            const valorAnterior = existente.valor.toString();
+            await tx.bonoNoRemunerativo.update({
+              where: { id: existente.id },
+              data: { tipo: b.tipo, valor: b.valor },
+            });
+            await tx.auditoria.create({
+              data: {
+                tabla: 'sth_bonos_no_remunerativos',
+                registroId: existente.id,
+                usuarioCuil,
+                accion: 'editar',
+                campo: 'valor',
+                valorAnterior,
+                valorNuevo: b.valor.toString(),
+              },
+            });
+          }
+        } else {
+          const creado = await tx.bonoNoRemunerativo.create({
+            data: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, tipo: b.tipo, valor: b.valor },
+          });
+          await tx.auditoria.create({
+            data: {
+              tabla: 'sth_bonos_no_remunerativos',
+              registroId: creado.id,
+              usuarioCuil,
+              accion: 'crear',
+              campo: 'valor',
+              valorNuevo: b.valor.toString(),
+            },
+          });
+        }
+      }
+
+      for (const [categoriaUocraId, existente] of bonoExistentePorCategoria) {
+        if (!categoriasConBonoEnDto.has(categoriaUocraId)) {
+          await tx.bonoNoRemunerativo.delete({ where: { id: existente.id } });
+          await tx.auditoria.create({
+            data: {
+              tabla: 'sth_bonos_no_remunerativos',
+              registroId: existente.id,
+              usuarioCuil,
+              accion: 'editar',
+              campo: 'valor',
+              valorAnterior: existente.valor.toString(),
+              valorNuevo: null,
+            },
+          });
+        }
+      }
+
+      // ---- Rangos km (reemplazo completo del período) ----
+      const rangosViejos = await tx.rangoKmPorTantos.findMany({ where: { vigenteDesde: fecha }, orderBy: { kmDesde: 'asc' } });
+      await tx.rangoKmPorTantos.deleteMany({ where: { vigenteDesde: fecha } });
+      if (dto.rangosKm.length) {
+        await tx.rangoKmPorTantos.createMany({
+          data: dto.rangosKm.map((r) => ({
+            vigenteDesde: fecha,
+            kmDesde: r.kmDesde,
+            kmHasta: r.kmHasta ?? null,
+            precioPorKm: r.precioPorKm,
+          })),
+        });
+      }
+      const rangosViejosSerializados = rangosViejos.map((r) => ({
+        kmDesde: r.kmDesde.toString(),
+        kmHasta: r.kmHasta?.toString() ?? null,
+        precioPorKm: r.precioPorKm.toString(),
+      }));
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_rangos_km_por_tantos',
+          registroId: 0,
+          usuarioCuil,
+          accion: 'editar',
+          campo: 'rangosKm',
+          valorAnterior: JSON.stringify(rangosViejosSerializados),
+          valorNuevo: JSON.stringify(dto.rangosKm),
+        },
+      });
+    }, { timeout: 30000, maxWait: 10000 });
+
+    return this.getRondaTarifas(anio, mes);
   }
 
   // ---- Perfiles de liquidación (régimen + categoría por empleado) ----

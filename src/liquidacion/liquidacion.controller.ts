@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
 import { PanelService } from './panel.service';
@@ -6,6 +6,7 @@ import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
   CargarRondaTarifasDto,
+  EditarRondaTarifasDto,
   UpsertPerfilLiquidacionDto,
   UpsertPerfilesMasivoDto,
   CargarMontosMensualizadosDto,
@@ -56,6 +57,21 @@ export class LiquidacionController {
   @Post('tarifas/ronda')
   cargarRondaTarifas(@Body() dto: CargarRondaTarifasDto) {
     return this.service.cargarRondaTarifas(dto);
+  }
+
+  @Get('tarifas/ronda/:anio/:mes')
+  getRondaTarifas(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
+    return this.service.getRondaTarifas(anio, mes);
+  }
+
+  @Put('tarifas/ronda/:anio/:mes')
+  editarRondaTarifas(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Body() dto: EditarRondaTarifasDto,
+    @Request() req,
+  ) {
+    return this.service.editarRondaTarifas(anio, mes, dto, req.user.cuil);
   }
 
   @Get('perfiles')
