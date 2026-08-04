@@ -23,7 +23,17 @@ export class CalculoService {
     return tarifa ? Number(tarifa.importeHora) : null;
   }
 
-  private async montoNovedadVigente(tipoNovedadId: number, anio: number, mes: number) {
+  /** Días de una novedad que caen dentro de [desde, hasta], recortando a los bordes. Reusado por PanelService. */
+  diasClip(fechaInicio: Date, fechaFin: Date | null, desde: Date, hasta: Date): number {
+    const fin = fechaFin ?? fechaInicio;
+    const inicioClamp = fechaInicio > desde ? fechaInicio : desde;
+    const finClamp = fin < hasta ? fin : hasta;
+    const diff = Math.floor((finClamp.getTime() - inicioClamp.getTime()) / 86_400_000) + 1;
+    return diff > 0 ? diff : 0;
+  }
+
+  /** Monto por día vigente para un tipo de novedad con plus. Reusado por PanelService. */
+  async montoNovedadVigente(tipoNovedadId: number, anio: number, mes: number) {
     const fecha = new Date(anio, mes - 1, 1);
     const monto = await this.prisma.montoNovedadPlus.findFirst({
       where: { tipoNovedadId, vigenteDesde: { lte: fecha } },
@@ -65,11 +75,7 @@ export class CalculoService {
     });
     let dias = 0;
     for (const n of novedades) {
-      const fin = n.fechaFin ?? n.fechaInicio;
-      const inicioClamp = n.fechaInicio > desde ? n.fechaInicio : desde;
-      const finClamp = fin < hasta ? fin : hasta;
-      const diff = Math.floor((finClamp.getTime() - inicioClamp.getTime()) / 86_400_000) + 1;
-      if (diff > 0) dias += diff;
+      dias += this.diasClip(n.fechaInicio, n.fechaFin, desde, hasta);
     }
     return dias;
   }
@@ -215,6 +221,7 @@ export class CalculoService {
         categoria: perfil.categoria?.nombre ?? null,
         regimen: perfil.regimen,
         provincia: perfil.empleado.provincia,
+        modalidadPago: perfil.modalidadPago,
         precioBruto: tarifaHora,
         horasTotal,
         horasCct,
