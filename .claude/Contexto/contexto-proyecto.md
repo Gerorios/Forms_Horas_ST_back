@@ -1408,3 +1408,95 @@ costo despreciable) + `detail: 'high'` en la llamada de visión OpenAI (con test
 Redeploy con pm2 verificado, front 200. **Pendiente: que el usuario re-pruebe con un remito
 real** — si sigue flojo, siguiente palanca: mandar la foto original sin comprimir a la
 extracción (comprimir solo para almacenar).
+
+## 45. Jefe de Contrato — auditoría, filtros, duplicado cruzado y panel "Control general" (2026-07-31 a 2026-08-04)
+
+Sesión larga en `feature/liquidacion-perfiles-masivo` (misma rama de §36 — Fase 2 de
+Liquidador nunca pusheada hasta ahora, va en el mismo PR). Arrancó de una consulta del
+usuario sobre un badge `+16h` fijo en `/aprobaciones`, siguió con `/grill-with-docs` sobre
+feedback real de los Jefes de Contrato (dos mails: uno de "Serytec Girls" con una lista
+puntual, otro pidiendo un reemplazo del tablero Looker que usaban antes de cerrar quincena),
+y terminó en 4 mejoras grandes más varias rondas de iteración de UX.
+
+**Bug de origen:** `alertaHoras` se calculaba como una foto al momento de guardar (no se
+recalculaba si una carga posterior en OTRO lote subía el total del día) y el frontend pintaba
+el string fijo `"+16h"` sin importar el total real.
+
+### Tarea 1 — Auditoría visible + total real (reemplaza el string fijo)
+
+`porAprobar` resuelve `cargadoPor`/`aprobadoPor` (nombre real, mismo fallback a
+`nombreFueraNomina` que `admin.service.ts`) y calcula EN VIVO (no al guardar) el total real
+de horas del operario ese día, cruzando todos los contratos/lotes. Frontend: `ResumenCarga`
+muestra "Cargado por"; `LoteResumenCard` muestra "Aprobado/Rechazado por X el [fecha]"; el
+badge fijo pasa a mostrar el número real.
+
+### Tarea 2 — Filtros server-side compartidos
+
+`FiltrosRegistros` (contrato/cargador/operario/fecha) integrado en `/aprobaciones`.
+`porAprobar` extendido con los mismos parámetros que ya tenía `findAll`, filtrando en el
+`where` de Prisma (no en el cliente) — el propio código ya señalaba que aprobados/rechazados
+"se acumulan indefinidamente".
+
+### Tarea 3 — Duplicado cruzado + bloqueo de horas imposibles
+
+Grilling con el usuario afinó la regla real: no es "horas > umbral" (su propio ejemplo,
+8+8=16hs en dos contratos, no disparaba nada) — es **mismo operario + misma fecha en más de
+un `loteId`**, sin importar si es mismo o distinto contrato. Campo nuevo `duplicadoCruzado`.
+Umbral de aviso confirmado en **≥16hs** (cambiado de `>` a `>=` a pedido del usuario). Techo
+duro nuevo: **>24hs/día bloquea la carga** (`BadRequestException`) en los 4 puntos de
+escritura (`create`, `createBatch`, `corregirLote`, `update`).
+
+### Tarea 4 — Panel "Control general" (nuevo)
+
+Página `/control-general` (nav: JefeContrato + Admin), dos endpoints:
+- `GET .../resumen-operarios` — por operario de "mis contratos": total horas, desglose
+  pendiente/aprobado/rechazado, `superaHorasExtra` (>88hs quincena, ADR-009),
+  `tieneAlertaCruzada` (mismo criterio de arriba pero cruzando TODOS los contratos, no solo
+  los del jefe), y `horasAprobadas`/`horasAprobadasAnterior`/`deltaHorasAprobadas`
+  (comparación contra la quincena anterior, mismo scope de contratos — pedido explícito:
+  "saber si estoy pagando de más sin buen control de duplicado por parte de los jefes").
+- `GET .../sin-carga` — empleados activos (`snuempleados`) sin ningún registro en la
+  quincena, **sin scope de contrato** (compartido entre todos los JefeContrato+Admin — no hay
+  padrón fijo por contrato, operarios multidisciplinarios) + `ultimaCarga` (fecha del último
+  registro histórico o null, para distinguir "nunca cargó" de "dejó de reportar de repente").
+
+`rangoQuincena`/`quincenaAnterior` se extrajeron a `common/quincena.ts` (reusado por
+`CalculoService` de Liquidación). UX iterada varias veces con el usuario: stat tiles
+interactivos (clic filtra la tabla o hace scroll a "sin carga"), buscadores por nombre, orden
+que sube primero lo que necesita revisión, y — pedido específico — las tarjetas de
+`/aprobaciones` (`LoteCard`/`LoteResumenCard`) resaltan el borde en naranja + badge
+"⚠ Revisar" cuando alguna fila tiene alerta, visible sin expandir el detalle. El nombre de
+cada operario en el resumen linkea a `/aprobaciones?operarioCuil=...` (lee el query param con
+`useSearchParams`).
+
+### Reconciliación con ADR-012 (M:N de jefes), ya en producción
+
+A mitad de sesión, `/aprobaciones` no funcionaba probado como Jefe de Contrato real — la rama
+estaba desactualizada respecto al modelo M:N de contratos-jefes (ya mergeado y con la columna
+vieja `jefe_contrato_cuil` ya dropeada en la base `testing`, confirmado por consulta directa).
+Se commiteó el WIP, se mergeó `origin/main`, y se migró a mano el único método propio que
+Gero no conocía (`resumenOperarios`, seguía en `jefeContratoCuil`) a `jefes.some(...)`. Cero
+conflictos reales — el merge automático resolvió todo lo demás solo.
+
+### Segundo merge: módulo de Combustible de Gero (§40-44)
+
+Antes de pushear, se revisó de nuevo `origin/main` (había avanzado con el módulo de
+combustible completo + sidebar plegable + deploy a producción). Cero solapamiento de
+archivos en el backend; en el frontend, 3 archivos en común (`nav.ts`, `nav.test.ts`,
+`types/domain.ts`) se auto-mergearon sin conflicto real (ediciones en zonas distintas).
+Único hallazgo real: `nav-icons.test.tsx` (de Gero) exige ícono para todo ítem de
+`NAV_ITEMS` — se le agregó uno a `/control-general` (barras).
+
+**Verificación final:** backend `nest build` limpio; frontend 287/287 tests, `tsc --noEmit`
+limpio en ambos repos.
+
+**Pendiente:**
+1. Pushear `feature/liquidacion-perfiles-masivo` (ambos repos) y abrir PR — trae también la
+   Fase 2 de Liquidador de §36, nunca pusheada hasta ahora.
+2. "Cargas que hice" (mis-registros) no recibió el enriquecimiento de auditoría/total
+   cruzado — usa `findAll`, no `porAprobar`.
+3. Ideas discutidas y no implementadas todavía: filtro por contrato dentro de "Control
+   general", export a CSV.
+4. Ítems de la lista original de feedback de Jefes de Contrato sin resolver: sección "otros"
+   de tareas adicionales, horas distintas por operario en un mismo reporte, inspectores de
+   redes.
