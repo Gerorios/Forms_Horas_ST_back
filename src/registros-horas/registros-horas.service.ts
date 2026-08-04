@@ -13,7 +13,7 @@ import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
-import { rangoQuincena } from '../common/quincena';
+import { rangoQuincena, quincenaAnterior } from '../common/quincena';
 
 // Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
@@ -60,7 +60,7 @@ export class RegistrosHorasService {
       _sum: { horas: true },
     });
     const totalHoras = Number(horasDelDia._sum.horas ?? 0) + Number(dto.horas);
-    const alertaHoras = totalHoras > UMBRAL_ALERTA_HORAS;
+    const alertaHoras = totalHoras >= UMBRAL_ALERTA_HORAS;
     if (totalHoras > TECHO_HORAS_IMPOSIBLE) {
       throw new BadRequestException(
         `Con esta carga, este operario tendría ${totalHoras}hs el ${dto.fecha} entre todos los contratos — no es humanamente posible en un día. Puede haber una carga duplicada en otro contrato o lote.`,
@@ -119,7 +119,7 @@ export class RegistrosHorasService {
       0,
     );
 
-    // Alerta >16 hs por operario/día: se calcula ANTES de la transacción
+    // Alerta >=16 hs por operario/día: se calcula ANTES de la transacción
     // (son lecturas) para no agotar el timeout de la transacción interactiva.
     // >24hs (techo imposible) bloquea la carga entera, ninguno se crea.
     const alertaPorOperario = new Map<string, boolean>();
@@ -130,7 +130,7 @@ export class RegistrosHorasService {
         _sum: { horas: true },
       });
       const totalDia = Number(previas._sum.horas ?? 0) + horasBatchPorOperario;
-      alertaPorOperario.set(operarioCuil, totalDia > UMBRAL_ALERTA_HORAS);
+      alertaPorOperario.set(operarioCuil, totalDia >= UMBRAL_ALERTA_HORAS);
       if (totalDia > TECHO_HORAS_IMPOSIBLE) excedidos.push(operarioCuil);
     }
     if (excedidos.length) {
@@ -350,7 +350,7 @@ export class RegistrosHorasService {
 
         const nuevas = [];
         for (const original of filas) {
-          // Alerta >16hs recalculada excluyendo lo desaprobado (la fila que
+          // Alerta >=16hs recalculada excluyendo lo desaprobado (la fila que
           // acabamos de rechazar ya no cuenta) — mismo criterio que create().
           const previas = await tx.registroHoras.aggregate({
             where: {
@@ -366,7 +366,7 @@ export class RegistrosHorasService {
               `Con esta corrección, ${original.operarioCuil} tendría ${totalDia}hs el día — no es humanamente posible. Puede haber una carga duplicada en otro contrato o lote.`,
             );
           }
-          const alertaHoras = totalDia > UMBRAL_ALERTA_HORAS;
+          const alertaHoras = totalDia >= UMBRAL_ALERTA_HORAS;
 
           const nueva = await tx.registroHoras.create({
             data: {
@@ -507,7 +507,7 @@ export class RegistrosHorasService {
         `Con esta edición, ${registro.operarioCuil} tendría ${totalDia}hs el día — no es humanamente posible. Puede haber una carga duplicada en otro contrato o lote.`,
       );
     }
-    const alertaHoras = totalDia > UMBRAL_ALERTA_HORAS;
+    const alertaHoras = totalDia >= UMBRAL_ALERTA_HORAS;
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.movilIds !== undefined) {
@@ -722,15 +722,17 @@ export class RegistrosHorasService {
       pendiente: number;
       aprobado: number;
       desaprobado: number;
+      horasAprobadas: number;
     };
     const porOperario = new Map<string, Acumulado>();
     for (const f of filas) {
       let acc = porOperario.get(f.operarioCuil);
       if (!acc) {
-        acc = { totalHoras: 0, pendiente: 0, aprobado: 0, desaprobado: 0 };
+        acc = { totalHoras: 0, pendiente: 0, aprobado: 0, desaprobado: 0, horasAprobadas: 0 };
         porOperario.set(f.operarioCuil, acc);
       }
       if (f.estado !== 'desaprobado') acc.totalHoras += Number(f.horas);
+      if (f.estado === 'aprobado') acc.horasAprobadas += Number(f.horas);
       acc[f.estado as 'pendiente' | 'aprobado' | 'desaprobado'] += 1;
     }
 
@@ -741,14 +743,64 @@ export class RegistrosHorasService {
     });
     const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
 
+    // Duplicado cruzado / total diario ≥16hs: igual criterio que porAprobar,
+    // pero acá se mira TODA la quincena y CRUZANDO todos los contratos (no
+    // solo los míos) — si no, un jefe con un solo contrato nunca vería la
+    // señal que justamente sirve para detectar que hay carga en otro lado.
+    const filasQuincenaCompleta = await this.prisma.registroHoras.findMany({
+      where: { operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
+      select: { operarioCuil: true, fecha: true, horas: true, loteId: true },
+    });
+    const acumPorOperarioFecha = new Map<string, { operarioCuil: string; total: number; lotes: Set<string> }>();
+    for (const r of filasQuincenaCompleta) {
+      const k = `${r.operarioCuil}|${r.fecha.toISOString()}`;
+      let e = acumPorOperarioFecha.get(k);
+      if (!e) {
+        e = { operarioCuil: r.operarioCuil, total: 0, lotes: new Set() };
+        acumPorOperarioFecha.set(k, e);
+      }
+      e.total += Number(r.horas);
+      e.lotes.add(r.loteId);
+    }
+    const conAlertaCruzada = new Set<string>();
+    for (const e of acumPorOperarioFecha.values()) {
+      if (e.total >= UMBRAL_ALERTA_HORAS || e.lotes.size > 1) conAlertaCruzada.add(e.operarioCuil);
+    }
+
+    // Horas aprobadas de la quincena anterior, mismo scope de "mis
+    // contratos" (comparable con lo de arriba) — para ver si le estoy
+    // aprobando de golpe mucho más (o algo por primera vez) a alguien, señal
+    // de un posible duplicado que el control diario no agarró.
+    const anterior = quincenaAnterior(anio, mes, quincena);
+    const { desde: desdeAnt, hasta: hastaAnt } = rangoQuincena(anterior.anio, anterior.mes, anterior.quincena);
+    const filasAnteriores = await this.prisma.registroHoras.findMany({
+      where: {
+        contratoId: { in: misContratoIds },
+        fecha: { gte: desdeAnt, lte: hastaAnt },
+        estado: 'aprobado',
+      },
+      select: { operarioCuil: true, horas: true },
+    });
+    const horasAprobadasAnteriorPorCuil = new Map<string, number>();
+    for (const f of filasAnteriores) {
+      horasAprobadasAnteriorPorCuil.set(
+        f.operarioCuil,
+        (horasAprobadasAnteriorPorCuil.get(f.operarioCuil) ?? 0) + Number(f.horas),
+      );
+    }
+
     return cuils
       .map((cuil) => {
         const acc = porOperario.get(cuil)!;
+        const horasAprobadasAnterior = horasAprobadasAnteriorPorCuil.get(cuil) ?? 0;
         return {
           cuil,
           apellido_nombre: nombrePorCuil.get(cuil) ?? '',
           ...acc,
           superaHorasExtra: acc.totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
+          tieneAlertaCruzada: conAlertaCruzada.has(cuil),
+          horasAprobadasAnterior,
+          deltaHorasAprobadas: acc.horasAprobadas - horasAprobadasAnterior,
         };
       })
       .sort((a, b) => a.apellido_nombre.localeCompare(b.apellido_nombre));
@@ -774,13 +826,25 @@ export class RegistrosHorasService {
       }),
     ]);
     const cuilsConCarga = new Set(conCarga.map((c) => c.operarioCuil));
-    return activos
-      .filter((e) => !cuilsConCarga.has(e.cuil))
-      .map((e) => ({
-        cuil: e.cuil,
-        apellido_nombre: e.apellido_nombre,
-        legajo: e.legajo,
-        cargo: e.cargo,
-      }));
+    const sinCarga = activos.filter((e) => !cuilsConCarga.has(e.cuil));
+
+    // Última carga histórica (fuera de esta quincena, en cualquier contrato)
+    // de cada uno — distingue "nunca cargó nada" (recién ingresado, sin
+    // contrato asignado todavía) de "dejó de reportar de repente" (venía
+    // cargando y esta quincena no hay nada, señal más urgente).
+    const ultimas = await this.prisma.registroHoras.groupBy({
+      by: ['operarioCuil'],
+      where: { operarioCuil: { in: sinCarga.map((e) => e.cuil) } },
+      _max: { fecha: true },
+    });
+    const ultimaPorCuil = new Map(ultimas.map((u) => [u.operarioCuil, u._max.fecha]));
+
+    return sinCarga.map((e) => ({
+      cuil: e.cuil,
+      apellido_nombre: e.apellido_nombre,
+      legajo: e.legajo,
+      cargo: e.cargo,
+      ultimaCarga: ultimaPorCuil.get(e.cuil)?.toISOString().slice(0, 10) ?? null,
+    }));
   }
 }
