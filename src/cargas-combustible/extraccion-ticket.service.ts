@@ -51,6 +51,8 @@ B) Si es FACTURA o TIQUE FACTURA: el número SIEMPRE tiene el formato punto de v
 - "cuitEstacion": CUIT del emisor, solo dígitos, sin guiones. null si no aparece.
 - "cae": el CAE/CAI si existe, solo dígitos. null si no aparece.
 - "lineaOrigenNumero": copiá TEXTUALMENTE la línea completa de la imagen de donde extrajiste el nroComprobante, tal cual la leés (con su etiqueta). Si no encontraste número, null.
+- "patente": la patente del vehículo, a veces rotulada DOMINIO, PATENTE o PAT, impresa o manuscrita. Puede venir en formato viejo "AAA 123" o nuevo "AA 123 CD". Devolvela tal como se lee, sin corregir ni reformatear. null si no aparece.
+- "kilometraje": el kilometraje del vehículo, suele figurar en REMITOS (rotulado KM, KMS o KILOMETRAJE, a veces manuscrito) y rara vez en FACTURAS. Es un número entero sin separadores de miles. Ante la mínima duda, null: no lo inventes ni lo confundas con otro número (nroComprobante, litros, monto, CUIT).
 
 ## Coherencia
 Si tenés litros y precioLitro, verificá que litros × precioLitro ≈ monto (tolerancia 5%). Si no cierra, revisá si confundiste litros con precio unitario y corregí.
@@ -62,7 +64,7 @@ Si tenés litros y precioLitro, verificá que litros × precioLitro ≈ monto (t
 - "confianzaNumero": "alta" si leíste el número nítido y con etiqueta clara; "media" si lo inferiste combinando partes o la etiqueta era ambigua; "baja" si hay dígitos dudosos.
 
 ## Formato de salida (exacto, todas las claves siempre presentes)
-{"legible": boolean, "tipoComprobante": "REMITO"|"FACTURA_A"|"FACTURA_B"|"FACTURA_C"|"TIQUE"|"OTRO", "nroComprobante": string|null, "puntoVenta": string|null, "numero": string|null, "lineaOrigenNumero": string|null, "confianzaNumero": "alta"|"media"|"baja", "litros": number|null, "precioLitro": number|null, "monto": number|null, "fecha": "YYYY-MM-DD"|null, "tipoCombustible": string|null, "estacion": string|null, "cuitEstacion": string|null, "cae": string|null}`;
+{"legible": boolean, "tipoComprobante": "REMITO"|"FACTURA_A"|"FACTURA_B"|"FACTURA_C"|"TIQUE"|"OTRO", "nroComprobante": string|null, "puntoVenta": string|null, "numero": string|null, "lineaOrigenNumero": string|null, "confianzaNumero": "alta"|"media"|"baja", "litros": number|null, "precioLitro": number|null, "monto": number|null, "fecha": "YYYY-MM-DD"|null, "tipoCombustible": string|null, "estacion": string|null, "cuitEstacion": string|null, "cae": string|null, "patente": string|null, "kilometraje": number|null}`;
 
 export type TipoComprobante = 'REMITO' | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C' | 'TIQUE' | 'OTRO';
 export type ExtraccionTicket = {
@@ -76,10 +78,14 @@ export type ExtraccionTicket = {
     lineaOrigenNumero: string | null;
     precioLitro: number | null;
     advertenciaCoherencia: string | null;
+    patente: string | null;
+    km: number | null;
+    movilId: number | null;
   };
 };
 
 const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const normalizarPatente = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 @Injectable()
 export class ExtraccionTicketService {
@@ -133,9 +139,10 @@ export class ExtraccionTicketService {
       const json = JSON.parse(texto.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
       if (!json.legible) return { legible: false, sugerencias: null };
 
-      const [estaciones, tipos] = await Promise.all([
+      const [estaciones, tipos, moviles] = await Promise.all([
         this.prisma.estacionServicio.findMany({ where: { activo: true }, select: { id: true, nombre: true } }),
         this.prisma.tipoCombustible.findMany({ where: { activo: true }, select: { id: true, nombre: true } }),
+        this.prisma.movil.findMany({ where: { activo: true }, select: { id: true, identificador: true } }),
       ]);
       const matchear = (valor: string | null, catalogo: { id: number; nombre: string }[]) => {
         if (!valor) return null;
@@ -161,6 +168,13 @@ export class ExtraccionTicketService {
         }
       }
 
+      const patente = typeof json.patente === 'string' ? json.patente : null;
+      const km = typeof json.kilometraje === 'number' && Number.isInteger(json.kilometraje) && json.kilometraje >= 0
+        ? json.kilometraje : null;
+      const movilId = patente
+        ? (moviles.find((m: { id: number; identificador: string }) => normalizarPatente(m.identificador) === normalizarPatente(patente))?.id ?? null)
+        : null;
+
       return { legible: true, sugerencias: {
         litros,
         monto,
@@ -174,6 +188,9 @@ export class ExtraccionTicketService {
         lineaOrigenNumero,
         precioLitro,
         advertenciaCoherencia,
+        patente,
+        km,
+        movilId,
       }};
     } catch (e) {
       this.logger.warn(`Extracción de ticket falló: ${e instanceof Error ? e.message : e}`);
