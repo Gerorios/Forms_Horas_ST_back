@@ -216,7 +216,9 @@ export class PanelService {
       where: {
         operarioCuil: { in: cuils },
         fechaInicio: { lte: hasta },
-        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
+        // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
+        // quincena solo si su unico dia (fechaInicio) cae dentro del rango.
+        OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
       },
       include: { tipoNovedad: true },
     });
