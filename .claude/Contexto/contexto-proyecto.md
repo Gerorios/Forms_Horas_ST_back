@@ -1547,3 +1547,30 @@ tipos — los últimos tres SIGUEN pendientes). Implementado en `feature/panel-l
   de régimen/categoría/contrato, totales intactos con nota); tabla ordenada por nombre es-AR.
 - 8 specs backend de panel + tests FE de panel/detalle/filtros. Pendientes que siguen: tests del
   motor de cálculo, silencios de $0 (km sin rango, plus sin monto), arrastre del bono, export.
+
+## 48. Precios editables + reglas de plus afinadas — EN PRODUCCIÓN (2026-08-05)
+
+Rama `feature/tarifas-editables` (ambos repos), validada por el dueño del producto en local:
+
+- **Panel de precios por mes, lectura primero** (3ra iteración de UX tras feedback): se entra a
+  CONSULTAR ("¿qué precio está tomando julio?") — tablas limpias por período con selector de mes;
+  "Editar precios de [mes]" pasa a inputs con Guardar (dialog de confirmación de recálculo
+  retroactivo) / Cancelar. Sin la palabra "ronda" en la UI. Bug corregido en el camino: desfasaje
+  de contrato GET ronda (categoriaUocraId/tipoNovedadId/bonos array) → adaptador en el hook.
+- **Edición de períodos cargados con auditoría** (amendment ADR-010, opción a): PUT
+  /liquidacion/tarifas/ronda/:anio/:mes — upsert de tarifas/montos/bonos + reemplazo de rangos
+  (no-op sin cambios), cada cambio con fila en sth_auditoria (quién/cuándo/valor anterior→nuevo).
+  La carga de períodos NUEVOS sigue forward-only. Sin cierre de quincena (aviso genérico).
+- **Errores legibles**: mensajeDeError extrae el message real del backend en todos los toasts de
+  liquidación (el "404" fantasma era un 400 de la regla de rondas mal mostrado).
+- **Reglas de dominio afinadas con casos reales** (glosario actualizado):
+  1. Novedad sin fecha de fin = de UN día (antes: query la trataba como "en curso" y el conteo
+     como un día — fantasmas informativos en quincenas ajenas).
+  2. **Plus por CARGA de novedad, nunca por día** (caso Guardia Pasiva 3 días pagaba $2000×3):
+     cada carga paga el monto una vez, en la quincena donde INICIA; fecha fin informativa.
+     3 viáticos = 3×monto. El monto del catálogo es "por novedad" (etiquetas actualizadas).
+     Sin cambios de schema (se descartó la modalidad por tipo: regla universal más simple).
+- Verificado en vivo contra testing: Acevedo julio 2ª = viático $4000 + guardia $2000 (antes
+  $6000). Backend 68/68 tests. Sin DDL para el deploy de esta rama.
+- Aparte: limpieza de máquina (exclusiones Defender pendientes del usuario, ~1GB liberado,
+  diagnóstico: i3 2 núcleos + C: al límite — Docker/Composer purgables a confirmar).
