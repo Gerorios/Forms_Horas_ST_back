@@ -1574,3 +1574,22 @@ Rama `feature/tarifas-editables` (ambos repos), validada por el dueño del produ
   $6000). Backend 68/68 tests. Sin DDL para el deploy de esta rama.
 - Aparte: limpieza de máquina (exclusiones Defender pendientes del usuario, ~1GB liberado,
   diagnóstico: i3 2 núcleos + C: al límite — Docker/Composer purgables a confirmar).
+
+## 49. MultiFiltro estándar en toda la app — EN PRODUCCIÓN (2026-08-05)
+
+Pedido del dueño del producto (2da pasada sobre filtros — la 1ra solo unificó la estética):
+UN componente de filtro para todo listado. Grilling (4 decisiones): desplegable de checkboxes
+multi-selección con "(Todos)", buscador interno si >10 opciones, botón con contador, nada
+tildado = sin filtro; facetado real entre filtros (cada lista excluye su propio filtro);
+fechas y búsqueda libre conservan su control dentro de la misma barra; filtros de personas
+= MultiFiltro con buscador; selectores de período NO son filtros; formularios intactos.
+
+Implementado 100% frontend (`MultiFiltro` en src/components/ui/barra-filtros.tsx + helper
+src/lib/facetado.ts), migradas 6 pantallas: Aprobaciones (contrato/cargador/operario ahora
+multi y CLIENT-SIDE — usePorAprobar solo manda fecha; deep-link ?operarioCuil= preselecciona
+el checkbox), Combustible (móvil/estado; estado arranca en "Activas"), Control general,
+Liquidación Detalle (empleado pasó de búsqueda a desplegable), Liquidación Perfiles
+(régimen/categoría/modalidad ahora multi, "(sin asignar)" tildable), Admin Usuarios (pills
+de rol → MultiFiltro). 81 tests en 8 archivos + tsc verdes (verificación por archivo — en
+esta máquina de 2 núcleos las suites completas no terminan; quedó como método). Validado
+por el usuario en local. Plan: docs/superpowers/plans/2026-08-05-filtros-estandar.md.
