@@ -216,7 +216,9 @@ export class PanelService {
       where: {
         operarioCuil: { in: cuils },
         fechaInicio: { lte: hasta },
-        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
+        // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
+        // quincena solo si su unico dia (fechaInicio) cae dentro del rango.
+        OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
       },
       include: { tipoNovedad: true },
     });
@@ -229,15 +231,17 @@ export class PanelService {
       } else if (n.tipoNovedad.nombre === 'Suspensión') {
         efecto = 'pierde presentismo (suspensión)';
       } else if (n.tipoNovedad.generaPlus) {
-        // `fila.plus` trae el total del tipo (puede sumar varias novedades del
-        // mismo tipo en la quincena) — acá se muestra el monto de ESTA
-        // novedad puntual, clipeada al rango con diasClip.
+        // El plus se paga POR CARGA de novedad, en la quincena donde INICIA
+        // (decisión 2026-08-05). `fila.plus` trae cantidad de cargas y total
+        // del tipo; esta novedad puntual paga el monto unitario si inicia en
+        // el rango, y si solo solapa (inició en otra quincena) es informativa.
         const plusEntry = fila?.plus.find((p) => p.tipoNovedadId === n.tipoNovedadId);
-        if (plusEntry && plusEntry.dias > 0) {
-          const diasNovedad = this.calculo.diasClip(n.fechaInicio, n.fechaFin, desde, hasta);
-          const montoPorDia = plusEntry.monto / plusEntry.dias;
-          efecto =
-            diasNovedad > 0 ? `plus $${this.num(diasNovedad * montoPorDia)} (${diasNovedad} días)` : 'informativa';
+        const iniciaEnRango = n.fechaInicio >= desde && n.fechaInicio <= hasta;
+        if (plusEntry && plusEntry.dias > 0 && iniciaEnRango) {
+          const montoPorNovedad = plusEntry.monto / plusEntry.dias;
+          efecto = `plus $${this.num(montoPorNovedad)} (por novedad)`;
+        } else if (!iniciaEnRango) {
+          efecto = 'informativa (se paga en la quincena donde inicia)';
         } else {
           efecto = 'informativa';
         }

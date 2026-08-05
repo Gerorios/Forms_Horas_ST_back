@@ -89,7 +89,9 @@ export class CalculoService {
       where: {
         operarioCuil: { in: cuils },
         fechaInicio: { lte: hasta },
-        OR: [{ fechaFin: null }, { fechaFin: { gte: desde } }],
+        // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
+        // quincena solo si su unico dia (fechaInicio) cae dentro del rango.
+        OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
       },
       include: { tipoNovedad: true },
     });
@@ -173,19 +175,23 @@ export class CalculoService {
       const tienePresentismo = !ausenciaDesaprobada && !suspension;
       const presentismo = tienePresentismo ? basico * 0.2 : 0;
 
-      // Plus de novedades (Guardia Pasiva, Viáticos, etc.)
+      // Plus de novedades (Guardia Pasiva, Viáticos, etc.): se paga POR CARGA de
+      // novedad, nunca por día (decisión 2026-08-05). Cada novedad del tipo cuenta
+      // una vez, en la quincena donde INICIA — la fechaFin es informativa (cuánto
+      // duró) y no multiplica el pago. `dias` conserva el nombre por compatibilidad
+      // de shape, pero es la CANTIDAD de cargas del tipo en la quincena.
       const plus: { tipoNovedadId: number; nombre: string; dias: number; monto: number }[] = [];
       for (const tipo of tiposConPlus) {
-        const dias = novedadesCuil
-          .filter((n) => n.tipoNovedadId === tipo.id)
-          .reduce((s, n) => s + this.diasClip(n.fechaInicio, n.fechaFin, desde, hasta), 0);
-        if (dias > 0) {
+        const cantidad = novedadesCuil.filter(
+          (n) => n.tipoNovedadId === tipo.id && n.fechaInicio >= desde && n.fechaInicio <= hasta,
+        ).length;
+        if (cantidad > 0) {
           const montoVigente = this.masVigente(
             montosPlus.filter((m) => m.tipoNovedadId === tipo.id),
             fechaVigencia,
           );
-          const montoPorDia = montoVigente ? Number(montoVigente.montoPorDia) : null;
-          plus.push({ tipoNovedadId: tipo.id, nombre: tipo.nombre, dias, monto: montoPorDia ? dias * montoPorDia : 0 });
+          const montoPorNovedad = montoVigente ? Number(montoVigente.montoPorDia) : null;
+          plus.push({ tipoNovedadId: tipo.id, nombre: tipo.nombre, dias: cantidad, monto: montoPorNovedad ? cantidad * montoPorNovedad : 0 });
         }
       }
       const totalPlus = plus.reduce((s, p) => s + p.monto, 0);
