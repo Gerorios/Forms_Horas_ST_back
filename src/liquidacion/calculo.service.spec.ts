@@ -128,4 +128,38 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     expect(fila.montoHorasExtra).toBe(18_000); // 12 × 1000 × 1.5, sin cambios
     expect(fila.montoKmBruto).toBeNull();
   });
+
+  describe('límites de los rangos de km (0–60 / 60–75 / 75–null)', () => {
+    // Rango 1 excluye su propio tope (60), rango 2 incluye ambos extremos
+    // (60 y 75), rango 3 (sin techo) excluye su propio piso (75) — ningún
+    // km puede caer en dos rangos ni en ninguno.
+    const TRES_RANGOS = [
+      { vigenteDesde: new Date(2026, 7, 1), kmDesde: 0, kmHasta: 60, precioPorKm: 100 },
+      { vigenteDesde: new Date(2026, 7, 1), kmDesde: 60, kmHasta: 75, precioPorKm: 200 },
+      { vigenteDesde: new Date(2026, 7, 1), kmDesde: 75, kmHasta: null, precioPorKm: 300 },
+    ];
+
+    function setupConKm(kmTotal: number) {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([PERFIL_POR_TANTOS]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([{ cuil: PERFIL_POR_TANTOS.cuil, kmTotal }]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 100 },
+      ]);
+      // Rangos en orden "al revés" a propósito: el cálculo no puede depender
+      // del orden en que Prisma los devuelve.
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([...TRES_RANGOS].reverse());
+    }
+
+    it.each([
+      [59.99, 100], // justo antes de 60: rango 1
+      [60, 200], // 60 exacto: rango 2, NO el rango 1
+      [74.99, 200], // justo antes de 75: rango 2
+      [75, 200], // 75 exacto: rango 2, NO el rango 3
+      [75.01, 300], // justo después de 75: rango 3
+    ])('km=%s usa el precio del rango correcto ($%i/km)', async (km, precioEsperado) => {
+      setupConKm(km);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.montoKmBruto).toBe(km * precioEsperado);
+    });
+  });
 });

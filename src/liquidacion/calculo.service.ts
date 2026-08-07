@@ -37,6 +37,32 @@ export class CalculoService {
     return best;
   }
 
+  /**
+   * Rango de km "por tantos" (ver ADR-009) al que corresponde un total dado.
+   * Los límites NO son uniformes — cada km tiene que caer en exactamente un
+   * rango, sin huecos ni superposición:
+   *  - el primer rango (el de kmDesde más bajo) EXCLUYE su propio tope,
+   *  - el/los rango(s) del medio INCLUYEN ambos extremos,
+   *  - el último rango (sin techo, kmHasta null) EXCLUYE su propio piso.
+   * Ej. con rangos 0–60 / 60–75 / 75–null: 60 cae en el segundo (no el
+   * primero), 75 cae en el segundo (no el tercero, que es "mayor a 75").
+   * No depende del orden en que Prisma devuelve las filas: se ordena acá.
+   */
+  private buscarRangoKm<T extends { kmDesde: unknown; kmHasta: unknown }>(
+    rangos: T[],
+    km: number,
+  ): T | undefined {
+    const ordenados = [...rangos].sort((a, b) => Number(a.kmDesde) - Number(b.kmDesde));
+    return ordenados.find((r, i) => {
+      const esPrimero = i === 0;
+      const esUltimo = r.kmHasta == null;
+      const kmDesde = Number(r.kmDesde);
+      const cumpleDesde = esUltimo ? km > kmDesde : km >= kmDesde;
+      const cumpleHasta = esUltimo ? true : esPrimero ? km < Number(r.kmHasta) : km <= Number(r.kmHasta);
+      return cumpleDesde && cumpleHasta;
+    });
+  }
+
   async calcularQuincena(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = this.rangoQuincena(anio, mes, quincena);
     const fechaVigencia = new Date(anio, mes - 1, 1);
@@ -157,9 +183,7 @@ export class CalculoService {
         } else if (tarifaHoraNum == null) {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada (necesaria para convertir km a horas)';
         } else {
-          const rango = rangosKmVigentes.find(
-            (r) => kmTotal >= Number(r.kmDesde) && (r.kmHasta == null || kmTotal <= Number(r.kmHasta)),
-          );
+          const rango = this.buscarRangoKm(rangosKmVigentes, kmTotal);
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
           montoKmBruto = montoKm;
           horasTotal = tarifaHoraNum > 0 ? montoKm / tarifaHoraNum : 0;
