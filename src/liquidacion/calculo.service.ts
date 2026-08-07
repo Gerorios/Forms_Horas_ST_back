@@ -118,6 +118,10 @@ export class CalculoService {
       let basico = 0;
       let montoExtra = 0;
       let datoFaltante: string | null = null;
+      // Solo "por tantos": monto bruto de km × precio del rango, antes de
+      // convertir a horas equivalentes — se expone aparte para la tabla
+      // propia del panel (ver ADR-015). Null para el resto de los regímenes.
+      let montoKmBruto: number | null = null;
 
       if (perfil.regimen === 'jornalizado') {
         horasTotal = horasAprobadasPorCuil.get(perfil.cuil) ?? 0;
@@ -157,11 +161,15 @@ export class CalculoService {
             (r) => kmTotal >= Number(r.kmDesde) && (r.kmHasta == null || kmTotal <= Number(r.kmHasta)),
           );
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
+          montoKmBruto = montoKm;
           horasTotal = tarifaHoraNum > 0 ? montoKm / tarifaHoraNum : 0;
           horasCct = Math.min(horasTotal, 88);
           horasExtra = Math.max(horasTotal - 88, 0);
           basico = tarifaHoraNum * horasCct;
-          montoExtra = horasExtra * tarifaHoraNum * 1.5;
+          // A diferencia de jornalizado, el extra de "por tantos" NO lleva
+          // el multiplicador ×1.5 (se paga al mismo precio de categoría) y
+          // siempre se paga en B, sin relación con modalidadPago — ver ADR-015.
+          montoExtra = horasExtra * tarifaHoraNum;
         }
       }
 
@@ -225,6 +233,7 @@ export class CalculoService {
         provincia: perfil.empleado.provincia,
         modalidadPago: perfil.modalidadPago,
         precioBruto: tarifaHoraNum,
+        montoKmBruto,
         horasTotal,
         horasCct,
         totalBruto: basico,
