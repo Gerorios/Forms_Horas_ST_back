@@ -59,6 +59,9 @@ model Usuario {
   passwordHash String  @map("password_hash")
   rolId        Int     @map("rol_id")
   activo       Boolean @default(true)
+  // Permiso puntual (no por rol): habilita a un JefeContrato a cargar el km
+  // de "por tantos" (nueva pantalla) y a verla en el nav. Ver ADR-014.
+  puedeCargarKmPorTantos Boolean @default(false) @map("puede_cargar_km_por_tantos")
 
   // Nombre cargado a mano por el Admin, solo se usa para mostrar cuando no
   // hay fila en snuempleados (usuario fuera de nómina). Ver ADR-008.
@@ -277,6 +280,11 @@ model MontoNovedadPlus {
 // Régimen "por tantos" (hoy solo relevamiento de fugas, medido en km). Se paga
 // todo el total de km al precio del rango en que cae (no progresivo). kmHasta
 // null = sin techo (el rango más alto).
+// Límites (corregido 2026-08-07, ver CalculoService#buscarRangoKm): NO son
+// uniformes. El primer rango (kmDesde más bajo) EXCLUYE su propio kmHasta;
+// el/los rango(s) del medio INCLUYEN ambos extremos; el último rango
+// (kmHasta null) EXCLUYE su propio kmDesde. Ej. con 0–60 / 60–75 / 75–null:
+// 60 y 75 caen en el rango del medio, no en el que "termina"/"empieza" ahí.
 model RangoKmPorTantos {
   id           Int      @id @default(autoincrement())
   vigenteDesde DateTime @map("vigente_desde") @db.Date

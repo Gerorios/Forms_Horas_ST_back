@@ -32,6 +32,11 @@ export class CreateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   tiposNovedadIds?: number[];
+
+  /** Habilita la carga de km "por tantos" (solo tiene sentido para JefeContrato; ver ADR-014). */
+  @IsOptional()
+  @IsBoolean()
+  puedeCargarKmPorTantos?: boolean;
 }
 
 export class UpdateUsuarioDto {
@@ -70,6 +75,11 @@ export class UpdateUsuarioDto {
   @IsOptional()
   @IsInt({ each: true })
   tiposNovedadIds?: number[];
+
+  /** Habilita la carga de km "por tantos" (solo tiene sentido para JefeContrato; ver ADR-014). */
+  @IsOptional()
+  @IsBoolean()
+  puedeCargarKmPorTantos?: boolean;
 }
 
 export class CrearUsuariosMasivoDto {

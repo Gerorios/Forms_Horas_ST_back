@@ -268,6 +268,8 @@ export class PanelService {
       // cual (no se toca su contrato), la traducción a null es solo acá.
       horasTotal: r.regimen === 'mensualizado' ? null : this.num(r.horasTotal),
       horasCct: r.regimen === 'mensualizado' ? null : this.num(r.horasCct),
+      horasExtra: r.regimen === 'mensualizado' ? null : this.num(r.horasExtra),
+      montoKmBruto: r.montoKmBruto != null ? this.num(r.montoKmBruto) : null,
       basico: this.num(r.totalBruto),
       montoExtra: this.num(r.montoHorasExtra),
       presentismo: this.num(r.montoPresentismo),

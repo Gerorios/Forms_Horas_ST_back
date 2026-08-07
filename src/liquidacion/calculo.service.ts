@@ -37,6 +37,32 @@ export class CalculoService {
     return best;
   }
 
+  /**
+   * Rango de km "por tantos" (ver ADR-009) al que corresponde un total dado.
+   * Los límites NO son uniformes — cada km tiene que caer en exactamente un
+   * rango, sin huecos ni superposición:
+   *  - el primer rango (el de kmDesde más bajo) EXCLUYE su propio tope,
+   *  - el/los rango(s) del medio INCLUYEN ambos extremos,
+   *  - el último rango (sin techo, kmHasta null) EXCLUYE su propio piso.
+   * Ej. con rangos 0–60 / 60–75 / 75–null: 60 cae en el segundo (no el
+   * primero), 75 cae en el segundo (no el tercero, que es "mayor a 75").
+   * No depende del orden en que Prisma devuelve las filas: se ordena acá.
+   */
+  private buscarRangoKm<T extends { kmDesde: unknown; kmHasta: unknown }>(
+    rangos: T[],
+    km: number,
+  ): T | undefined {
+    const ordenados = [...rangos].sort((a, b) => Number(a.kmDesde) - Number(b.kmDesde));
+    return ordenados.find((r, i) => {
+      const esPrimero = i === 0;
+      const esUltimo = r.kmHasta == null;
+      const kmDesde = Number(r.kmDesde);
+      const cumpleDesde = esUltimo ? km > kmDesde : km >= kmDesde;
+      const cumpleHasta = esUltimo ? true : esPrimero ? km < Number(r.kmHasta) : km <= Number(r.kmHasta);
+      return cumpleDesde && cumpleHasta;
+    });
+  }
+
   async calcularQuincena(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = this.rangoQuincena(anio, mes, quincena);
     const fechaVigencia = new Date(anio, mes - 1, 1);
@@ -118,6 +144,10 @@ export class CalculoService {
       let basico = 0;
       let montoExtra = 0;
       let datoFaltante: string | null = null;
+      // Solo "por tantos": monto bruto de km × precio del rango, antes de
+      // convertir a horas equivalentes — se expone aparte para la tabla
+      // propia del panel (ver ADR-015). Null para el resto de los regímenes.
+      let montoKmBruto: number | null = null;
 
       if (perfil.regimen === 'jornalizado') {
         horasTotal = horasAprobadasPorCuil.get(perfil.cuil) ?? 0;
@@ -153,15 +183,17 @@ export class CalculoService {
         } else if (tarifaHoraNum == null) {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada (necesaria para convertir km a horas)';
         } else {
-          const rango = rangosKmVigentes.find(
-            (r) => kmTotal >= Number(r.kmDesde) && (r.kmHasta == null || kmTotal <= Number(r.kmHasta)),
-          );
+          const rango = this.buscarRangoKm(rangosKmVigentes, kmTotal);
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
+          montoKmBruto = montoKm;
           horasTotal = tarifaHoraNum > 0 ? montoKm / tarifaHoraNum : 0;
           horasCct = Math.min(horasTotal, 88);
           horasExtra = Math.max(horasTotal - 88, 0);
           basico = tarifaHoraNum * horasCct;
-          montoExtra = horasExtra * tarifaHoraNum * 1.5;
+          // A diferencia de jornalizado, el extra de "por tantos" NO lleva
+          // el multiplicador ×1.5 (se paga al mismo precio de categoría) y
+          // siempre se paga en B, sin relación con modalidadPago — ver ADR-015.
+          montoExtra = horasExtra * tarifaHoraNum;
         }
       }
 
@@ -225,6 +257,7 @@ export class CalculoService {
         provincia: perfil.empleado.provincia,
         modalidadPago: perfil.modalidadPago,
         precioBruto: tarifaHoraNum,
+        montoKmBruto,
         horasTotal,
         horasCct,
         totalBruto: basico,

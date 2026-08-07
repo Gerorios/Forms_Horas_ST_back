@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateCategoriaUocraDto,
@@ -570,15 +570,50 @@ export class LiquidacionService {
     }));
   }
 
-  async cargarKmPorTantos(dto: CargarKmPorTantosDto) {
+  async cargarKmPorTantos(dto: CargarKmPorTantosDto, user: { cuil: string; rol: string }) {
+    // Solo JefeContrato necesita el permiso puntual (ver ADR-014); Admin no
+    // se restringe.
+    if (user.rol === 'JefeContrato') {
+      const usuario = await this.prisma.usuario.findUnique({
+        where: { cuil: user.cuil },
+        select: { puedeCargarKmPorTantos: true },
+      });
+      if (!usuario?.puedeCargarKmPorTantos) {
+        throw new ForbiddenException('No tenés habilitada la carga de km "por tantos"');
+      }
+    }
+
+    const existentes = await this.prisma.kmPorTantos.findMany({
+      where: { anio: dto.anio, mes: dto.mes, quincena: dto.quincena, cuil: { in: dto.kms.map((k) => k.cuil) } },
+    });
+    const existentePorCuil = new Map(existentes.map((e) => [e.cuil, e]));
+
     await this.prisma.$transaction(
-      dto.kms.map((k) =>
-        this.prisma.kmPorTantos.upsert({
-          where: { cuil_anio_mes_quincena: { cuil: k.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena } },
-          create: { cuil: k.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena, kmTotal: k.kmTotal },
-          update: { kmTotal: k.kmTotal },
-        }),
-      ),
+      async (tx) => {
+        for (const k of dto.kms) {
+          const existente = existentePorCuil.get(k.cuil);
+          await tx.kmPorTantos.upsert({
+            where: { cuil_anio_mes_quincena: { cuil: k.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena } },
+            create: { cuil: k.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena, kmTotal: k.kmTotal },
+            update: { kmTotal: k.kmTotal },
+          });
+
+          const valorAnterior = existente ? Number(existente.kmTotal) : null;
+          if (valorAnterior === k.kmTotal) continue; // sin cambio real, no audita
+
+          await tx.auditoria.create({
+            data: {
+              tabla: 'sth_km_por_tantos',
+              registroId: 0, // sin id numérico (clave compuesta), igual criterio que sth_rangos_km_por_tantos
+              usuarioCuil: user.cuil,
+              accion: existente ? 'editar' : 'crear',
+              campo: k.cuil,
+              valorAnterior: valorAnterior?.toString() ?? null,
+              valorNuevo: k.kmTotal.toString(),
+            },
+          });
+        }
+      },
       { timeout: 30000, maxWait: 10000 },
     );
     return { actualizados: dto.kms.length };

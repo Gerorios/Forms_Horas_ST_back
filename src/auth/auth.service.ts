@@ -43,6 +43,7 @@ export class AuthService {
         email: true,
         activo: true,
         nombreFueraNomina: true,
+        puedeCargarKmPorTantos: true,
         rol: { select: { nombre: true } },
         contratosHabilitados: {
           select: { contrato: { select: { id: true, codigo: true, nombre: true } } },
