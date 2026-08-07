@@ -1593,3 +1593,77 @@ Liquidación Detalle (empleado pasó de búsqueda a desplegable), Liquidación P
 de rol → MultiFiltro). 81 tests en 8 archivos + tsc verdes (verificación por archivo — en
 esta máquina de 2 núcleos las suites completas no terminan; quedó como método). Validado
 por el usuario en local. Plan: docs/superpowers/plans/2026-08-05-filtros-estandar.md.
+
+---
+
+## 50. Rol Liquidador — "por tantos" cargado por Jefe de Contrato + fórmula corregida (2026-08-07)
+
+Sesión larga con `/grill-with-docs` (dos rondas de grilling + varios ajustes puntuales pedidos
+por el dueño de producto probando en local). Rama `feature/km-por-tantos-jefe-contrato` en
+ambos repos (nueva, desde `main`).
+
+### ADR-014 — Km "por tantos" cargado por Jefe de Contrato, habilitado por usuario
+
+El régimen `por_tantos` asumía que el Liquidador cargaba el km a mano (medido en una app
+externa que en la práctica no está disponible). Ahora lo carga el **Jefe de Contrato
+habilitado** (nuevo permiso puntual por usuario, no por rol) o Admin como respaldo — el
+Liquidador pasa a ser **solo lectura** para este dato.
+
+- `Usuario.puedeCargarKmPorTantos` (booleano, default `false`) — igual criterio que
+  `TipoNovedadHabilitado` (ADR-007): el rol JefeContrato solo no alcanza, hace falta el
+  permiso explícito. Toggle nuevo en `UsuarioEditRow` (Admin > Usuarios), visible solo para
+  JefeContrato.
+- Nav "Km por tantos" condicional al flag (Admin la ve siempre).
+- Pantalla nueva `/km-por-tantos`: selector año/mes/quincena + tabla de todos los relevadores
+  activos (nombre/cuil/km), guardado en bloque. Sin filtro por contrato (no existe vínculo
+  relevador↔contrato en el modelo — decisión explícita para no inventarlo).
+- Backend: `POST /liquidacion/quincena/km-por-tantos` pasa a roles `Admin`/`JefeContrato` (sin
+  Liquidador), valida el flag para JefeContrato (403 si no), y audita cada cambio en
+  `sth_auditoria` (antes esta carga no tenía auditoría).
+- DDL: `docs/sql/2026-08-07-km-por-tantos-permiso.sql` — columna
+  `puede_cargar_km_por_tantos` en `sth_usuarios`.
+
+### Bug real encontrado por el usuario: fórmula de "por tantos" no seguía la regla acordada
+
+El usuario revisó el panel con datos reales y hoy con evidencia concreta (recalculado a mano
+contra la BD) se confirmaron/corrigieron tres cosas — **ADR-015**:
+
+1. **Extra sin el multiplicador ×1.5**: a diferencia de jornalizado, el extra de un relevador
+   se paga `horasExtra × tarifaHora` (sin más) — y **siempre en B**, sin relación con
+   `modalidadPago` (que el dueño de producto adelantó que van a eliminar más adelante, no se
+   tocó en esta sesión).
+2. **Límites de los rangos de km mal resueltos**: el código usaba inclusive-inclusive para
+   los 3 rangos y se quedaba con el primer match de `.find()` — un km exactamente en el borde
+   (ej. 60, entre 0–60 y 60–75) caía en el rango equivocado, y además dependía del orden (no
+   garantizado) en que Prisma devolvía las filas. Regla real, no uniforme: el primer rango
+   excluye su propio tope, el/los rango(s) del medio incluyen ambos extremos, el último rango
+   (sin techo) excluye su propio piso. Nuevo método `CalculoService#buscarRangoKm`, ordena por
+   `kmDesde` explícitamente. Documentado en el schema y el glosario.
+3. **Tabla separada en el panel**: `/liquidacion/quincena/detalle` pasó a mostrar dos tablas —
+   la de siempre (jornalizado/fijo/mensualizado, ahora con **Hs CCT** y **Hs extra** en
+   columnas propias en vez de un solo total) y una nueva exclusiva para "por tantos" (Km,
+   Monto bruto, Hs totales/CCT/extra, Total bruto, $$ Hs Extras en B, Presentismo, Total),
+   con su propia pestaña "Ver detalle" (novedades del período — no tiene días aprobados).
+   Comparte los filtros de Empleado/Categoría con la tabla principal; Contrato y Régimen no
+   le aplican. Columnas "Básico"/"Extras" renombradas a **"Total bruto"** / **"$$ Hs Extras"**
+   en ambas tablas, para que coincida con la nomenclatura real del excel de liquidación (ya
+   confirmada en ADR-011).
+
+**Verificación:** backend 85/85 tests (`calculo.service.spec.ts` es nuevo — el motor de
+cálculo no tenía ningún test todavía, deuda señalada desde §47), `tsc --noEmit` limpio.
+Frontend: archivos afectados verificados uno por uno (esta máquina no corre la suite
+completa de una — método ya documentado en §49): `detalle-page` 15/15, `km-por-tantos-page`
+3/3, `quincena-page` 2/2, `perfiles-page` 9/9, más `tsc --noEmit` y lint limpios en todo lo
+tocado.
+
+**Commits en `feature/km-por-tantos-jefe-contrato`:**
+- Backend: ADR-014 (permiso + endpoint), ADR-015 (fórmula sin ×1.5 + `montoKmBruto`/
+  `horasExtra` expuestos + tests nuevos), fix de límites de rango, columnas renombradas
+  (comentario de schema, sin código de negocio).
+- Frontend: ADR-014 (pantalla `/km-por-tantos`, toggle admin, nav, detalle solo lectura),
+  ADR-015 (`TablaPorTantos` nueva, Hs CCT/Hs extra en la tabla principal, pestaña detalle en
+  "por tantos", renombre de columnas).
+
+**Pendiente al cerrar esta sesión:** abrir los PRs, mergear a `main` y deployar a la VPS
+(179.198.99.30) — DDL de ADR-014 falta aplicarse en `Horas_Sertec` (solo se corrió contra
+`testing` durante el desarrollo).
