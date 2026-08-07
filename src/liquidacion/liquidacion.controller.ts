@@ -111,6 +111,9 @@ export class LiquidacionController {
     return this.service.cargarMontosMensualizados(dto);
   }
 
+  // Lectura: Admin/Liquidador (panel de liquidación) + JefeContrato (para
+  // prellenar su propia pantalla de carga). Ver ADR-014.
+  @Roles('Admin', 'Liquidador', 'JefeContrato')
   @Get('quincena/km-por-tantos')
   getKmPorTantos(
     @Query('anio', ParseIntPipe) anio: number,
@@ -120,9 +123,12 @@ export class LiquidacionController {
     return this.service.getKmPorTantos(anio, mes, quincena);
   }
 
+  // Escritura: Admin y JefeContrato habilitado (Usuario.puedeCargarKmPorTantos).
+  // El Liquidador deja de poder cargar este dato — ver ADR-014.
+  @Roles('Admin', 'JefeContrato')
   @Post('quincena/km-por-tantos')
-  cargarKmPorTantos(@Body() dto: CargarKmPorTantosDto) {
-    return this.service.cargarKmPorTantos(dto);
+  cargarKmPorTantos(@Body() dto: CargarKmPorTantosDto, @Request() req) {
+    return this.service.cargarKmPorTantos(dto, req.user);
   }
 
   // ---- Cálculo de la quincena ----

@@ -138,6 +138,7 @@ export class AdminService {
         activo: true,
         rolId: true,
         nombreFueraNomina: true,
+        puedeCargarKmPorTantos: true,
         rol: { select: { nombre: true } },
         contratosHabilitados: {
           select: { contratoId: true, contrato: { select: { codigo: true } } },
@@ -188,6 +189,7 @@ export class AdminService {
         passwordHash,
         rolId: dto.rolId,
         nombreFueraNomina: dto.nombreFueraNomina,
+        puedeCargarKmPorTantos: dto.puedeCargarKmPorTantos ?? false,
         contratosHabilitados: dto.contratosIds?.length
           ? { create: dto.contratosIds.map((contratoId) => ({ contratoId })) }
           : undefined,

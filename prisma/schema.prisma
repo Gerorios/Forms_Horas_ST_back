@@ -59,6 +59,9 @@ model Usuario {
   passwordHash String  @map("password_hash")
   rolId        Int     @map("rol_id")
   activo       Boolean @default(true)
+  // Permiso puntual (no por rol): habilita a un JefeContrato a cargar el km
+  // de "por tantos" (nueva pantalla) y a verla en el nav. Ver ADR-014.
+  puedeCargarKmPorTantos Boolean @default(false) @map("puede_cargar_km_por_tantos")
 
   // Nombre cargado a mano por el Admin, solo se usa para mostrar cuando no
   // hay fila en snuempleados (usuario fuera de nómina). Ver ADR-008.

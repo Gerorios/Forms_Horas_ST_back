@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { LiquidacionService } from './liquidacion.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -12,6 +12,8 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
     tipoNovedad: { findMany: jest.fn() },
     montoNovedadPlus: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     rangoKmPorTantos: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    kmPorTantos: { findMany: jest.fn(), upsert: jest.fn() },
+    usuario: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
@@ -201,6 +203,76 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
           valorNuevo: JSON.stringify(nuevos),
         }),
       });
+    });
+  });
+
+  describe('cargarKmPorTantos (ADR-014)', () => {
+    const dto = { anio: 2026, mes: 8, quincena: 1, kms: [{ cuil: '20111111111', kmTotal: 150 }] };
+
+    beforeEach(() => {
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.kmPorTantos.upsert.mockResolvedValue({});
+    });
+
+    it('Admin puede cargar sin chequear el flag', async () => {
+      await service.cargarKmPorTantos(dto as any, { cuil: 'admin-cuil', rol: 'Admin' });
+      expect(prismaMock.usuario.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.kmPorTantos.upsert).toHaveBeenCalledWith({
+        where: { cuil_anio_mes_quincena: { cuil: '20111111111', anio: 2026, mes: 8, quincena: 1 } },
+        create: { cuil: '20111111111', anio: 2026, mes: 8, quincena: 1, kmTotal: 150 },
+        update: { kmTotal: 150 },
+      });
+    });
+
+    it('JefeContrato sin el flag habilitado: 403, no escribe nada', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue({ puedeCargarKmPorTantos: false });
+      await expect(
+        service.cargarKmPorTantos(dto as any, { cuil: 'jdc-cuil', rol: 'JefeContrato' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prismaMock.kmPorTantos.upsert).not.toHaveBeenCalled();
+    });
+
+    it('JefeContrato con el flag habilitado puede cargar', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue({ puedeCargarKmPorTantos: true });
+      await service.cargarKmPorTantos(dto as any, { cuil: 'jdc-cuil', rol: 'JefeContrato' });
+      expect(prismaMock.kmPorTantos.upsert).toHaveBeenCalled();
+    });
+
+    it('carga nueva (sin fila previa): auditoría accion=crear', async () => {
+      await service.cargarKmPorTantos(dto as any, { cuil: 'admin-cuil', rol: 'Admin' });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
+        data: {
+          tabla: 'sth_km_por_tantos',
+          registroId: 0,
+          usuarioCuil: 'admin-cuil',
+          accion: 'crear',
+          campo: '20111111111',
+          valorAnterior: null,
+          valorNuevo: '150',
+        },
+      });
+    });
+
+    it('cambia un valor existente: auditoría accion=editar con valorAnterior/valorNuevo', async () => {
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([{ cuil: '20111111111', kmTotal: 100 }]);
+      await service.cargarKmPorTantos(dto as any, { cuil: 'admin-cuil', rol: 'Admin' });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
+        data: {
+          tabla: 'sth_km_por_tantos',
+          registroId: 0,
+          usuarioCuil: 'admin-cuil',
+          accion: 'editar',
+          campo: '20111111111',
+          valorAnterior: '100',
+          valorNuevo: '150',
+        },
+      });
+    });
+
+    it('mismo valor que ya tenía: no genera auditoría', async () => {
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([{ cuil: '20111111111', kmTotal: 150 }]);
+      await service.cargarKmPorTantos(dto as any, { cuil: 'admin-cuil', rol: 'Admin' });
+      expect(prismaMock.auditoria.create).not.toHaveBeenCalled();
     });
   });
 });
