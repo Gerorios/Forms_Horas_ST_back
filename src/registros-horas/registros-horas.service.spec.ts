@@ -139,19 +139,23 @@ describe('RegistrosHorasService', () => {
           id: 10, fecha: new Date(2026, 7, 3), contratoId: 1, operarioCuil: '20-2-2',
           horas: 8, estado: 'pendiente',
           contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'Zeta Juan' },
+          tareas: [],
         },
         {
           id: 11, fecha: new Date(2026, 7, 3), contratoId: 1, operarioCuil: '20-3-3',
           horas: 4, estado: 'aprobado',
           contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'Alfa Pedro' },
+          tareas: [{ tarea: { nombre: 'Zanjeo' } }, { tarea: { nombre: 'Tendido de cañería' } }],
         },
       ]);
       const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
       expect(r[0]).toEqual({
         id: 11, fecha: '2026-08-03', contratoId: 1, contratoCodigo: 'K5',
         operarioCuil: '20-3-3', operarioNombre: 'Alfa Pedro', horas: 4, estado: 'aprobado',
+        tareas: ['Zanjeo', 'Tendido de cañería'],
       });
       expect(r[1].operarioNombre).toBe('Zeta Juan');
+      expect(r[1].tareas).toEqual([]);
     });
   });
 

@@ -937,6 +937,7 @@ export class RegistrosHorasService {
         id: true, fecha: true, contratoId: true, operarioCuil: true, horas: true, estado: true,
         contrato: { select: { codigo: true } },
         operario: { select: { apellido_nombre: true } },
+        tareas: { select: { tarea: { select: { nombre: true } } } },
       },
       orderBy: { fecha: 'desc' },
     });
@@ -950,6 +951,7 @@ export class RegistrosHorasService {
         operarioNombre: f.operario.apellido_nombre,
         horas: Number(f.horas),
         estado: f.estado,
+        tareas: f.tareas.map((t) => t.tarea.nombre),
       }))
       .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
   }
