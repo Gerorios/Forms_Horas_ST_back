@@ -6,7 +6,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
   const prismaMock: any = {
     perfilLiquidacion: { findMany: jest.fn() },
     tipoNovedad: { findMany: jest.fn() },
-    montoMensualizado: { findMany: jest.fn() },
+    sueldoMensualizado: { findMany: jest.fn() },
     kmPorTantos: { findMany: jest.fn() },
     tarifaCategoriaUocra: { findMany: jest.fn() },
     montoNovedadPlus: { findMany: jest.fn() },
@@ -29,7 +29,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     prismaMock.tipoNovedad.findMany.mockResolvedValue([]);
-    prismaMock.montoMensualizado.findMany.mockResolvedValue([]);
+    prismaMock.sueldoMensualizado.findMany.mockResolvedValue([]);
     prismaMock.montoNovedadPlus.findMany.mockResolvedValue([]);
     prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([]);
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
@@ -160,6 +160,60 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       setupConKm(km);
       const [fila] = await service.calcularQuincena(2026, 8, 1);
       expect(fila.montoKmBruto).toBe(km * precioEsperado);
+    });
+  });
+
+  describe('régimen "mensualizado" (ADR-016 — sueldo vigente, no por quincena exacta)', () => {
+    const PERFIL_MENSUALIZADO = {
+      cuil: '20888888888',
+      regimen: 'mensualizado',
+      categoriaUocraId: null,
+      modalidadPago: null,
+      empleado: { apellido_nombre: 'MENSUAL TEST', legajo: 3, cargo: 'Administrativo', provincia: 'Córdoba' },
+      categoria: null,
+    };
+
+    beforeEach(() => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([PERFIL_MENSUALIZADO]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+    });
+
+    it('toma el sueldo vigente más reciente ≤ la quincena, sin importar que no haya fila para ese mes exacto', async () => {
+      prismaMock.sueldoMensualizado.findMany.mockResolvedValue([
+        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 5, 1), monto: 500_000 }, // junio
+        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 6, 1), monto: 550_000 }, // julio (el más reciente ≤ agosto)
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1); // agosto, sin fila propia
+
+      expect(fila.horasTotal).toBe(1);
+      expect(fila.horasCct).toBe(1);
+      expect(fila.horasExtra).toBe(0);
+      expect(fila.totalBruto).toBe(550_000); // el de julio, arrastrado
+      expect(fila.montoHorasExtra).toBe(0);
+      expect(fila.datoFaltante).toBeNull();
+    });
+
+    it('sin ningún sueldo vigente cargado todavía: datoFaltante, básico en 0', async () => {
+      prismaMock.sueldoMensualizado.findMany.mockResolvedValue([]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.datoFaltante).toBe('Falta cargar el sueldo mensualizado (Tarifas > Sueldos mensualizados)');
+      expect(fila.totalBruto).toBe(0);
+    });
+
+    it('ignora la categoría UOCRA asignada (no la necesita, aunque el empleado tenga una)', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { ...PERFIL_MENSUALIZADO, categoriaUocraId: 4, categoria: { id: 4, nombre: 'Ayudante' } },
+      ]);
+      prismaMock.sueldoMensualizado.findMany.mockResolvedValue([
+        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 7, 1), monto: 600_000 },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.totalBruto).toBe(600_000);
+      expect(fila.datoFaltante).toBeNull();
     });
   });
 });

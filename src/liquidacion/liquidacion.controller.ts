@@ -9,7 +9,7 @@ import {
   EditarRondaTarifasDto,
   UpsertPerfilLiquidacionDto,
   UpsertPerfilesMasivoDto,
-  CargarMontosMensualizadosDto,
+  GuardarSueldosMensualizadosDto,
   CargarKmPorTantosDto,
 } from './dto/liquidacion.dto';
 import { ToggleActivoDto } from '../admin/dto/catalogo.dto';
@@ -74,6 +74,19 @@ export class LiquidacionController {
     return this.service.editarRondaTarifas(anio, mes, dto, req.user.cuil);
   }
 
+  // ---- Sueldos mensualizados: sección propia dentro de Tarifas, comparte el
+  // estado "mes resuelto" (RondaTarifas) con la ronda de arriba — ver ADR-016 ----
+
+  @Get('tarifas/sueldos-mensualizados')
+  getSueldosMensualizados(@Query('anio', ParseIntPipe) anio: number, @Query('mes', ParseIntPipe) mes: number) {
+    return this.service.getSueldosMensualizados(anio, mes);
+  }
+
+  @Put('tarifas/sueldos-mensualizados')
+  guardarSueldosMensualizados(@Body() dto: GuardarSueldosMensualizadosDto, @Request() req) {
+    return this.service.guardarSueldosMensualizados(dto, req.user.cuil);
+  }
+
   @Get('perfiles')
   getPerfiles() {
     return this.service.getPerfiles();
@@ -95,21 +108,7 @@ export class LiquidacionController {
     return this.service.deletePerfil(cuil);
   }
 
-  // ---- Datos variables por quincena (mensualizado / por tantos) — ver ADR-011 ----
-
-  @Get('quincena/montos-mensualizados')
-  getMontosMensualizados(
-    @Query('anio', ParseIntPipe) anio: number,
-    @Query('mes', ParseIntPipe) mes: number,
-    @Query('quincena', ParseIntPipe) quincena: number,
-  ) {
-    return this.service.getMontosMensualizados(anio, mes, quincena);
-  }
-
-  @Post('quincena/montos-mensualizados')
-  cargarMontosMensualizados(@Body() dto: CargarMontosMensualizadosDto) {
-    return this.service.cargarMontosMensualizados(dto);
-  }
+  // ---- Datos variables por quincena (por tantos) — ver ADR-011 ----
 
   // Lectura: Admin/Liquidador (panel de liquidación) + JefeContrato (para
   // prellenar su propia pantalla de carga). Ver ADR-014.

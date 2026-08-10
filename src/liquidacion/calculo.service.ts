@@ -79,8 +79,11 @@ export class CalculoService {
 
     const tiposConPlus = await this.prisma.tipoNovedad.findMany({ where: { generaPlus: true, activo: true } });
 
-    const montosMensualizados = await this.prisma.montoMensualizado.findMany({ where: { anio, mes, quincena } });
-    const montoMensualPorCuil = new Map(montosMensualizados.map((m) => [m.cuil, Number(m.monto)]));
+    // Sueldos mensualizados: "vigente" por empleado (igual patrón que las
+    // tarifas de categoría), no por quincena exacta — ver ADR-016.
+    const sueldosMensualizados = await this.prisma.sueldoMensualizado.findMany({
+      where: { cuil: { in: cuils }, vigenteDesde: { lte: fechaVigencia } },
+    });
 
     const kmsPorTantos = await this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } });
     const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
@@ -168,13 +171,16 @@ export class CalculoService {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
       } else if (perfil.regimen === 'mensualizado') {
-        const monto = montoMensualPorCuil.get(perfil.cuil);
+        const sueldo = this.masVigente(
+          sueldosMensualizados.filter((s) => s.cuil === perfil.cuil),
+          fechaVigencia,
+        );
         horasTotal = 1;
         horasCct = 1;
-        if (monto != null) {
-          basico = monto;
+        if (sueldo != null) {
+          basico = Number(sueldo.monto);
         } else {
-          datoFaltante = 'Falta cargar el monto mensualizado de esta quincena';
+          datoFaltante = 'Falta cargar el sueldo mensualizado (Tarifas > Sueldos mensualizados)';
         }
       } else if (perfil.regimen === 'por_tantos') {
         const kmTotal = kmPorCuil.get(perfil.cuil);

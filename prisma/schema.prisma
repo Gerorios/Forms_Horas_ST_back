@@ -38,7 +38,7 @@ model snuempleados {
   registrosHoras       RegistroHoras[]    @relation("Operario")
   novedades            Novedad[]          @relation("NovedadOperario")
   perfilLiquidacion    PerfilLiquidacion?
-  montosMensualizados  MontoMensualizado[]
+  sueldosMensualizados SueldoMensualizado[]
   kmPorTantos          KmPorTantos[]
 }
 
@@ -331,20 +331,24 @@ model BonoNoRemunerativo {
   @@map("sth_bonos_no_remunerativos")
 }
 
-// Monto bruto de un empleado "mensualizado" para una quincena puntual — a
-// diferencia de las tarifas de arriba (que valen para todo el mes), este
-// cambia seguido y se carga por quincena. Ver ADR-011.
-model MontoMensualizado {
-  cuil     String @db.Char(13)
-  anio     Int
-  mes      Int
-  quincena Int
-  monto    Decimal @db.Decimal(12, 2)
+// Sueldo bruto "vigente" de un empleado mensualizado — mismo patrón que
+// TarifaCategoriaUocra (vigenteDesde siempre día 1 de un mes, se toma la
+// fila más reciente ≤ la fecha de la quincena liquidada), pero versionado
+// por EMPLEADO en vez de por categoría UOCRA (la categoría no le aplica a
+// este régimen). Se gestiona desde Tarifas > Sueldos mensualizados,
+// comparte el estado "mes resuelto" con RondaTarifas. Reemplaza a
+// MontoMensualizado (clave exacta por quincena, nunca se usó con datos
+// reales). Ver ADR-011 y ADR-016.
+model SueldoMensualizado {
+  id           Int      @id @default(autoincrement())
+  cuil         String   @map("cuil") @db.Char(13)
+  vigenteDesde DateTime @map("vigente_desde") @db.Date
+  monto        Decimal  @db.Decimal(12, 2)
 
   empleado snuempleados @relation(fields: [cuil], references: [cuil])
 
-  @@id([cuil, anio, mes, quincena])
-  @@map("sth_montos_mensualizados")
+  @@unique([cuil, vigenteDesde])
+  @@map("sth_sueldos_mensualizados")
 }
 
 // Km totales de relevamiento de fugas de un empleado "por tantos" en una

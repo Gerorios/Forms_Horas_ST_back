@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)', () => {
   const prismaMock: any = {
-    rondaTarifas: { findUnique: jest.fn(), findFirst: jest.fn() },
+    rondaTarifas: { findUnique: jest.fn(), findFirst: jest.fn(), upsert: jest.fn() },
     categoriaUocra: { findMany: jest.fn() },
     tarifaCategoriaUocra: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     bonoNoRemunerativo: { findMany: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
@@ -13,6 +13,8 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
     montoNovedadPlus: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     rangoKmPorTantos: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     kmPorTantos: { findMany: jest.fn(), upsert: jest.fn() },
+    perfilLiquidacion: { findMany: jest.fn() },
+    sueldoMensualizado: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), create: jest.fn() },
     usuario: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
@@ -273,6 +275,143 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
       prismaMock.kmPorTantos.findMany.mockResolvedValue([{ cuil: '20111111111', kmTotal: 150 }]);
       await service.cargarKmPorTantos(dto as any, { cuil: 'admin-cuil', rol: 'Admin' });
       expect(prismaMock.auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('guardarSueldosMensualizados (ADR-016)', () => {
+    beforeEach(() => {
+      // guardarSueldosMensualizados devuelve getSueldosMensualizados al final,
+      // que sí necesita el include de empleado.
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { cuil: '20111111111', empleado: { apellido_nombre: 'PEREZ JUAN' } },
+        { cuil: '20222222222', empleado: { apellido_nombre: 'GOMEZ ANA' } },
+      ]);
+    });
+
+    it('mes nuevo sin ronda previa: crea el sueldo + RondaTarifas, sin huecos que llenar', async () => {
+      prismaMock.rondaTarifas.findUnique.mockResolvedValue(null);
+      prismaMock.rondaTarifas.findFirst.mockResolvedValue(null);
+      prismaMock.sueldoMensualizado.findUnique.mockResolvedValue(null);
+      prismaMock.sueldoMensualizado.create.mockResolvedValue({ id: 1 });
+
+      await service.guardarSueldosMensualizados(
+        { anio: 2026, mes: 8, sueldos: [{ cuil: '20111111111', monto: 500000 }] } as any,
+        'admin-cuil',
+      );
+
+      expect(prismaMock.rondaTarifas.upsert).toHaveBeenCalledWith({
+        where: { anio_mes: { anio: 2026, mes: 8 } },
+        create: { anio: 2026, mes: 8 },
+        update: {},
+      });
+      expect(prismaMock.sueldoMensualizado.create).toHaveBeenCalledWith({
+        data: { cuil: '20111111111', vigenteDesde: new Date(2026, 7, 1), monto: 500000 },
+      });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tabla: 'sth_sueldos_mensualizados',
+          accion: 'crear',
+          campo: '20111111111',
+          valorNuevo: '500000',
+        }),
+      });
+    });
+
+    it('mes ya cargado (edición): compara con el valor existente y audita solo si cambió', async () => {
+      prismaMock.rondaTarifas.findUnique.mockResolvedValue({ anio: 2026, mes: 8 });
+      prismaMock.rondaTarifas.findFirst.mockResolvedValue({ anio: 2026, mes: 8 });
+      prismaMock.sueldoMensualizado.findUnique.mockResolvedValue({ id: 7, cuil: '20111111111', monto: 500000 });
+
+      await service.guardarSueldosMensualizados(
+        { anio: 2026, mes: 8, sueldos: [{ cuil: '20111111111', monto: 550000 }] } as any,
+        'admin-cuil',
+      );
+
+      expect(prismaMock.sueldoMensualizado.update).toHaveBeenCalledWith({ where: { id: 7 }, data: { monto: 550000 } });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ accion: 'editar', valorAnterior: '500000', valorNuevo: '550000' }),
+      });
+    });
+
+    it('mismo valor: no genera auditoría ni update', async () => {
+      prismaMock.rondaTarifas.findUnique.mockResolvedValue({ anio: 2026, mes: 8 });
+      prismaMock.rondaTarifas.findFirst.mockResolvedValue({ anio: 2026, mes: 8 });
+      prismaMock.sueldoMensualizado.findUnique.mockResolvedValue({ id: 7, cuil: '20111111111', monto: 500000 });
+
+      await service.guardarSueldosMensualizados(
+        { anio: 2026, mes: 8, sueldos: [{ cuil: '20111111111', monto: 500000 }] } as any,
+        'admin-cuil',
+      );
+
+      expect(prismaMock.sueldoMensualizado.update).not.toHaveBeenCalled();
+      expect(prismaMock.auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('período anterior al último cargado, que todavía no existe: 400', async () => {
+      prismaMock.rondaTarifas.findUnique.mockResolvedValue(null);
+      prismaMock.rondaTarifas.findFirst.mockResolvedValue({ anio: 2026, mes: 8 });
+
+      await expect(
+        service.guardarSueldosMensualizados({ anio: 2026, mes: 7, sueldos: [] } as any, 'admin-cuil'),
+      ).rejects.toThrow('anterior al último cargado');
+    });
+
+    it('completa el mes salteado copiando el último sueldo vigente de cada empleado', async () => {
+      prismaMock.rondaTarifas.findUnique.mockResolvedValue(null); // setiembre no existe
+      prismaMock.rondaTarifas.findFirst.mockResolvedValue({ anio: 2026, mes: 7 }); // último cargado: julio
+      prismaMock.sueldoMensualizado.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.cuil === '20111111111' ? { monto: 500000 } : { monto: 400000 }),
+      );
+      prismaMock.sueldoMensualizado.findUnique.mockResolvedValue(null);
+      prismaMock.sueldoMensualizado.create.mockResolvedValue({ id: 1 });
+
+      await service.guardarSueldosMensualizados(
+        {
+          anio: 2026,
+          mes: 9,
+          sueldos: [
+            { cuil: '20111111111', monto: 520000 },
+            { cuil: '20222222222', monto: 400000 },
+          ],
+        } as any,
+        'admin-cuil',
+      );
+
+      // Agosto (el hueco entre julio y setiembre) se completa copiando el
+      // vigente de julio para los dos empleados.
+      expect(prismaMock.sueldoMensualizado.upsert).toHaveBeenCalledWith({
+        where: { cuil_vigenteDesde: { cuil: '20111111111', vigenteDesde: new Date(2026, 7, 1) } },
+        create: { cuil: '20111111111', vigenteDesde: new Date(2026, 7, 1), monto: 500000 },
+        update: {},
+      });
+      expect(prismaMock.sueldoMensualizado.upsert).toHaveBeenCalledWith({
+        where: { cuil_vigenteDesde: { cuil: '20222222222', vigenteDesde: new Date(2026, 7, 1) } },
+        create: { cuil: '20222222222', vigenteDesde: new Date(2026, 7, 1), monto: 400000 },
+        update: {},
+      });
+      expect(prismaMock.rondaTarifas.upsert).toHaveBeenCalledWith({
+        where: { anio_mes: { anio: 2026, mes: 8 } },
+        create: { anio: 2026, mes: 8 },
+        update: {},
+      });
+    });
+  });
+
+  describe('getSueldosMensualizados (ADR-016)', () => {
+    it('devuelve el sueldo vigente más reciente ≤ el mes consultado, por empleado', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { cuil: '20111111111', empleado: { apellido_nombre: 'PEREZ JUAN' } },
+        { cuil: '20222222222', empleado: { apellido_nombre: 'GOMEZ ANA' } },
+      ]);
+      prismaMock.sueldoMensualizado.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.cuil === '20111111111' ? { monto: 500000 } : null),
+      );
+
+      const r = await service.getSueldosMensualizados(2026, 8);
+      expect(r).toEqual([
+        { cuil: '20111111111', apellidoNombre: 'PEREZ JUAN', monto: '500000' },
+        { cuil: '20222222222', apellidoNombre: 'GOMEZ ANA', monto: null },
+      ]);
     });
   });
 });

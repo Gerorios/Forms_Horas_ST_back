@@ -143,7 +143,7 @@ export class EditarRondaTarifasDto {
   bonosNoRemunerativos?: BonoNoRemunerativoDto[];
 }
 
-// ---- Datos variables por quincena (mensualizado / por tantos) — ver ADR-011 ----
+// ---- Datos variables por quincena (por tantos) — ver ADR-011 ----
 
 export class QuincenaParamsDto {
   @IsInt()
@@ -160,7 +160,9 @@ export class QuincenaParamsDto {
   quincena: number;
 }
 
-export class MontoMensualizadoItemDto {
+// ---- Sueldos mensualizados (vigentes, versionados por mes — ver ADR-016) ----
+
+export class SueldoMensualizadoItemDto {
   @IsString()
   cuil: string;
 
@@ -168,11 +170,19 @@ export class MontoMensualizadoItemDto {
   monto: number;
 }
 
-export class CargarMontosMensualizadosDto extends QuincenaParamsDto {
+export class GuardarSueldosMensualizadosDto {
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  mes: number;
+
+  @IsInt()
+  anio: number;
+
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => MontoMensualizadoItemDto)
-  montos: MontoMensualizadoItemDto[];
+  @Type(() => SueldoMensualizadoItemDto)
+  sueldos: SueldoMensualizadoItemDto[];
 }
 
 export class KmPorTantosItemDto {

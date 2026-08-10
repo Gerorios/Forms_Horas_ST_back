@@ -6,7 +6,7 @@ import {
   UpsertPerfilLiquidacionDto,
   CargarRondaTarifasDto,
   EditarRondaTarifasDto,
-  CargarMontosMensualizadosDto,
+  GuardarSueldosMensualizadosDto,
   CargarKmPorTantosDto,
 } from './dto/liquidacion.dto';
 
@@ -524,35 +524,126 @@ export class LiquidacionService {
     return { asignados: validos.length, omitidos };
   }
 
-  // ---- Datos variables por quincena: mensualizado y por tantos (ver ADR-011) ----
+  // ---- Sueldos mensualizados: vigentes, comparten estado "mes resuelto" con
+  // la ronda de tarifas (ver ADR-016) ----
 
-  async getMontosMensualizados(anio: number, mes: number, quincena: number) {
+  async getSueldosMensualizados(anio: number, mes: number) {
+    const fecha = new Date(anio, mes - 1, 1);
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: 'mensualizado' },
       include: { empleado: { select: { apellido_nombre: true } } },
       orderBy: { cuil: 'asc' },
     });
-    const montos = await this.prisma.montoMensualizado.findMany({ where: { anio, mes, quincena } });
-    const montoPorCuil = new Map(montos.map((m) => [m.cuil, m.monto.toString()]));
-    return perfiles.map((p) => ({
-      cuil: p.cuil,
-      apellidoNombre: p.empleado.apellido_nombre,
-      monto: montoPorCuil.get(p.cuil) ?? null,
-    }));
+    return Promise.all(
+      perfiles.map(async (p) => {
+        const vigente = await this.prisma.sueldoMensualizado.findFirst({
+          where: { cuil: p.cuil, vigenteDesde: { lte: fecha } },
+          orderBy: { vigenteDesde: 'desc' },
+        });
+        return {
+          cuil: p.cuil,
+          apellidoNombre: p.empleado.apellido_nombre,
+          monto: vigente ? vigente.monto.toString() : null,
+        };
+      }),
+    );
   }
 
-  async cargarMontosMensualizados(dto: CargarMontosMensualizadosDto) {
+  async guardarSueldosMensualizados(dto: GuardarSueldosMensualizadosDto, usuarioCuil: string) {
+    const objetivo: Periodo = { anio: dto.anio, mes: dto.mes };
+    const fechaObjetivo = new Date(objetivo.anio, objetivo.mes - 1, 1);
+
+    const rondaObjetivo = await this.prisma.rondaTarifas.findUnique({ where: { anio_mes: objetivo } });
+    const ultimaRonda = await this.prisma.rondaTarifas.findFirst({ orderBy: [{ anio: 'desc' }, { mes: 'desc' }] });
+
+    if (
+      !rondaObjetivo &&
+      ultimaRonda &&
+      (objetivo.anio < ultimaRonda.anio || (objetivo.anio === ultimaRonda.anio && objetivo.mes < ultimaRonda.mes))
+    ) {
+      throw new BadRequestException(
+        'Ese período es anterior al último cargado y todavía no fue resuelto — no se puede crear retroactivamente',
+      );
+    }
+
+    const perfiles = await this.prisma.perfilLiquidacion.findMany({
+      where: { regimen: 'mensualizado' },
+      select: { cuil: true },
+    });
+    const cuils = perfiles.map((p) => p.cuil);
+
     await this.prisma.$transaction(
-      dto.montos.map((m) =>
-        this.prisma.montoMensualizado.upsert({
-          where: { cuil_anio_mes_quincena: { cuil: m.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena } },
-          create: { cuil: m.cuil, anio: dto.anio, mes: dto.mes, quincena: dto.quincena, monto: m.monto },
-          update: { monto: m.monto },
-        }),
-      ),
+      async (tx) => {
+        // Si el mes todavía no existía en RondaTarifas (ni por esta sección
+        // ni por la ronda de categorías/km/plus), completa los meses
+        // salteados copiando el último sueldo vigente de cada empleado —
+        // mismo criterio que ADR-010, aplicado por persona en vez de por
+        // categoría. Cualquiera de las dos secciones puede "abrir" el mes.
+        if (!rondaObjetivo) {
+          const faltantes = this.mesesFaltantes(
+            ultimaRonda ? { anio: ultimaRonda.anio, mes: ultimaRonda.mes } : null,
+            objetivo,
+          );
+          for (const periodo of faltantes) {
+            const fecha = new Date(periodo.anio, periodo.mes - 1, 1);
+            for (const cuil of cuils) {
+              const vigente = await tx.sueldoMensualizado.findFirst({
+                where: { cuil, vigenteDesde: { lte: fecha } },
+                orderBy: { vigenteDesde: 'desc' },
+              });
+              if (vigente) {
+                await tx.sueldoMensualizado.upsert({
+                  where: { cuil_vigenteDesde: { cuil, vigenteDesde: fecha } },
+                  create: { cuil, vigenteDesde: fecha, monto: vigente.monto },
+                  update: {},
+                });
+              }
+            }
+            await tx.rondaTarifas.upsert({ where: { anio_mes: periodo }, create: periodo, update: {} });
+          }
+          await tx.rondaTarifas.upsert({ where: { anio_mes: objetivo }, create: objetivo, update: {} });
+        }
+
+        for (const item of dto.sueldos) {
+          const existente = await tx.sueldoMensualizado.findUnique({
+            where: { cuil_vigenteDesde: { cuil: item.cuil, vigenteDesde: fechaObjetivo } },
+          });
+          if (existente) {
+            const valorAnterior = Number(existente.monto);
+            if (valorAnterior !== item.monto) {
+              await tx.sueldoMensualizado.update({ where: { id: existente.id }, data: { monto: item.monto } });
+              await tx.auditoria.create({
+                data: {
+                  tabla: 'sth_sueldos_mensualizados',
+                  registroId: existente.id,
+                  usuarioCuil,
+                  accion: 'editar',
+                  campo: item.cuil,
+                  valorAnterior: valorAnterior.toString(),
+                  valorNuevo: item.monto.toString(),
+                },
+              });
+            }
+          } else {
+            const creado = await tx.sueldoMensualizado.create({
+              data: { cuil: item.cuil, vigenteDesde: fechaObjetivo, monto: item.monto },
+            });
+            await tx.auditoria.create({
+              data: {
+                tabla: 'sth_sueldos_mensualizados',
+                registroId: creado.id,
+                usuarioCuil,
+                accion: 'crear',
+                campo: item.cuil,
+                valorNuevo: item.monto.toString(),
+              },
+            });
+          }
+        }
+      },
       { timeout: 30000, maxWait: 10000 },
     );
-    return { actualizados: dto.montos.length };
+    return this.getSueldosMensualizados(dto.anio, dto.mes);
   }
 
   async getKmPorTantos(anio: number, mes: number, quincena: number) {
