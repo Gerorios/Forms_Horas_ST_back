@@ -146,6 +146,7 @@ describe('RegistrosHorasService', () => {
           horas: 4, estado: 'aprobado',
           contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'Alfa Pedro' },
           tareas: [{ tarea: { nombre: 'Zanjeo' } }, { tarea: { nombre: 'Tendido de cañería' } }],
+          observacion: 'Viaje a Metán por fuga',
         },
       ]);
       const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
@@ -153,9 +154,11 @@ describe('RegistrosHorasService', () => {
         id: 11, fecha: '2026-08-03', contratoId: 1, contratoCodigo: 'K5',
         operarioCuil: '20-3-3', operarioNombre: 'Alfa Pedro', horas: 4, estado: 'aprobado',
         tareas: ['Zanjeo', 'Tendido de cañería'],
+        observacion: 'Viaje a Metán por fuga',
       });
       expect(r[1].operarioNombre).toBe('Zeta Juan');
       expect(r[1].tareas).toEqual([]);
+      expect(r[1].observacion).toBeNull();
     });
   });
 
