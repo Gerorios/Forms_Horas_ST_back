@@ -141,6 +141,22 @@ export class RegistrosHorasController {
     });
   }
 
+  @Get('detalle-diario')
+  @Roles('JefeContrato', 'Admin')
+  detalleDiario(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+    @Query('contratoIds') contratoIds: string | undefined,
+    @Query('provinciaIds') provinciaIds: string | undefined,
+    @Request() req,
+  ) {
+    return this.service.detalleDiario({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
+      contratoIds: parseIds(contratoIds),
+      provinciaIds: parseIds(provinciaIds),
+    });
+  }
+
   @Get('sin-carga')
   @Roles('JefeContrato', 'Admin')
   sinCarga(

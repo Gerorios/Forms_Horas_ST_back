@@ -906,6 +906,54 @@ export class RegistrosHorasService {
     }));
   }
 
+  /** Detalle plano de la quincena (la tabla "Detalle Diario" del Looker):
+   * una fila por registro, con contrato y nombre resueltos. */
+  async detalleDiario(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
+  ) {
+    const contratos = await this.prisma.contrato.findMany({
+      where:
+        usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    if (contratoIdsEfectivos.length === 0) return [];
+
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        contratoId: { in: contratoIdsEfectivos },
+        ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        fecha: { gte: desde, lte: hasta },
+      },
+      select: {
+        id: true, fecha: true, contratoId: true, operarioCuil: true, horas: true, estado: true,
+        contrato: { select: { codigo: true } },
+        operario: { select: { apellido_nombre: true } },
+      },
+      orderBy: { fecha: 'desc' },
+    });
+    return filas
+      .map((f) => ({
+        id: f.id,
+        fecha: f.fecha.toISOString().slice(0, 10),
+        contratoId: f.contratoId,
+        contratoCodigo: f.contrato.codigo,
+        operarioCuil: f.operarioCuil,
+        operarioNombre: f.operario.apellido_nombre,
+        horas: Number(f.horas),
+        estado: f.estado,
+      }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
+  }
+
   /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
    * por contrato del panel Control general. */
   async misContratos(usuario: { cuil: string; rol: string }) {
