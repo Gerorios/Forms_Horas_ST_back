@@ -102,6 +102,12 @@ export class RegistrosHorasController {
     return this.service.reabrir(id, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
+  @Get('mis-contratos')
+  @Roles('JefeContrato', 'Admin')
+  misContratos(@Request() req) {
+    return this.service.misContratos({ cuil: req.user.cuil, rol: req.user.rol });
+  }
+
   @Get('resumen-operarios')
   @Roles('JefeContrato', 'Admin')
   resumenOperarios(

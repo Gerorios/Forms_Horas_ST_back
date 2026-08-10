@@ -83,4 +83,24 @@ describe('RegistrosHorasService', () => {
       expect(r[0].tieneAlertaCruzada).toBe(true);
     });
   });
+
+  describe('misContratos', () => {
+    it('JefeContrato ve solo sus contratos; Admin todos los activos', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1, codigo: 'K5', nombre: 'Gasnor K5' }]);
+      const r = await service.misContratos({ cuil: '20-1-1', rol: 'JefeContrato' });
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith({
+        where: { activo: true, jefes: { some: { usuarioCuil: '20-1-1' } } },
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: { codigo: 'asc' },
+      });
+      expect(r).toEqual([{ id: 1, codigo: 'K5', nombre: 'Gasnor K5' }]);
+
+      await service.misContratos({ cuil: '20-9-9', rol: 'Admin' });
+      expect(prismaMock.contrato.findMany).toHaveBeenLastCalledWith({
+        where: { activo: true },
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: { codigo: 'asc' },
+      });
+    });
+  });
 });

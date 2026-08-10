@@ -847,4 +847,17 @@ export class RegistrosHorasService {
       ultimaCarga: ultimaPorCuil.get(e.cuil)?.toISOString().slice(0, 10) ?? null,
     }));
   }
+
+  /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
+   * por contrato del panel Control general. */
+  async misContratos(usuario: { cuil: string; rol: string }) {
+    return this.prisma.contrato.findMany({
+      where: {
+        activo: true,
+        ...(usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } }),
+      },
+      select: { id: true, codigo: true, nombre: true },
+      orderBy: { codigo: 'asc' },
+    });
+  }
 }
