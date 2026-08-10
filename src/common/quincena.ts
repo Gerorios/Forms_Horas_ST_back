@@ -18,3 +18,40 @@ export function quincenaAnterior(
   const anioAnterior = mes === 1 ? anio - 1 : anio;
   return { anio: anioAnterior, mes: mesAnterior, quincena: 2 };
 }
+
+/** Las últimas `cantidad` quincenas terminando en la dada, en orden
+ * cronológico ascendente — para el histórico del panel Control general. */
+export function quincenasHaciaAtras(
+  anio: number,
+  mes: number,
+  quincena: number,
+  cantidad: number,
+): { anio: number; mes: number; quincena: number }[] {
+  const lista = [{ anio, mes, quincena }];
+  while (lista.length < cantidad) {
+    const prev = quincenaAnterior(lista[0].anio, lista[0].mes, lista[0].quincena);
+    lista.unshift(prev);
+  }
+  return lista;
+}
+
+/** "a,b,c" → ['a','b','c']. undefined/vacío → undefined (= sin filtro).
+ * Para listas de CUILs u otros ids no numéricos en query params. */
+export function parseLista(valor?: string): string[] | undefined {
+  if (!valor) return undefined;
+  const items = valor
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
+/** "1,2,30" → [1, 2, 30]. undefined/vacío/sin números → undefined (= sin filtro). */
+export function parseIds(valor?: string): number[] | undefined {
+  if (!valor) return undefined;
+  const ids = valor
+    .split(',')
+    .map((t) => Number(t.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return ids.length > 0 ? ids : undefined;
+}

@@ -13,7 +13,7 @@ import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
-import { rangoQuincena, quincenaAnterior } from '../common/quincena';
+import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/quincena';
 
 // Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
@@ -699,6 +699,7 @@ export class RegistrosHorasService {
     anio: number,
     mes: number,
     quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
   ) {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
@@ -712,8 +713,17 @@ export class RegistrosHorasService {
     const misContratoIds = contratos.map((c) => c.id);
     if (misContratoIds.length === 0) return [];
 
+    // Filtros del panel: los contratos pedidos se intersecan con "mis
+    // contratos" (nunca amplían el scope); la provincia achica el agregado
+    // principal y el de la quincena anterior, pero NO la alerta cruzada.
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    if (contratoIdsEfectivos.length === 0) return [];
+    const filtroProvincia = filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {};
+
     const filas = await this.prisma.registroHoras.findMany({
-      where: { contratoId: { in: misContratoIds }, fecha: { gte: desde, lte: hasta } },
+      where: { contratoId: { in: contratoIdsEfectivos }, ...filtroProvincia, fecha: { gte: desde, lte: hasta } },
       select: { operarioCuil: true, horas: true, estado: true },
     });
 
@@ -775,7 +785,8 @@ export class RegistrosHorasService {
     const { desde: desdeAnt, hasta: hastaAnt } = rangoQuincena(anterior.anio, anterior.mes, anterior.quincena);
     const filasAnteriores = await this.prisma.registroHoras.findMany({
       where: {
-        contratoId: { in: misContratoIds },
+        contratoId: { in: contratoIdsEfectivos },
+        ...filtroProvincia,
         fecha: { gte: desdeAnt, lte: hastaAnt },
         estado: 'aprobado',
       },
@@ -846,5 +857,119 @@ export class RegistrosHorasService {
       cargo: e.cargo,
       ultimaCarga: ultimaPorCuil.get(e.cuil)?.toISOString().slice(0, 10) ?? null,
     }));
+  }
+
+  /** Histórico de horas (pendientes + aprobadas) por quincena calendario, 24
+   * quincenas (12 meses) terminando en la seleccionada — la vista "Horas Por
+   * Quincena" del viejo tablero Looker, scopeada a mis contratos. */
+  async historicoQuincenas(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+  ) {
+    const contratos = await this.prisma.contrato.findMany({
+      where:
+        usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    const quincenas = quincenasHaciaAtras(anio, mes, quincena, 24);
+    if (contratoIdsEfectivos.length === 0)
+      return quincenas.map((q) => ({ ...q, horas: 0 }));
+
+    const { desde } = rangoQuincena(quincenas[0].anio, quincenas[0].mes, quincenas[0].quincena);
+    const { hasta } = rangoQuincena(anio, mes, quincena);
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        contratoId: { in: contratoIdsEfectivos },
+        ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
+        fecha: { gte: desde, lte: hasta },
+        estado: { not: 'desaprobado' },
+      },
+      select: { fecha: true, horas: true },
+    });
+
+    const acum = new Map<string, number>();
+    for (const f of filas) {
+      const q = f.fecha.getDate() <= 15 ? 1 : 2;
+      const k = `${f.fecha.getFullYear()}-${f.fecha.getMonth() + 1}-${q}`;
+      acum.set(k, (acum.get(k) ?? 0) + Number(f.horas));
+    }
+    return quincenas.map((q) => ({
+      ...q,
+      horas: Math.round((acum.get(`${q.anio}-${q.mes}-${q.quincena}`) ?? 0) * 100) / 100,
+    }));
+  }
+
+  /** Detalle plano de la quincena (la tabla "Detalle Diario" del Looker):
+   * una fila por registro, con contrato y nombre resueltos. */
+  async detalleDiario(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+  ) {
+    const contratos = await this.prisma.contrato.findMany({
+      where:
+        usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    if (contratoIdsEfectivos.length === 0) return [];
+
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        contratoId: { in: contratoIdsEfectivos },
+        ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
+        fecha: { gte: desde, lte: hasta },
+      },
+      select: {
+        id: true, fecha: true, contratoId: true, operarioCuil: true, horas: true, estado: true,
+        observacion: true,
+        contrato: { select: { codigo: true } },
+        operario: { select: { apellido_nombre: true } },
+        tareas: { select: { tarea: { select: { nombre: true } } } },
+      },
+      orderBy: { fecha: 'desc' },
+    });
+    return filas
+      .map((f) => ({
+        id: f.id,
+        fecha: f.fecha.toISOString().slice(0, 10),
+        contratoId: f.contratoId,
+        contratoCodigo: f.contrato.codigo,
+        operarioCuil: f.operarioCuil,
+        operarioNombre: f.operario.apellido_nombre,
+        horas: Number(f.horas),
+        estado: f.estado,
+        tareas: f.tareas.map((t) => t.tarea.nombre),
+        observacion: f.observacion ?? null,
+      }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
+  }
+
+  /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
+   * por contrato del panel Control general. */
+  async misContratos(usuario: { cuil: string; rol: string }) {
+    return this.prisma.contrato.findMany({
+      where: {
+        activo: true,
+        ...(usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } }),
+      },
+      select: { id: true, codigo: true, nombre: true },
+      orderBy: { codigo: 'asc' },
+    });
   }
 }
