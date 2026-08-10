@@ -9,7 +9,7 @@ import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { parseIds } from '../common/quincena';
+import { parseIds, parseLista } from '../common/quincena';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('registros-horas')
@@ -133,11 +133,13 @@ export class RegistrosHorasController {
     @Query('quincena', ParseIntPipe) quincena: number,
     @Query('contratoIds') contratoIds: string | undefined,
     @Query('provinciaIds') provinciaIds: string | undefined,
+    @Query('operarioCuils') operarioCuils: string | undefined,
     @Request() req,
   ) {
     return this.service.historicoQuincenas({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
       contratoIds: parseIds(contratoIds),
       provinciaIds: parseIds(provinciaIds),
+      operarioCuils: parseLista(operarioCuils),
     });
   }
 
@@ -149,11 +151,13 @@ export class RegistrosHorasController {
     @Query('quincena', ParseIntPipe) quincena: number,
     @Query('contratoIds') contratoIds: string | undefined,
     @Query('provinciaIds') provinciaIds: string | undefined,
+    @Query('operarioCuils') operarioCuils: string | undefined,
     @Request() req,
   ) {
     return this.service.detalleDiario({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
       contratoIds: parseIds(contratoIds),
       provinciaIds: parseIds(provinciaIds),
+      operarioCuils: parseLista(operarioCuils),
     });
   }
 

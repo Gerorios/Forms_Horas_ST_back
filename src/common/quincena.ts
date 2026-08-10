@@ -35,6 +35,17 @@ export function quincenasHaciaAtras(
   return lista;
 }
 
+/** "a,b,c" → ['a','b','c']. undefined/vacío → undefined (= sin filtro).
+ * Para listas de CUILs u otros ids no numéricos en query params. */
+export function parseLista(valor?: string): string[] | undefined {
+  if (!valor) return undefined;
+  const items = valor
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
 /** "1,2,30" → [1, 2, 30]. undefined/vacío/sin números → undefined (= sin filtro). */
 export function parseIds(valor?: string): number[] | undefined {
   if (!valor) return undefined;

@@ -867,7 +867,7 @@ export class RegistrosHorasService {
     anio: number,
     mes: number,
     quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
+    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
   ) {
     const contratos = await this.prisma.contrato.findMany({
       where:
@@ -888,6 +888,7 @@ export class RegistrosHorasService {
       where: {
         contratoId: { in: contratoIdsEfectivos },
         ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
         fecha: { gte: desde, lte: hasta },
         estado: { not: 'desaprobado' },
       },
@@ -913,7 +914,7 @@ export class RegistrosHorasService {
     anio: number,
     mes: number,
     quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
+    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
   ) {
     const contratos = await this.prisma.contrato.findMany({
       where:
@@ -931,6 +932,7 @@ export class RegistrosHorasService {
       where: {
         contratoId: { in: contratoIdsEfectivos },
         ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
         fecha: { gte: desde, lte: hasta },
       },
       select: {

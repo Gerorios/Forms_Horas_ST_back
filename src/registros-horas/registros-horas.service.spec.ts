@@ -129,6 +129,16 @@ describe('RegistrosHorasService', () => {
       const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
       expect(where.estado).toEqual({ not: 'desaprobado' });
     });
+
+    it('filtra por operarioCuils cuando se pide', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+        operarioCuils: ['20-2-2', '20-3-3'],
+      });
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.operarioCuil).toEqual({ in: ['20-2-2', '20-3-3'] });
+    });
   });
 
   describe('detalleDiario', () => {
@@ -159,6 +169,16 @@ describe('RegistrosHorasService', () => {
       expect(r[1].operarioNombre).toBe('Zeta Juan');
       expect(r[1].tareas).toEqual([]);
       expect(r[1].observacion).toBeNull();
+    });
+
+    it('filtra por operarioCuils cuando se pide', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+        operarioCuils: ['20-2-2'],
+      });
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.operarioCuil).toEqual({ in: ['20-2-2'] });
     });
   });
 
