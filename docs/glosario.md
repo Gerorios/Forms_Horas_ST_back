@@ -46,6 +46,15 @@ Términos del dominio. Ver también el ADR de roles: `docs/adr/2026-07-03-adr-00
   JefeContrato o Admin, sin scopear por contrato — decisión consciente del dueño del producto: no
   existe un padrón fijo por contrato (los operarios son multidisciplinarios), así que la ausencia de
   carga se comparte entre todos para que cualquiera pueda notarla y coordinar.
+- **Panel Control general (réplica Looker)** — Decisiones del dueño del producto (2026-08-10) al
+  reemplazar el tablero Looker "Informe Hs Personal": la réplica es **estructural, no estética**
+  (mismas secciones y gráficos, componentes y colores de la app); filtros por **Contrato y
+  Provincia** (la provincia es la del registro de horas, no el domicilio del empleado); las horas
+  del tile "Horas de la quincena" y del histórico cuentan **pendientes + aprobadas** (excluyen
+  rechazadas) con alcance "mis contratos"; el histórico muestra **12 meses (24 quincenas)**; el
+  ranking es **top 10** por total de horas; el umbral de control se **ratifica en ≥16hs/día** (el
+  >13hs del Looker no se adopta); la tabla "Días SIN Horas" día-por-día del Looker **no se
+  replica** — queda el listado "sin carga" por quincena con última carga.
 - **Perfil de liquidación (`PerfilLiquidacion`)** — 1:1 con `snuempleados.cuil` (no con `Usuario`, la mayoría de los empleados no tienen login): régimen (`jornalizado` / `fijo` / `mensualizado` / `por_tantos` / `administrativo`) + categoría UOCRA + modalidad de pago. Solo lo asignan Admin/Liquidador. Un empleado queda fuera del panel de liquidación en dos casos: **sin perfil todavía** (no revisado) o **con régimen `administrativo`** (revisado, se liquida por otro circuito). Ver ADR-009 y ADR-011 (5 regímenes reales, no 4).
 - **Categoría UOCRA** — Catálogo propio de esta app (no se reusa `snuempleados.categoria`, esa columna externa está incompleta). Cada categoría tiene una tarifa por hora.
 - **Tarifa vigente** — Patrón que se repite para casi todo monto de este dominio: una tabla versionada por período (`vigenteDesde`, siempre día 1 de un mes), se toma la fila con vigencia más reciente ≤ la fecha de la quincena liquidada. Se usa para: tarifa por categoría UOCRA, monto por día de novedad con plus, y precio por rango de km (por tantos). El multiplicador de hora extra es la excepción: es fijo en 1.5, no se versiona. Ver ADR-009 y ADR-010 (cómo se cargan estos valores).
