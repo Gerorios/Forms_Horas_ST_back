@@ -182,6 +182,76 @@ describe('RegistrosHorasService', () => {
     });
   });
 
+  describe('controlDiario', () => {
+    it('7+7 en dos contratos supera el umbral (>13 cruzando todo); 13 exactos no entra; ordena por total desc', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          // Zeta: 7 en mi contrato + 7 en contrato ajeno el mismo día = 14 → entra
+          { operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 7, contratoId: 1, provinciaId: 1 },
+          { operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 7, contratoId: 99, provinciaId: 1 },
+          // Alfa: 15 en mi contrato otro día → entra, con más horas que Zeta
+          { operarioCuil: '20-3-3', fecha: new Date(2026, 7, 4), horas: 15, contratoId: 1, provinciaId: 1 },
+          // Beta: 13 exactos → NO entra (umbral estrictamente mayor)
+          { operarioCuil: '20-4-4', fecha: new Date(2026, 7, 3), horas: 13, contratoId: 1, provinciaId: 1 },
+        ]) // totales del día (pendiente+aprobado, todos los contratos)
+        .mockResolvedValueOnce([
+          {
+            id: 1, operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 7, estado: 'aprobado',
+            observacion: null, contrato: { codigo: 'K5' },
+            operario: { apellido_nombre: 'Zeta Juan' },
+            tareas: [{ tarea: { nombre: 'Zanjeo' } }],
+          },
+          {
+            id: 2, operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 7, estado: 'pendiente',
+            observacion: 'Viaje a Metán', contrato: { codigo: 'K9' },
+            operario: { apellido_nombre: 'Zeta Juan' },
+            tareas: [],
+          },
+          {
+            id: 3, operarioCuil: '20-3-3', fecha: new Date(2026, 7, 4), horas: 15, estado: 'aprobado',
+            observacion: null, contrato: { codigo: 'K5' },
+            operario: { apellido_nombre: 'Alfa Pedro' },
+            tareas: [{ tarea: { nombre: 'Perforación' } }],
+          },
+        ]); // detalle de los días que superaron el umbral
+      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      expect(r).toHaveLength(2);
+      expect(r[0]).toMatchObject({
+        operarioCuil: '20-3-3', operarioNombre: 'Alfa Pedro', fecha: '2026-08-04',
+        totalHoras: 15, contratos: ['K5'],
+      });
+      expect(r[1]).toMatchObject({
+        operarioCuil: '20-2-2', operarioNombre: 'Zeta Juan', fecha: '2026-08-03',
+        totalHoras: 14, contratos: ['K5', 'K9'],
+      });
+      expect(r[1].registros).toHaveLength(2);
+      expect(r[1].registros[0]).toMatchObject({
+        contratoCodigo: 'K5', horas: 7, estado: 'aprobado', tareas: ['Zanjeo'], observacion: null,
+      });
+      // el primer query excluye desaprobado (no cuentan para el total)
+      const whereTotales = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(whereTotales.estado).toEqual({ not: 'desaprobado' });
+      // el segundo query NO excluye desaprobado (el detalle muestra la historia completa)
+      const whereDetalle = prismaMock.registroHoras.findMany.mock.calls[1][0].where;
+      expect(whereDetalle.estado).toBeUndefined();
+    });
+
+    it('un día cuyo total supera 13 pero sin ninguna fila en mis contratos filtrados NO entra', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValueOnce([
+        // 14hs pero todas en el contrato 2 — con filtro contratoIds=[1] el día no entra
+        { operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 14, contratoId: 2, provinciaId: 1 },
+      ]);
+      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+        contratoIds: [1],
+      });
+      expect(r).toEqual([]);
+      // sin días candidatos no hace falta el query de detalle
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('misContratos', () => {
     it('JefeContrato ve solo sus contratos; Admin todos los activos', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1, codigo: 'K5', nombre: 'Gasnor K5' }]);

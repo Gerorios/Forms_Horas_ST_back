@@ -19,6 +19,11 @@ import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
 const UMBRAL_ALERTA_HORAS = 16;
 const TECHO_HORAS_IMPOSIBLE = 24;
+// Zona de revisión del panel Control general (>13hs/día, heredado del viejo
+// tablero Looker). CONVIVE con UMBRAL_ALERTA_HORAS: el ≥16 es la alerta que
+// pinta badges; el >13 solo llena una tabla de auditoría fina con tareas y
+// observaciones. Decisión del dueño de producto 2026-08-10.
+const UMBRAL_CONTROL_DIARIO = 13;
 // Horas extra por quincena (régimen jornalizado/fijo), ver ADR-009 — señal
 // distinta de la alerta diaria: acá interesa el acumulado del período.
 const UMBRAL_HORAS_EXTRA_QUINCENA = 88;
@@ -958,6 +963,114 @@ export class RegistrosHorasService {
         observacion: f.observacion ?? null,
       }))
       .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
+  }
+
+  /** Zona de revisión del panel Control general: operarios con más de
+   * UMBRAL_CONTROL_DIARIO horas sumadas en un mismo día. NO es la alerta
+   * (esa sigue siendo ≥16hs/día, ver alertaHoras): es una tabla de
+   * auditoría fina para mirar qué tareas hizo y qué observaciones dejó
+   * quien metió una jornada larga. Decisión 2026-08-10: conviven ambos
+   * umbrales — el 13 viene del viejo tablero Looker.
+   *
+   * El total del día cruza TODOS los contratos (mismo espíritu que la
+   * alerta cruzada: 7+7 en dos contratos = 14, tiene que aparecer). Los
+   * filtros de contrato/provincia solo deciden qué días ENTRAN (al menos
+   * una fila del día en ese scope); el total y el detalle muestran todo.
+   * Suman pendientes + aprobadas; las rechazadas no cuentan para el total
+   * pero sí aparecen en el detalle (la historia completa del día). */
+  async controlDiario(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+  ) {
+    const contratos = await this.prisma.contrato.findMany({
+      where:
+        usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    if (contratoIdsEfectivos.length === 0) return [];
+
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    // Totales por operario-día, SIN filtrar por contrato/provincia (el total
+    // cruza todo); el filtro de operario sí va en el query.
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        fecha: { gte: desde, lte: hasta },
+        estado: { not: 'desaprobado' },
+        ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
+      },
+      select: { operarioCuil: true, fecha: true, horas: true, contratoId: true, provinciaId: true },
+    });
+
+    type Dia = { operarioCuil: string; fecha: Date; total: number; entra: boolean };
+    const porDia = new Map<string, Dia>();
+    for (const f of filas) {
+      const k = `${f.operarioCuil}|${f.fecha.toISOString()}`;
+      let d = porDia.get(k);
+      if (!d) {
+        d = { operarioCuil: f.operarioCuil, fecha: f.fecha, total: 0, entra: false };
+        porDia.set(k, d);
+      }
+      d.total += Number(f.horas);
+      // El día entra si al menos una fila cae en mis contratos filtrados
+      // (y en la provincia filtrada, si hay filtro de provincia).
+      if (
+        contratoIdsEfectivos.includes(f.contratoId) &&
+        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId))
+      )
+        d.entra = true;
+    }
+
+    const superan = [...porDia.values()].filter((d) => d.entra && d.total > UMBRAL_CONTROL_DIARIO);
+    if (superan.length === 0) return [];
+
+    // Detalle completo de esos días (incluye rechazadas, sin filtro de
+    // contrato/provincia): se trae por cuil+fecha y se cruza en memoria.
+    const detalle = await this.prisma.registroHoras.findMany({
+      where: {
+        operarioCuil: { in: [...new Set(superan.map((d) => d.operarioCuil))] },
+        fecha: { in: [...new Set(superan.map((d) => d.fecha.toISOString()))].map((f) => new Date(f)) },
+      },
+      select: {
+        id: true, operarioCuil: true, fecha: true, horas: true, estado: true, observacion: true,
+        contrato: { select: { codigo: true } },
+        operario: { select: { apellido_nombre: true } },
+        tareas: { select: { tarea: { select: { nombre: true } } } },
+      },
+    });
+    const detallePorDia = new Map<string, typeof detalle>();
+    for (const f of detalle) {
+      const k = `${f.operarioCuil}|${f.fecha.toISOString()}`;
+      if (!detallePorDia.has(k)) detallePorDia.set(k, []);
+      detallePorDia.get(k)!.push(f);
+    }
+
+    return superan
+      .map((d) => {
+        const filasDia = detallePorDia.get(`${d.operarioCuil}|${d.fecha.toISOString()}`) ?? [];
+        return {
+          operarioCuil: d.operarioCuil,
+          operarioNombre: filasDia[0]?.operario.apellido_nombre ?? '',
+          fecha: d.fecha.toISOString().slice(0, 10),
+          totalHoras: Math.round(d.total * 100) / 100,
+          contratos: [...new Set(filasDia.map((f) => f.contrato.codigo))].sort(),
+          registros: filasDia.map((f) => ({
+            id: f.id,
+            contratoCodigo: f.contrato.codigo,
+            horas: Number(f.horas),
+            estado: f.estado,
+            tareas: f.tareas.map((t) => t.tarea.nombre),
+            observacion: f.observacion ?? null,
+          })),
+        };
+      })
+      .sort((a, b) => b.totalHoras - a.totalHoras || b.fecha.localeCompare(a.fecha));
   }
 
   /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
