@@ -9,6 +9,7 @@ import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { parseIds, parseLista } from '../common/quincena';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('registros-horas')
@@ -102,15 +103,62 @@ export class RegistrosHorasController {
     return this.service.reabrir(id, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
+  @Get('mis-contratos')
+  @Roles('JefeContrato', 'Admin')
+  misContratos(@Request() req) {
+    return this.service.misContratos({ cuil: req.user.cuil, rol: req.user.rol });
+  }
+
   @Get('resumen-operarios')
   @Roles('JefeContrato', 'Admin')
   resumenOperarios(
     @Query('anio', ParseIntPipe) anio: number,
     @Query('mes', ParseIntPipe) mes: number,
     @Query('quincena', ParseIntPipe) quincena: number,
+    @Query('contratoIds') contratoIds: string | undefined,
+    @Query('provinciaIds') provinciaIds: string | undefined,
     @Request() req,
   ) {
-    return this.service.resumenOperarios({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena);
+    return this.service.resumenOperarios({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
+      contratoIds: parseIds(contratoIds),
+      provinciaIds: parseIds(provinciaIds),
+    });
+  }
+
+  @Get('historico-quincenas')
+  @Roles('JefeContrato', 'Admin')
+  historicoQuincenas(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+    @Query('contratoIds') contratoIds: string | undefined,
+    @Query('provinciaIds') provinciaIds: string | undefined,
+    @Query('operarioCuils') operarioCuils: string | undefined,
+    @Request() req,
+  ) {
+    return this.service.historicoQuincenas({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
+      contratoIds: parseIds(contratoIds),
+      provinciaIds: parseIds(provinciaIds),
+      operarioCuils: parseLista(operarioCuils),
+    });
+  }
+
+  @Get('detalle-diario')
+  @Roles('JefeContrato', 'Admin')
+  detalleDiario(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+    @Query('contratoIds') contratoIds: string | undefined,
+    @Query('provinciaIds') provinciaIds: string | undefined,
+    @Query('operarioCuils') operarioCuils: string | undefined,
+    @Request() req,
+  ) {
+    return this.service.detalleDiario({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
+      contratoIds: parseIds(contratoIds),
+      provinciaIds: parseIds(provinciaIds),
+      operarioCuils: parseLista(operarioCuils),
+    });
   }
 
   @Get('sin-carga')
