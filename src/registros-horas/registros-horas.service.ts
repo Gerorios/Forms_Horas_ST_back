@@ -699,6 +699,7 @@ export class RegistrosHorasService {
     anio: number,
     mes: number,
     quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
   ) {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
@@ -712,8 +713,17 @@ export class RegistrosHorasService {
     const misContratoIds = contratos.map((c) => c.id);
     if (misContratoIds.length === 0) return [];
 
+    // Filtros del panel: los contratos pedidos se intersecan con "mis
+    // contratos" (nunca amplían el scope); la provincia achica el agregado
+    // principal y el de la quincena anterior, pero NO la alerta cruzada.
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    if (contratoIdsEfectivos.length === 0) return [];
+    const filtroProvincia = filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {};
+
     const filas = await this.prisma.registroHoras.findMany({
-      where: { contratoId: { in: misContratoIds }, fecha: { gte: desde, lte: hasta } },
+      where: { contratoId: { in: contratoIdsEfectivos }, ...filtroProvincia, fecha: { gte: desde, lte: hasta } },
       select: { operarioCuil: true, horas: true, estado: true },
     });
 
@@ -775,7 +785,8 @@ export class RegistrosHorasService {
     const { desde: desdeAnt, hasta: hastaAnt } = rangoQuincena(anterior.anio, anterior.mes, anterior.quincena);
     const filasAnteriores = await this.prisma.registroHoras.findMany({
       where: {
-        contratoId: { in: misContratoIds },
+        contratoId: { in: contratoIdsEfectivos },
+        ...filtroProvincia,
         fecha: { gte: desdeAnt, lte: hastaAnt },
         estado: 'aprobado',
       },

@@ -84,6 +84,35 @@ describe('RegistrosHorasService', () => {
     });
   });
 
+  describe('resumenOperarios con filtros', () => {
+    it('interseca contratoIds con mis contratos y filtra provincia (pero no en la alerta cruzada)', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+        contratoIds: [2, 99],
+        provinciaIds: [3],
+      });
+      const llamadas = prismaMock.registroHoras.findMany.mock.calls.map((c) => c[0].where);
+      // agregado principal: contratos intersecados + provincia
+      expect(llamadas[0]).toMatchObject({ contratoId: { in: [2] }, provinciaId: { in: [3] } });
+      // alerta cruzada: sin filtro de provincia ni contrato
+      expect(llamadas[1].provinciaId).toBeUndefined();
+      expect(llamadas[1].contratoId).toBeUndefined();
+      // quincena anterior: mismos filtros que el principal
+      expect(llamadas[2]).toMatchObject({ contratoId: { in: [2] }, provinciaId: { in: [3] } });
+    });
+
+    it('sin intersección de contratos devuelve [] sin tocar registros', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+        contratoIds: [99],
+      });
+      expect(r).toEqual([]);
+      expect(prismaMock.registroHoras.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('misContratos', () => {
     it('JefeContrato ve solo sus contratos; Admin todos los activos', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1, codigo: 'K5', nombre: 'Gasnor K5' }]);
