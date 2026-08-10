@@ -1667,3 +1667,74 @@ tocado.
 **Pendiente al cerrar esta sesión:** abrir los PRs, mergear a `main` y deployar a la VPS
 (179.198.99.30) — DDL de ADR-014 falta aplicarse en `Horas_Sertec` (solo se corrió contra
 `testing` durante el desarrollo).
+
+---
+
+## 51. Control general = réplica del tablero Looker + limpieza de ramas + DEPLOY (2026-08-10)
+
+Sesión con `/grill-with-docs`: el dueño de producto pidió que `/control-general` reemplace el
+tablero Looker "Informe Hs Personal" que los Jefes de Contrato usaban antes de cerrar
+quincena. **El tablero real se leyó con el navegador** (Claude in Chrome, sesión del usuario)
+antes de decidir nada — inventario completo: filtros fecha/Provincia/Operario/Contrato +
+selector quincena, scorecard Horas Totales, "Horas Por Quincena" (barras 1ra/2da por mes, ~1
+año), "Detalle Diario", "CONTROL >13 Horas", ranking top ~10, "Días SIN Horas" (922 filas,
+una por operario×día).
+
+### Decisiones de producto (grilling, registradas en glosario)
+
+Réplica **estructural, no estética** (componentes y colores de la app). Filtros por Contrato
+y **Provincia del registro** (FK `sth_provincias`, no el domicilio de `snuempleados`) +
+Operario (pedido después, en la misma barra). Horas de gráfico/tile = **pendientes +
+aprobadas** (excluye rechazadas), alcance "mis contratos". Histórico 12 meses (24 quincenas).
+Ranking top 10 horizontal. Umbral de control **ratificado en ≥16hs** (el >13 del Looker no
+se adopta). "Días SIN Horas" día-por-día NO se replica (queda `sin-carga` por quincena con
+última carga). **La tabla "Resumen por operario" se eliminó del panel** a pedido del usuario
+("es horrible") — con ella se fueron de esta pantalla la alerta cruzada y el Δ vs quincena
+anterior (siguen en el backend y en /aprobaciones; revisable).
+
+### Implementación (plan en docs/superpowers/plans/2026-08-10-control-general-looker.md)
+
+Ejecutada con **dos subagentes en paralelo** (uno por repo) + iteraciones inline después.
+
+- **Backend** (`registros-horas`): `GET mis-contratos` (opciones del filtro);
+  `resumen-operarios` con `contratoIds`/`provinciaIds` server-side (la alerta cruzada NO se
+  filtra, por diseño); `GET historico-quincenas` (24 quincenas, rellena con 0); `GET
+  detalle-diario` (fila plana + `tareas[]` del maestro + `observacion` + filtro
+  `operarioCuils`). Helpers `quincenasHaciaAtras`/`parseIds`/`parseLista` en
+  `common/quincena.ts`. TDD estricto, 14 tests.
+- **Frontend**: barra única de filtros (`QuincenaSelect` acepta children: Contrato, Provincia,
+  Operario), 5 stat tiles (nuevo "Horas de la quincena"), **Recharts** (dependencia nueva)
+  para histórico + ranking lado a lado (`lg:grid-cols-[3fr_2fr]`), Detalle diario paginado
+  de a 50 (Fecha/Contrato/Operario/Tareas/Observación truncada con tooltip/Horas/Estado),
+  Sin carga intacta. Filtro Operario: opciones desde el resumen; histórico/detalle lo aplican
+  server-side, tiles/ranking client-side. Histórico: **siempre hasta la quincena EN CURSO**
+  (no la seleccionada — si no, el mes corriente nunca aparecía) y recorta meses vacíos de los
+  extremos. 19+4 tests, tsc limpio.
+- **Lección de gráficos (guardada en memoria `graficos-con-libreria`):** la primera versión
+  artesanal (divs + `var(--color-chart-N)`) renderizaba barras invisibles — los tokens de
+  `@theme` de Tailwind 4 no llegan al style inline. El usuario la rechazó de plano; regla
+  nueva: gráficos analíticos SIEMPRE con Recharts, paleta validada con el validador de
+  dataviz (`#a97a16` brand-deep + `#3b6fc4` azul chart-only, sobre blanco).
+
+### Limpieza de ramas remotas (pedida al inicio de la sesión)
+
+Se borraron las 10 ramas remotas ≠ main del backend. ⚠️ `feature/circuito-liquidacion`
+contenía un **fix de seguridad de Rodrigo sin mergear** (commit `27a8d07`, 2026-08-04):
+`GET /novedades` sin `@Roles` (cualquier logueado ve todo) y JefeCuadrilla debería ver solo
+lo que él cargó. El usuario decidió borrarla igual — **el problema sigue vigente en main**;
+el hash quedó anotado para rescatarlo con cherry-pick mientras GitHub no lo purgue.
+
+### PRs, merge y deploy
+
+PRs **#20 en ambos repos**, mergeados con `gh pr merge --admin` (la protección de `main`
+bloquea el merge normal por CLI; autorizado por el usuario) + ramas borradas. Deploy VPS
+completo: pull+install (32 paquetes de recharts)+`prisma generate`+build ambos repos, `sudo
+pm2 restart` de los dos procesos, verificado front 200 / API 401 sin token. Sin DDL nuevo.
+De paso se confirmó que el DDL de ADR-014 (§50) **ya estaba aplicado en `Horas_Sertec`**
+(login de prod responde 401 limpio, no 500). Nota: en `testing` no hay cargas de agosto
+(última: 31/07) — por eso el histórico local "no traía agosto"; en prod sí hay datos.
+
+**Pendientes:**
+1. **Re-aplicar el fix de seguridad de novedades** (`27a8d07`) — es el más urgente.
+2. Smoke test del panel nuevo en producción como Jefe de Contrato real.
+3. Decidir si la alerta cruzada / Δ quincena anterior vuelven al panel en otro formato.
