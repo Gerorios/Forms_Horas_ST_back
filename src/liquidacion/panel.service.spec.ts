@@ -192,9 +192,9 @@ describe('PanelService', () => {
       expect(r.filas[0].duplicadoCruzado).toBe(true);
     });
 
-    it('mensualizado expone horasTotal y horasCct en null (fix centinela)', async () => {
+    it('mensualizado expone horasTotal=1 y horasCct=1 reales (para que se vea la cuenta básico = monto × 1)', async () => {
       calculoMock.calcularQuincena.mockResolvedValue([
-        { ...filaBase, regimen: 'mensualizado', horasTotal: 1, horasCct: 1 },
+        { ...filaBase, regimen: 'mensualizado', horasTotal: 1, horasCct: 1, horasExtra: 0 },
       ]);
       prismaMock.registroHoras.groupBy.mockResolvedValue([]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
@@ -204,8 +204,9 @@ describe('PanelService', () => {
 
       const r = await service.getDetalleQuincena(2026, 8, 1);
 
-      expect(r.filas[0].horasTotal).toBeNull();
-      expect(r.filas[0].horasCct).toBeNull();
+      expect(r.filas[0].horasTotal).toBe('1.00');
+      expect(r.filas[0].horasCct).toBe('1.00');
+      expect(r.filas[0].horasExtra).toBe('0.00');
     });
 
     it('detecta empleado con horas aprobadas y sin perfil de liquidación (fila gris)', async () => {
