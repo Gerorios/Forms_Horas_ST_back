@@ -113,6 +113,24 @@ describe('RegistrosHorasService', () => {
     });
   });
 
+  describe('historicoQuincenas', () => {
+    it('agrupa por quincena calendario, excluye desaprobado en el where y rellena con 0', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { fecha: new Date(2026, 7, 3), horas: 8 }, // 1ra ago
+        { fecha: new Date(2026, 7, 3), horas: 2.5 }, // 1ra ago
+        { fecha: new Date(2026, 6, 20), horas: 4 }, // 2da jul
+      ]);
+      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      expect(r).toHaveLength(24);
+      expect(r[23]).toEqual({ anio: 2026, mes: 8, quincena: 1, horas: 10.5 });
+      expect(r[22]).toEqual({ anio: 2026, mes: 7, quincena: 2, horas: 4 });
+      expect(r[21]).toEqual({ anio: 2026, mes: 7, quincena: 1, horas: 0 });
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.estado).toEqual({ not: 'desaprobado' });
+    });
+  });
+
   describe('misContratos', () => {
     it('JefeContrato ve solo sus contratos; Admin todos los activos', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1, codigo: 'K5', nombre: 'Gasnor K5' }]);

@@ -13,7 +13,7 @@ import { ResolverRegistroDto } from './dto/resolver-registro.dto';
 import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
-import { rangoQuincena, quincenaAnterior } from '../common/quincena';
+import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/quincena';
 
 // Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
@@ -856,6 +856,53 @@ export class RegistrosHorasService {
       legajo: e.legajo,
       cargo: e.cargo,
       ultimaCarga: ultimaPorCuil.get(e.cuil)?.toISOString().slice(0, 10) ?? null,
+    }));
+  }
+
+  /** Histórico de horas (pendientes + aprobadas) por quincena calendario, 24
+   * quincenas (12 meses) terminando en la seleccionada — la vista "Horas Por
+   * Quincena" del viejo tablero Looker, scopeada a mis contratos. */
+  async historicoQuincenas(
+    usuario: { cuil: string; rol: string },
+    anio: number,
+    mes: number,
+    quincena: number,
+    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
+  ) {
+    const contratos = await this.prisma.contrato.findMany({
+      where:
+        usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
+      select: { id: true },
+    });
+    const misContratoIds = contratos.map((c) => c.id);
+    const contratoIdsEfectivos = filtros.contratoIds
+      ? misContratoIds.filter((id) => filtros.contratoIds!.includes(id))
+      : misContratoIds;
+    const quincenas = quincenasHaciaAtras(anio, mes, quincena, 24);
+    if (contratoIdsEfectivos.length === 0)
+      return quincenas.map((q) => ({ ...q, horas: 0 }));
+
+    const { desde } = rangoQuincena(quincenas[0].anio, quincenas[0].mes, quincenas[0].quincena);
+    const { hasta } = rangoQuincena(anio, mes, quincena);
+    const filas = await this.prisma.registroHoras.findMany({
+      where: {
+        contratoId: { in: contratoIdsEfectivos },
+        ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
+        fecha: { gte: desde, lte: hasta },
+        estado: { not: 'desaprobado' },
+      },
+      select: { fecha: true, horas: true },
+    });
+
+    const acum = new Map<string, number>();
+    for (const f of filas) {
+      const q = f.fecha.getDate() <= 15 ? 1 : 2;
+      const k = `${f.fecha.getFullYear()}-${f.fecha.getMonth() + 1}-${q}`;
+      acum.set(k, (acum.get(k) ?? 0) + Number(f.horas));
+    }
+    return quincenas.map((q) => ({
+      ...q,
+      horas: Math.round((acum.get(`${q.anio}-${q.mes}-${q.quincena}`) ?? 0) * 100) / 100,
     }));
   }
 
