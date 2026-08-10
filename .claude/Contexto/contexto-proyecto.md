@@ -1738,3 +1738,65 @@ De paso se confirmó que el DDL de ADR-014 (§50) **ya estaba aplicado en `Horas
 1. **Re-aplicar el fix de seguridad de novedades** (`27a8d07`) — es el más urgente.
 2. Smoke test del panel nuevo en producción como Jefe de Contrato real.
 3. Decidir si la alerta cruzada / Δ quincena anterior vuelven al panel en otro formato.
+
+---
+
+## 52. Sueldos mensualizados "vigentes" desde Tarifas (ADR-016) — 2026-08-10
+
+Sesión con `/grill-with-docs`, rama `feature/sueldos-mensualizados-vigentes` (ambos repos,
+desde `main`). El régimen `mensualizado` (sueldo fijo, ver ADR-011) usaba `MontoMensualizado`
+—clave exacta `{cuil,año,mes,quincena}`, había que recargarlo cada quincena aunque no
+cambiara— y **nunca se había usado con datos reales** (0 filas en `testing` y en
+`Horas_Sertec`).
+
+### ADR-016: patrón "vigente" + sección propia en Tarifas
+
+- `SueldoMensualizado { cuil, vigenteDesde, monto }` — mismo patrón que `TarifaCategoriaUocra`
+  pero versionado por **empleado**, no por categoría. Reemplaza directo a `MontoMensualizado`
+  (DROP + CREATE, sin datos que migrar).
+- Nueva pestaña **"Sueldos mensualizados"** dentro de Tarifas (junto a "Precios", que se
+  extrajo sin cambios a `PreciosVigentesTab`): lista de mensualizados con su sueldo vigente,
+  editable 1x1 o con un atajo de **incremento por %** que solo prellena los campos editables
+  (no guarda hasta confirmar) — conviven las dos vías.
+- Comparte el estado "mes resuelto" (`RondaTarifas{anio,mes}`) con la ronda de
+  categorías/km/plus — **cualquiera de las dos secciones puede abrir un mes nuevo primero**.
+  Completa huecos copiando el último sueldo vigente de cada empleado (misma regla que
+  ADR-010, aplicada por persona) y audita cada carga/edición en `sth_auditoria`.
+- `/liquidacion/quincena/detalle`: la fila de mensualizado pasa a **solo lectura** para este
+  dato (mismo criterio que el km de "por tantos", ADR-014) — se sacó el input inline que
+  existía en `DetalleEmpleado`.
+- DDL: `docs/sql/2026-08-10-sueldos-mensualizados-vigentes.sql`.
+
+### Tres ajustes pedidos por el usuario probando en vivo, ya resueltos
+
+1. **Confusión "sueldo mensual vs. quincenal"**: el campo de la pestaña nueva representa el
+   monto que cobra **por quincena** (no el sueldo mensual completo) — `horasCct` siempre vale
+   1, básico = monto × 1, y ese mismo valor se paga en las dos quincenas del mes. Coincide con
+   lo definido en el pedido original ("lo que sería su precio de hora, sería el sueldo fijo
+   quincenal"). Se sumó una aclaración visible en el encabezado de la columna y en el texto de
+   la pantalla para que no genere dudas de nuevo.
+2. **Categoría UOCRA deshabilitada por error para mensualizado** en `/liquidacion/perfiles`:
+   ADR-009/011 asumían que la categoría solo importa para regímenes que se pagan por hora, sin
+   contemplar que el **bono no remunerativo** depende de la categoría sin importar el régimen.
+   Ahora solo "Administrativo" deshabilita categoría/modalidad (se liquida por otro circuito).
+3. **Hs totales/Hs CCT ocultas en `—` para mensualizado** en el panel de quincena: era un "fix
+   centinela" de antes de ADR-016 (cuando el 1 no significaba nada editable). Ahora se
+   muestran reales (1.00/1.00/0.00) para que se vea la cuenta básico = monto × 1.
+
+### Verificación
+
+Backend: 94/94 tests propios (`calculo.service.spec.ts` y `liquidacion.service.spec.ts` con
+casos de arrastre entre meses, sin sueldo cargado, categoría ignorada para el básico, mes
+nuevo/edición/período retroactivo inválido, relleno de huecos por empleado), `tsc --noEmit`
+limpio. Frontend: archivos afectados verificados uno por uno (método ya documentado en §49),
+todo en verde. **No se pudo correr `tarifas-page.test.tsx` en esta máquina** (cuelga incluso
+sin tocar nada — mismo problema visto antes con otro archivo de este módulo); se verificó por
+otra vía que `PreciosVigentesTab` es una copia textual del contenido que ya pasaba esos tests.
+
+### Merge de `main` actualizado antes de pushear
+
+`main` había avanzado con la PR #20/#21 del colega (§51, réplica Looker de Control general) —
+sin superposición real de archivos salvo `docs/glosario.md` (auto-mergeado sin conflictos).
+Rama actualizada con `git merge origin/main`, re-verificada completa (backend 106/106 con los
+tests del colega incluidos, frontend con `npm install` para la dependencia nueva de Recharts +
+tests propios y una muestra de los del colega, todo en verde).
