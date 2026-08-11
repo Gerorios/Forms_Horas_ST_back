@@ -1845,3 +1845,61 @@ ADR-016 (mismo síntoma que en la VPS en §43).
 **Pendientes (heredados):** fix de seguridad de `GET /novedades` (`27a8d07`, sigue en pausa
 a pedido del usuario); smoke test del panel como JefeContrato real; decidir si alerta
 cruzada / Δ quincena vuelven al panel.
+
+---
+
+## 54. Combustible: alias de tipos + CUIT de estaciones para la extracción IA (2026-08-11)
+
+Sesión con `/grill-with-docs` (misma sesión larga de §51/§53). Pedido del dueño de producto:
+que la extracción complete también el tipo de combustible "como viene en el recibo" y que la
+estación se asigne por CUIT. Rama `feature/combustible-alias-cuit` en ambos repos, plan en
+`docs/superpowers/plans/2026-08-11-combustible-alias-cuit.md`, ejecutado con dos subagentes
+en paralelo (uno por repo) + ajustes inline.
+
+### Decisiones del grilling (glosario actualizado)
+
+- **Alias por tipo** (opción elegida entre alias / tipos-por-marca / auto-alta): tabla
+  `sth_tipo_combustible_alias` (alias únicos, N por tipo), ABM dentro de la pantalla
+  existente de Admin → Tipos de combustible (input coma-separado). El catálogo se mantiene
+  con pocas categorías reales; los nombres comerciales viven como alias.
+- **CUIT en estaciones**: columna `cuit` CHAR(11) única y opcional en
+  `sth_estaciones_servicio`. El matcheo de la extracción es **CUIT-primero** (exacto, solo
+  dígitos) con caída al matcheo por nombre. CUIT desconocido = **hint sin auto-alta**
+  ("CUIT leído: 30-… — no está en el maestro"), mismo criterio que la patente.
+- **Carga inicial de estaciones**: diferida — el usuario pasa la lista (nombre + CUIT) y se
+  aplica en las dos bases. PENDIENTE al cerrar.
+- La extracción ya leía `tipoCombustible` y `cuitEstacion` del ticket (el prompt no se tocó);
+  lo nuevo es el matcheo y los campos `tipoCombustibleLeido`/`cuitEstacionLeido` en las
+  sugerencias para los hints del formulario.
+
+### Implementación
+
+- Backend: schema + DDL `docs/sql/2026-08-11-alias-combustible-cuit-estacion.sql` (aplicado
+  primero SOLO a `testing`); matcheo nombre→alias y CUIT→nombre en
+  `ExtraccionTicketService` (19 tests); `PUT /admin/tipos-combustible/:id/alias` (reemplaza
+  el set) + `cuit` en DTOs/service de estaciones (spec nuevo `admin-combustible.spec.ts`);
+  `normalizar` ahora colapsa whitespace interno (necesario para el match exacto de alias).
+- Frontend: `aliases: string[]` y `cuit` en tipos/hooks; edit-rows de Admin con input de
+  alias y de CUIT (acepta guiones, normaliza a 11 dígitos, vacío = null, inválido = toast
+  sin enviar); hints de tipo/CUIT sin match en la carga nueva (patrón del hint de patente).
+  Tests: 9/9 estaciones, 7/7 tipos, 10/10 nueva carga, tsc limpio.
+
+### Prueba local accidentada (nota operativa)
+
+Los dev servers levantados como background tasks de la sesión de Claude **se matan solos**
+entre turnos; relanzarlos en ventanas de PowerShell tampoco sobrevivió (¿cerradas por el
+usuario?). Solución que quedó: procesos ocultos (`Start-Process -WindowStyle Hidden`) con
+logs espejados a `C:\Temp\claude\forms-horas-dev\*.log` + un Monitor que avisa si un puerto
+deja de responder. Aprendizaje del primer intento fallido del usuario: "no pudimos leer el
+ticket" también aparece cuando el backend está caído, y **las fotos reenviadas por WhatsApp
+llegan recomprimidas** (~1600px) — para tickets térmicos conviene foto directa de cámara o
+WhatsApp "como documento".
+
+### Deploy (autorizado explícitamente por el usuario)
+
+PRs de ambos repos mergeados a main, DDL aplicado en `Horas_Sertec`, deploy VPS completo y
+limpieza de ramas remotas viejas en los dos repos (ver detalle del cierre en los PRs).
+
+**Pendientes:** cargar la lista real de estaciones (nombre + CUIT) cuando el usuario la
+pase; cargar los alias reales de los tipos; fix de seguridad de `GET /novedades`
+(`27a8d07`) sigue en pausa.
