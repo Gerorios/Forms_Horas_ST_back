@@ -1800,3 +1800,48 @@ sin superposición real de archivos salvo `docs/glosario.md` (auto-mergeado sin 
 Rama actualizada con `git merge origin/main`, re-verificada completa (backend 106/106 con los
 tests del colega incluidos, frontend con `npm install` para la dependencia nueva de Recharts +
 tests propios y una muestra de los del colega, todo en verde).
+
+---
+
+## 53. Control general: descripciones de módulos + zona de revisión >13hs/día (2026-08-10 a 11)
+
+Continuación de §51, misma sesión de Claude. Tres bloques, todos ya EN PRODUCCIÓN.
+
+### Favicon + descripciones de módulos (front PRs #22 y #23)
+
+- `src/app/icon.png` (logo de la empresa, copia de `public/logo.png`) reemplaza el favicon
+  default de Next. OJO: ese deploy arrastró a producción el frontend de ADR-016 (§52) antes
+  que su backend — quedó inconsistente ~1 hora hasta que Rodrigo deployó el backend y aplicó
+  el DDL (verificado después: ruta montada + tabla `sth_sueldos_mensualizados` existente).
+  Lección: deployar el front de main puede shippear features de otros a medio salir.
+- Tarjetas del home: descripciones nuevas para Control general y Km por tantos; la de
+  Combustible aclara "Módulo en construcción".
+
+### Zona de revisión >13hs/día (back PR #23, front PR #24) — grilling corto
+
+El usuario pidió la tabla "CONTROL > 13 Horas" del Looker que a la mañana había decidido NO
+adoptar. Decisiones del grilling (glosario actualizado — reversa parcial de §51):
+
+- **Conviven**: ≥16hs sigue siendo la alerta (badges, alerta cruzada); >13hs es "zona de
+  revisión" — auditoría fina, sin alarma. `UMBRAL_CONTROL_DIARIO = 13` hardcodeado.
+- **El total del día cruza TODOS los contratos** (el caso 7+7); los filtros de
+  contrato/provincia solo deciden qué días entran (≥1 fila del día en ese scope); el detalle
+  muestra todo, incluidas filas de contratos ajenos.
+- Suman pendientes + aprobadas; las rechazadas no cuentan pero aparecen en el detalle
+  marcadas "(no suma al total)".
+- UI: sección nueva entre gráficos y Detalle diario — fila compacta por operario-día
+  (fecha, operario, total, contratos) expandible al detalle por carga (contrato, horas,
+  estado, tareas, **observación completa sin truncar** — es el lugar de leerla). Orden:
+  total desc, empate fecha desc.
+- Backend: `GET /registros-horas/control-diario` (TDD, 11 tests del spec en verde);
+  front 21/21 + tsc.
+
+### Deploy
+
+Ambos repos: pull + build + `sudo pm2 restart` (2026-08-11), front 200 y ruta nueva 401 sin
+token. Sin DDL. El cliente Prisma local de esta máquina necesitó `npx prisma generate` por
+ADR-016 (mismo síntoma que en la VPS en §43).
+
+**Pendientes (heredados):** fix de seguridad de `GET /novedades` (`27a8d07`, sigue en pausa
+a pedido del usuario); smoke test del panel como JefeContrato real; decidir si alerta
+cruzada / Δ quincena vuelven al panel.
