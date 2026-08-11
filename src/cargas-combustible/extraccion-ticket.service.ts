@@ -81,11 +81,14 @@ export type ExtraccionTicket = {
     patente: string | null;
     km: number | null;
     movilId: number | null;
+    tipoCombustibleLeido: string | null;
+    cuitEstacionLeido: string | null;
   };
 };
 
-const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 const normalizarPatente = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const soloDigitos = (s: string) => s.replace(/\D/g, '');
 
 @Injectable()
 export class ExtraccionTicketService {
@@ -140,8 +143,8 @@ export class ExtraccionTicketService {
       if (!json.legible) return { legible: false, sugerencias: null };
 
       const [estaciones, tipos, moviles] = await Promise.all([
-        this.prisma.estacionServicio.findMany({ where: { activo: true }, select: { id: true, nombre: true } }),
-        this.prisma.tipoCombustible.findMany({ where: { activo: true }, select: { id: true, nombre: true } }),
+        this.prisma.estacionServicio.findMany({ where: { activo: true }, select: { id: true, nombre: true, cuit: true } }),
+        this.prisma.tipoCombustible.findMany({ where: { activo: true }, select: { id: true, nombre: true, aliases: { select: { alias: true } } } }),
         this.prisma.movil.findMany({ where: { activo: true }, select: { id: true, identificador: true } }),
       ]);
       const matchear = (valor: string | null, catalogo: { id: number; nombre: string }[]) => {
@@ -151,6 +154,22 @@ export class ExtraccionTicketService {
           ?? catalogo.find((c) => v.includes(normalizar(c.nombre)) || normalizar(c.nombre).includes(v));
         return hit?.id ?? null;
       };
+      // Tipo de combustible: nombre exacto → alias exacto → inclusión por nombre → inclusión por alias.
+      const matchearTipo = (valor: string | null) => {
+        if (!valor) return null;
+        const v = normalizar(valor);
+        const porNombre = tipos.find((t) => normalizar(t.nombre) === v);
+        if (porNombre) return porNombre.id;
+        const porAlias = tipos.find((t) => t.aliases.some((a) => normalizar(a.alias) === v));
+        if (porAlias) return porAlias.id;
+        const porInclusion = tipos.find((t) => v.includes(normalizar(t.nombre)) || normalizar(t.nombre).includes(v))
+          ?? tipos.find((t) => t.aliases.some((a) => v.includes(normalizar(a.alias)) || normalizar(a.alias).includes(v)));
+        return porInclusion?.id ?? null;
+      };
+      // Estación: CUIT exacto (solo dígitos) manda; si no hay match, cae al nombre.
+      const cuitLeido = typeof json.cuitEstacion === 'string' ? soloDigitos(json.cuitEstacion) : '';
+      const porCuit = cuitLeido.length === 11 ? estaciones.find((e) => e.cuit === cuitLeido) : undefined;
+      const estacionId = porCuit?.id ?? matchear(json.estacion ?? null, estaciones);
       const TIPOS_COMPROBANTE: TipoComprobante[] = ['REMITO', 'FACTURA_A', 'FACTURA_B', 'FACTURA_C', 'TIQUE', 'OTRO'];
       const tipoComprobante = TIPOS_COMPROBANTE.includes(json.tipoComprobante) ? (json.tipoComprobante as TipoComprobante) : null;
       const medioPagoSugerido = tipoComprobante === 'REMITO' ? 'cuenta_corriente'
@@ -180,8 +199,8 @@ export class ExtraccionTicketService {
         monto,
         fechaCarga: typeof json.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(json.fecha) ? json.fecha : null,
         nroComprobante: typeof json.nroComprobante === 'string' ? json.nroComprobante : null,
-        tipoCombustibleId: matchear(json.tipoCombustible ?? null, tipos),
-        estacionId: matchear(json.estacion ?? null, estaciones),
+        tipoCombustibleId: matchearTipo(json.tipoCombustible ?? null),
+        estacionId,
         tipoComprobante,
         medioPagoSugerido,
         confianzaNumero,
@@ -191,6 +210,8 @@ export class ExtraccionTicketService {
         patente,
         km,
         movilId,
+        tipoCombustibleLeido: typeof json.tipoCombustible === 'string' ? json.tipoCombustible : null,
+        cuitEstacionLeido: cuitLeido.length === 11 ? cuitLeido : null,
       }};
     } catch (e) {
       this.logger.warn(`Extracción de ticket falló: ${e instanceof Error ? e.message : e}`);
