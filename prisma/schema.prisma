@@ -486,6 +486,10 @@ model EstacionServicio {
   id        Int     @id @default(autoincrement())
   nombre    String  @unique
   localidad String?
+  // CUIT del emisor, solo dígitos (11) — identifica la estación en la
+  // extracción de tickets con prioridad sobre el nombre. Opcional: las
+  // estaciones cargadas antes de esta feature no lo tienen todavía.
+  cuit      String? @unique @db.Char(11)
   activo    Boolean @default(true)
 
   cargas CargaCombustible[]
@@ -498,9 +502,23 @@ model TipoCombustible {
   nombre String  @unique
   activo Boolean @default(true)
 
-  cargas CargaCombustible[]
+  cargas  CargaCombustible[]
+  aliases TipoCombustibleAlias[]
 
   @@map("sth_tipos_combustible")
+}
+
+// Nombres comerciales tal como vienen impresos en los tickets
+// ("INFINIA DIESEL" → Gasoil premium). Los usa la extracción IA para
+// matchear cuando el nombre del catálogo no coincide con el impreso.
+model TipoCombustibleAlias {
+  id                Int    @id @default(autoincrement())
+  tipoCombustibleId Int    @map("tipo_combustible_id")
+  alias             String @unique
+
+  tipoCombustible TipoCombustible @relation(fields: [tipoCombustibleId], references: [id])
+
+  @@map("sth_tipo_combustible_alias")
 }
 
 model CargaCombustible {
