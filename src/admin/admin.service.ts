@@ -288,18 +288,36 @@ export class AdminService {
   getEstacionesServicio() {
     return this.prisma.estacionServicio.findMany({ orderBy: { nombre: 'asc' } });
   }
-  crearEstacionServicio(dto: { nombre: string; localidad?: string }) {
-    return this.prisma.estacionServicio.create({ data: { nombre: dto.nombre, localidad: dto.localidad } });
+  crearEstacionServicio(dto: { nombre: string; localidad?: string; cuit?: string }) {
+    return this.prisma.estacionServicio.create({ data: { nombre: dto.nombre, localidad: dto.localidad, cuit: dto.cuit } });
   }
-  actualizarEstacionServicio(id: number, dto: { nombre?: string; localidad?: string }) {
+  actualizarEstacionServicio(id: number, dto: { nombre?: string; localidad?: string; cuit?: string | null }) {
+    // cuit: undefined = no tocar; null = borrar (Prisma ignora los undefined del data).
     return this.prisma.estacionServicio.update({ where: { id }, data: dto });
   }
   toggleEstacionServicio(id: number, activo: boolean) {
     return this.prisma.estacionServicio.update({ where: { id }, data: { activo } });
   }
   // --- Tipos de combustible (ADR-013) ---
-  getTiposCombustible() {
-    return this.prisma.tipoCombustible.findMany({ orderBy: { nombre: 'asc' } });
+  async getTiposCombustible() {
+    const tipos = await this.prisma.tipoCombustible.findMany({ orderBy: { nombre: 'asc' }, include: { aliases: true } });
+    return tipos.map(({ aliases, ...tipo }) => ({ ...tipo, aliases: aliases.map((a) => a.alias).sort() }));
+  }
+  async guardarAliasTipoCombustible(tipoId: number, alias: string[]) {
+    // Trim, descarta vacíos y deduplica case-insensitive conservando la primera aparición.
+    const limpios: string[] = [];
+    const vistos = new Set<string>();
+    for (const a of alias.map((x) => x.trim()).filter((x) => x.length > 0)) {
+      const clave = a.toLowerCase();
+      if (!vistos.has(clave)) { vistos.add(clave); limpios.push(a); }
+    }
+    await this.prisma.$transaction([
+      this.prisma.tipoCombustibleAlias.deleteMany({ where: { tipoCombustibleId: tipoId } }),
+      ...(limpios.length
+        ? [this.prisma.tipoCombustibleAlias.createMany({ data: limpios.map((a) => ({ tipoCombustibleId: tipoId, alias: a })) })]
+        : []),
+    ]);
+    return this.getTiposCombustible();
   }
   crearTipoCombustible(dto: { nombre: string }) {
     return this.prisma.tipoCombustible.create({ data: { nombre: dto.nombre } });
