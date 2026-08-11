@@ -39,7 +39,7 @@ export class CatalogosService {
   getEstacionesServicio() {
     return this.prisma.estacionServicio.findMany({
       where: { activo: true },
-      select: { id: true, nombre: true, localidad: true },
+      select: { id: true, nombre: true, localidad: true, cuit: true },
       orderBy: { nombre: 'asc' },
     });
   }
