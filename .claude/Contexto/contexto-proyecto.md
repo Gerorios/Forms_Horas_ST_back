@@ -1903,3 +1903,28 @@ limpieza de ramas remotas viejas en los dos repos (ver detalle del cierre en los
 **Pendientes:** cargar la lista real de estaciones (nombre + CUIT) cuando el usuario la
 pase; cargar los alias reales de los tipos; fix de seguridad de `GET /novedades`
 (`27a8d07`) sigue en pausa.
+
+---
+
+## 55. Combustible: CUIT en el alta + carga masiva de estaciones reales (2026-08-11)
+
+Cierre de los pendientes de §54, mismo día.
+
+- **CUIT en el alta de estación** (front PR #27, deployado con OK explícito): el campo estaba
+  solo en la fila de edición; ahora el formulario de alta lo tiene con la misma validación
+  (acepta guiones, guarda 11 dígitos, opcional, inválido = toast sin enviar). TDD, 11/11.
+- **Carga masiva de las 38 estaciones reales** (razón social + CUIT pasados por el dueño de
+  producto — nombres tal como vienen del sistema contable, algunos truncados): script
+  idempotente (scratchpad, no committeado) que cruza **por CUIT primero y por nombre
+  después** — existente con CUIT = skip; existente sin CUIT = completa; inexistente = crea;
+  nombre igual con OTRO cuit = conflicto sin tocar. Resultado: `testing` 38 creadas / 0
+  conflictos (las 9 manuales previas intactas); `Horas_Sertec` 33 creadas / 5 salteadas (las
+  que el usuario ya había cargado a mano, reconocidas por CUIT — una incluso con doble
+  espacio en el nombre) / 0 conflictos. Cualquier ticket de esas estaciones ahora se asigna
+  solo por CUIT en la extracción.
+- Nota: quedan estaciones viejas sin CUIT en ambas bases (previas a la feature) — matchean
+  solo por nombre hasta que alguien les complete el CUIT por Admin.
+
+**Pendientes:** alias reales de los tipos de combustible (el usuario los carga por Admin a
+medida que aparezcan tickets, o pasa un listado); fix de `GET /novedades` en pausa
+(hashes rescatables en memoria: back `27a8d07`, front `7ab7eb1`+`21261e1`).
