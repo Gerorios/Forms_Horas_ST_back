@@ -1928,3 +1928,23 @@ Cierre de los pendientes de §54, mismo día.
 **Pendientes:** alias reales de los tipos de combustible (el usuario los carga por Admin a
 medida que aparezcan tickets, o pasa un listado); fix de `GET /novedades` en pausa
 (hashes rescatables en memoria: back `27a8d07`, front `7ab7eb1`+`21261e1`).
+
+---
+
+## 56. Reporte diario: fecha obligatoria sin default + foto de ticket desde galería (2026-08-11 a 12)
+
+Dos pedidos chicos del dueño de producto, ambos frontend puro.
+
+- **Foto del ticket desde la galería** (PR #28, deployado con OK explícito): el input tenía
+  `capture="environment"`, que en el celular abre la cámara directo sin opción de galería
+  (la UI ya prometía ambas). Sin el atributo, el selector nativo ofrece cámara/galería/
+  archivos. Test nuevo del componente `FotoTicket` para que el `capture` no vuelva. Motivo
+  real del pedido: poder elegir la foto original de la cámara en vez de la versión
+  recomprimida de WhatsApp (ver §54).
+- **Fecha del reporte de horas sin default** (grilling corto, decisión 2026-08-12): cargas
+  reales quedaban con la fecha de "hoy" porque nadie tocaba el campo. Ahora: arranca vacía,
+  "Reportar" sin fecha no envía y marca el campo ("Elegí la fecha del reporte.", patrón
+  `intentoEnviar`), y tras cada envío exitoso **se vuelve a vaciar** (elegido explícitamente
+  sobre conservarla para cargas en tanda). Solo el reporte de horas — Combustible mantiene
+  su default porque ahí la fecha la sugiere el ticket. Backend sin cambios (el DTO ya exigía
+  fecha). Tests 7/7 + tsc.
