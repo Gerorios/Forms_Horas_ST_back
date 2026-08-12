@@ -142,6 +142,7 @@ model Contrato {
   tareas               TareaCatalogo[]
   usuariosHabilitados ContratoHabilitado[]
   registrosHoras       RegistroHoras[]
+  perfilesImputacion   PerfilContratoImputacion[]
 
   @@map("sth_contratos")
 }
@@ -232,8 +233,25 @@ model PerfilLiquidacion {
 
   empleado  snuempleados    @relation(fields: [cuil], references: [cuil])
   categoria CategoriaUocra? @relation(fields: [categoriaUocraId], references: [id])
+  contratosImputacion PerfilContratoImputacion[]
 
   @@map("sth_perfiles_liquidacion")
+}
+
+// M:N — contratos de imputación de un perfil (addendum plan 2026-08-12). Solo
+// aplica a regímenes mensualizado/fijo/por_tantos: en el corte por contrato
+// del Análisis, el costo del empleado se reparte en partes iguales entre
+// estos contratos y sus horas reales se ignoran. Si el régimen cambia, las
+// filas se conservan pero dejan de usarse.
+model PerfilContratoImputacion {
+  cuil       String @map("cuil") @db.Char(13)
+  contratoId Int    @map("contrato_id")
+
+  perfil   PerfilLiquidacion @relation(fields: [cuil], references: [cuil])
+  contrato Contrato          @relation(fields: [contratoId], references: [id])
+
+  @@id([cuil, contratoId])
+  @@map("sth_perfil_contratos_imputacion")
 }
 
 model CategoriaUocra {

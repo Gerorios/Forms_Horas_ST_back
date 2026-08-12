@@ -235,3 +235,70 @@ Estructura de la página (de arriba a abajo, layout con las cards estándar `rou
 - Tipos: `AnalisisQuincena` idéntico en contrato, B1 y F1 ✔; nombres de campos de fila del motor verificados contra `calculo.service.ts:257-279` ✔ (`apellidoNombre`, `totalBruto`, `montoHorasExtra`, `montoPresentismo`, `plus[].monto`, `noRemunerativo`, `horasCct`, `horasExtra`, `total`, `regimen`).
 - Paleta validada con `validate_palette.js` (6 checks PASS sobre `#ffffff`); tritan bajo mitigado con gaps de 2px + leyenda + labels (secondary encoding, permitido).
 - Sin placeholders: cada task tiene código o referencia a archivo/patrón concreto a leer.
+
+---
+
+# ADDENDUM (grilling 2026-08-12, segunda ronda): Contratos de imputación
+
+**Decisiones**: los perfiles con régimen `mensualizado`, `fijo` o `por_tantos` pueden tener
+**contratos de imputación** (0..N, tabla M:N). En el **corte por contrato del análisis**, si
+el empleado es de uno de esos 3 regímenes y tiene asignación, su costo va a esos contratos en
+**partes iguales** y **sus horas se ignoran para el corte** (la asignación manda siempre).
+Sin asignación → bucket "Sin contrato asignable", como hoy. Los demás regímenes nunca usan
+imputación (prorrateo por horas real). Se edita en `/liquidacion/perfiles` (Admin/Liquidador),
+selector visible solo para esos 3 regímenes; si cambia el régimen, las asignaciones se
+conservan pero dejan de usarse (y la UI las oculta). DDL **solo a `testing`**.
+
+## Contrato de datos (addendum)
+
+```ts
+// GET /liquidacion/perfiles — cada perfil suma:
+//   contratosImputacionIds: number[]
+// POST /liquidacion/perfiles/:cuil — el body acepta (opcional):
+//   contratosImputacionIds?: number[]   // reemplaza el set completo; ausente = no tocar
+// GET /liquidacion/contratos — NUEVO (hereda Admin+Liquidador): { id, codigo, nombre }[] activos, orden codigo asc
+//   (el Liquidador no puede usar /admin/contratos ni /registros-horas/mis-contratos)
+```
+
+### Task C1 (Backend): schema + DDL
+
+- Prisma: `model PerfilContratoImputacion { cuil String @db.Char(13) @map("cuil"); contratoId Int @map("contrato_id"); perfil PerfilLiquidacion @relation(fields: [cuil], references: [cuil]); contrato Contrato @relation(fields: [contratoId], references: [id]); @@id([cuil, contratoId]) @@map("sth_perfil_contratos_imputacion") }` + relación inversa `contratosImputacion PerfilContratoImputacion[]` en `PerfilLiquidacion` y `Contrato`.
+- DDL nuevo `docs/sql/2026-08-12-perfil-contratos-imputacion.sql` (CREATE TABLE con FKs, PK compuesta). Aplicar con `prisma db execute` SOLO a testing (verificar `.env` → `/testing`) + `npx prisma generate`.
+- Commit: `feat(liquidacion): schema de contratos de imputacion + DDL`
+
+### Task C2 (Backend): perfiles + contratos (TDD)
+
+- `getPerfiles`: include `contratosImputacion` → mapear a `contratosImputacionIds: number[]` (leer el shape actual del método y NO romper los campos existentes).
+- `upsertPerfil` (y `upsertPerfilesMasivo` NO — masivo no toca imputación): si `dto.contratosImputacionIds !== undefined`, reemplazo total (deleteMany + createMany) en la misma transacción/secuencia del upsert.
+- DTO: `@IsOptional() @IsArray() @IsInt({ each: true }) contratosImputacionIds?: number[]` en `UpsertPerfilLiquidacionDto`.
+- `GET /liquidacion/contratos` en el controller → `prisma.contrato.findMany({ where: { activo: true }, select: { id, codigo, nombre }, orderBy: { codigo: 'asc' } })` (método nuevo en liquidacion.service).
+- Spec (`liquidacion.service.spec.ts`): upsert reemplaza el set; getPerfiles devuelve los ids.
+- Commit: `feat(liquidacion): contratos de imputacion en perfiles + listado de contratos`
+
+### Task C3 (Backend): el análisis respeta la imputación (TDD)
+
+En `AnalisisService.getAnalisis`, ANTES del prorrateo: traer `perfilContratoImputacion.findMany({ where: { cuil: { in: cuils de filas } } })`. Para cada fila con `regimen ∈ {mensualizado, fijo, por_tantos}` **y** asignaciones: repartir `fila.total` en partes iguales entre sus contratos asignados (acumular monto; **horas 0** — las horas reales de esa persona NO suman al corte). El resto sigue igual (prorrateo por horas / bucket).
+
+Spec nuevo en `analisis.service.spec.ts`:
+```ts
+it('mensualizado con imputación multi-contrato: partes iguales, ignora sus horas', async () => {
+  // fila MENSU total 300 regimen 'mensualizado' + imputación a contratos 1 y 2
+  // groupBy devuelve horas de MENSU en contrato 3 (deben ignorarse para el corte)
+  // → contrato 1: 150, contrato 2: 150, contrato 3: 0 de MENSU; sin bucket
+});
+it('por_tantos sin imputación sigue en el bucket', ...);
+```
+- Commit: `feat(liquidacion): el corte por contrato respeta los contratos de imputacion`
+
+### Task C4 (Frontend): perfiles UI
+
+- `src/lib/api/liquidacion.ts`: `contratosImputacionIds: number[]` en el tipo de perfil; el mutation de upsert acepta el campo; hook nuevo `useContratosLiquidacion()` → `GET /liquidacion/contratos`.
+- `/liquidacion/perfiles`: leer la página y su fila de edición ANTES de tocar. Agregar, SOLO cuando el régimen elegido es mensualizado/fijo/por_tantos, un selector múltiple de contratos ("Contratos de imputación (análisis)") — usar el patrón de multi-select que ya exista en esa pantalla (hay MultiFiltro estándar en el repo); hint corto: "El costo de este empleado se imputa a estos contratos en partes iguales en el Análisis". Guardar manda `contratosImputacionIds`.
+- Tests del archivo de la página de perfiles (extender los existentes): visible para mensualizado, oculto para jornalizado, guarda los ids.
+- Commit: `feat(liquidacion): asignacion de contratos de imputacion en perfiles`
+
+### Task C5 (Frontend): nota en el análisis
+
+- En `contratos-chart.tsx`, actualizar el subtítulo/hint del bucket: "Sin contrato asignable: empleados sin horas aprobadas ni contratos de imputación asignados (se asignan en Perfiles)." Test de texto si el archivo de tests lo cubre.
+- Commit: `feat(liquidacion): hint de imputacion en el corte por contrato`
+
