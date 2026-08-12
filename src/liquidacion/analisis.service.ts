@@ -66,22 +66,26 @@ export class AnalisisService {
   async getAnalisis(anio: number, mes: number, quincena: number): Promise<AnalisisQuincena> {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
-    const filas = await this.calculo.calcularQuincena(anio, mes, quincena);
     const ant = quincenaAnterior(anio, mes, quincena);
-    const filasAnt = await this.calculo.calcularQuincena(ant.anio, ant.mes, ant.quincena);
-
-    // Histórico: el motor hace ~10 queries por quincena (prefetch masivo, §39)
-    // — 8 quincenas ≈ 80 queries, aceptable para una pantalla de análisis.
-    // Actual y anterior reusan los resultados ya calculados.
+    // Histórico: el motor hace ~10 queries por quincena (prefetch masivo, §39).
+    // Las 8 corridas van EN PARALELO — en serie, contra una base remota, la
+    // latencia de red se apilaba y la pantalla tardaba varios segundos. El
+    // pool de Prisma encola de más, así que no explota las conexiones.
+    // Actual y anterior reusan la misma corrida para sus propias secciones.
     const periodos = quincenasHaciaAtras(anio, mes, quincena, 8);
-    const historico: AnalisisQuincena['historico'] = [];
-    for (const p of periodos) {
-      let filasPeriodo: FilaCalculo[];
-      if (p.anio === anio && p.mes === mes && p.quincena === quincena) filasPeriodo = filas;
-      else if (p.anio === ant.anio && p.mes === ant.mes && p.quincena === ant.quincena) filasPeriodo = filasAnt;
-      else filasPeriodo = await this.calculo.calcularQuincena(p.anio, p.mes, p.quincena);
-      historico.push({ ...p, total: redondear2(filasPeriodo.reduce((s, f) => s + f.total, 0)) });
-    }
+    const corridas = await Promise.all(
+      periodos.map((p) => this.calculo.calcularQuincena(p.anio, p.mes, p.quincena)),
+    );
+    const filasDe = (a: number, m: number, q: number): FilaCalculo[] =>
+      corridas[periodos.findIndex((p) => p.anio === a && p.mes === m && p.quincena === q)] ?? [];
+    const filas = filasDe(anio, mes, quincena);
+    // La anterior siempre está entre las 8 del histórico (es la penúltima).
+    const filasAnt = filasDe(ant.anio, ant.mes, ant.quincena);
+
+    const historico: AnalisisQuincena['historico'] = periodos.map((p, i) => ({
+      ...p,
+      total: redondear2(corridas[i].reduce((s, f) => s + f.total, 0)),
+    }));
 
     // Días trabajados = días distintos con horas aprobadas en la quincena.
     const diasRegistros = await this.prisma.registroHoras.findMany({
