@@ -137,7 +137,7 @@ export class AnalisisService {
         codigo: contratoId === null ? 'Sin contrato asignable' : (contratoPorId.get(contratoId)?.codigo ?? `#${contratoId}`),
         nombre: contratoId === null ? 'Sin contrato asignable' : (contratoPorId.get(contratoId)?.nombre ?? `Contrato #${contratoId}`),
         monto: redondear2(acc.monto),
-        horas: acc.horas,
+        horas: redondear2(acc.horas),
         pctDelTotal: totalQuincena > 0 ? redondear1((acc.monto / totalQuincena) * 100) : 0,
       }))
       .sort((a, b) => {
