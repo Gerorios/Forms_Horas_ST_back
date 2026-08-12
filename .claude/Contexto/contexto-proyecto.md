@@ -1948,3 +1948,32 @@ Dos pedidos chicos del dueño de producto, ambos frontend puro.
   sobre conservarla para cargas en tanda). Solo el reporte de horas — Combustible mantiene
   su default porque ahí la fecha la sugiere el ticket. Backend sin cambios (el DTO ya exigía
   fecha). Tests 7/7 + tsc.
+
+---
+
+## 57. Tarifas del Liquidador: incremento % de categorías + mejoras (2026-08-12)
+
+Grilling corto + tres pedidos del dueño de producto probando en local (rama
+`feature/mejoras-tarifas-liquidador` en ambos repos; el incremento % base salió antes por
+PR #30 del front).
+
+- **Incremento % masivo de categorías UOCRA** (pestaña Precios de Tarifas): el Liquidador
+  pone el % del aumento UOCRA (ej. 5, acepta decimales y negativos) y todas las categorías
+  se prellenan con el valor aumentado (2 decimales) **sobre lo que hay en los campos** — no
+  guarda hasta confirmar el guardado normal (auditado, ADR-010). Solo categorías; montos de
+  novedad y rangos km sin atajo. Mismo patrón que mensualizados (ADR-016). Lógica en helper
+  puro `aplicarIncremento` con tests propios — el render completo de esa pestaña CUELGA
+  vitest en esta máquina (limitación conocida §52; testear por helper, no por render).
+- **Modal de confirmación del %** (feedback probando: "no me doy cuenta cuando estoy
+  aumentando"): "Aplicar a categorías" abre un modal que dice en grande "Aumentar/Bajar
+  todas las categorías un X%" antes de prellenar + toast de constancia.
+- **Columna Categoría en Sueldos mensualizados**: Empleado · Categoría · Sueldo (la
+  categoría no afecta el sueldo fijo pero sí el bono no remunerativo, ver §52). El GET de
+  sueldos incluye `categoria` (nombre del perfil, null si no tiene).
+- **Categorías UOCRA se muda a Admin** (`/admin/categorias-uocra`): el Liquidador usa las
+  categorías (Perfiles/Tarifas consumen el GET, que sigue Admin+Liquidador) pero **no
+  administra el catálogo** — crear/editar/activar pasaron a `@Roles('Admin')` y la entrada
+  se quitó del nav de Liquidación.
+
+Verificación: backend 21/21 (`liquidacion.service.spec`) + build; frontend helper 4/4,
+mensualizados 4/4, regresión tabs, tsc. Probado por el usuario en local contra `testing`.
