@@ -56,6 +56,10 @@ export interface AnalisisQuincena {
 const redondear2 = (x: number) => Math.round(x * 100) / 100;
 const redondear1 = (x: number) => Math.round(x * 10) / 10;
 
+// Regímenes que pueden usar contratos de imputación en el corte por contrato
+// (addendum plan 2026-08-12): si tienen asignación, la asignación manda.
+const REGIMENES_CON_IMPUTACION = new Set(['mensualizado', 'fijo', 'por_tantos']);
+
 @Injectable()
 export class AnalisisService {
   constructor(
@@ -112,6 +116,20 @@ export class AnalisisService {
 
     const totalQuincena = filas.reduce((s, f) => s + f.total, 0);
 
+    // Contratos de imputación (addendum plan 2026-08-12): para mensualizado/
+    // fijo/por_tantos con asignación, el total va a esos contratos en partes
+    // iguales y sus horas reales NO suman al corte.
+    const imputaciones = filas.length
+      ? await this.prisma.perfilContratoImputacion.findMany({
+          where: { cuil: { in: filas.map((f) => f.cuil) } },
+        })
+      : [];
+    const imputacionPorCuil = new Map<string, number[]>();
+    for (const i of imputaciones) {
+      if (!imputacionPorCuil.has(i.cuil)) imputacionPorCuil.set(i.cuil, []);
+      imputacionPorCuil.get(i.cuil)!.push(i.contratoId);
+    }
+
     // Reparto del total de cada empleado proporcional a sus horas por contrato;
     // sin horas aprobadas → bucket "Sin contrato asignable" (contratoId null).
     const acumulado = new Map<number | null, { monto: number; horas: number }>();
@@ -120,6 +138,11 @@ export class AnalisisService {
       acumulado.set(contratoId, { monto: prev.monto + monto, horas: prev.horas + horas });
     };
     for (const f of filas) {
+      const imputados = REGIMENES_CON_IMPUTACION.has(f.regimen) ? imputacionPorCuil.get(f.cuil) : undefined;
+      if (imputados && imputados.length > 0) {
+        for (const contratoId of imputados) acumular(contratoId, f.total / imputados.length, 0);
+        continue;
+      }
       const reparto = horasPorCuil.get(f.cuil);
       if (!reparto || reparto.length === 0) {
         acumular(null, f.total, 0);

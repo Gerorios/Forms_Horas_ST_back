@@ -7,6 +7,7 @@ describe('AnalisisService — análisis de la quincena', () => {
   const prismaMock: any = {
     registroHoras: { findMany: jest.fn(), groupBy: jest.fn() },
     contrato: { findMany: jest.fn() },
+    perfilContratoImputacion: { findMany: jest.fn() },
   };
   const calculoMock: any = { calcularQuincena: jest.fn() };
   let service: AnalisisService;
@@ -29,6 +30,8 @@ describe('AnalisisService — análisis de la quincena', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Sin imputaciones salvo que el test lo pise (clearAllMocks no borra la implementación).
+    prismaMock.perfilContratoImputacion.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         AnalisisService,
@@ -134,6 +137,71 @@ describe('AnalisisService — análisis de la quincena', () => {
     const r = await service.getAnalisis(2026, 8, 1);
     expect(r.variaciones[0].diasTrabajados).toBe(2);
     expect(r.topCobradores[0].diasTrabajados).toBe(2);
+  });
+
+  it('mensualizado con imputación multi-contrato: partes iguales, ignora sus horas', async () => {
+    calculoMock.calcularQuincena.mockImplementation((a: number, m: number, q: number) =>
+      Promise.resolve(
+        m === 8 && q === 1 ? [fila('20-3', 'MENSU', 300, { regimen: 'mensualizado' })] : [],
+      ),
+    );
+    prismaMock.registroHoras.findMany.mockResolvedValue([]);
+    // MENSU tiene horas aprobadas en el contrato 3 — deben ignorarse: la asignación manda.
+    prismaMock.registroHoras.groupBy.mockResolvedValue([
+      { operarioCuil: '20-3', contratoId: 3, _sum: { horas: 40 } },
+    ]);
+    prismaMock.perfilContratoImputacion.findMany.mockResolvedValue([
+      { cuil: '20-3', contratoId: 1 },
+      { cuil: '20-3', contratoId: 2 },
+    ]);
+    prismaMock.contrato.findMany.mockResolvedValue([
+      { id: 1, codigo: 'K5', nombre: 'Gasnor K5' },
+      { id: 2, codigo: 'K9', nombre: 'Gasnor K9' },
+    ]);
+
+    const r = await service.getAnalisis(2026, 8, 1);
+    expect(prismaMock.perfilContratoImputacion.findMany).toHaveBeenCalledWith({
+      where: { cuil: { in: ['20-3'] } },
+    });
+    // Partes iguales entre 1 y 2, horas 0; el contrato 3 no recibe nada; sin bucket.
+    expect(r.contratos).toHaveLength(2);
+    expect(r.contratos[0]).toMatchObject({ contratoId: 1, monto: 150, horas: 0 });
+    expect(r.contratos[1]).toMatchObject({ contratoId: 2, monto: 150, horas: 0 });
+    expect(r.contratos.find((c) => c.contratoId === 3)).toBeUndefined();
+    expect(r.contratos.find((c) => c.contratoId === null)).toBeUndefined();
+    expect(r.contratos.reduce((s, c) => s + c.monto, 0)).toBe(300);
+  });
+
+  it('por_tantos sin imputación sigue en el bucket', async () => {
+    calculoMock.calcularQuincena.mockImplementation((a: number, m: number, q: number) =>
+      Promise.resolve(m === 8 && q === 1 ? [fila('20-4', 'TANTOS', 500, { regimen: 'por_tantos' })] : []),
+    );
+    prismaMock.registroHoras.findMany.mockResolvedValue([]);
+    prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+    prismaMock.perfilContratoImputacion.findMany.mockResolvedValue([]);
+    prismaMock.contrato.findMany.mockResolvedValue([]);
+
+    const r = await service.getAnalisis(2026, 8, 1);
+    expect(r.contratos).toHaveLength(1);
+    expect(r.contratos[0]).toMatchObject({ contratoId: null, codigo: 'Sin contrato asignable', monto: 500 });
+  });
+
+  it('jornalizado con asignaciones viejas: la imputación se ignora, prorratea por horas', async () => {
+    // Régimen que no usa imputación (ej. cambió de mensualizado a jornalizado):
+    // las filas de imputación se conservan en la BD pero no se usan.
+    calculoMock.calcularQuincena.mockImplementation((a: number, m: number, q: number) =>
+      Promise.resolve(m === 8 && q === 1 ? [fila('20-1', 'PEREZ', 900)] : []),
+    );
+    prismaMock.registroHoras.findMany.mockResolvedValue([]);
+    prismaMock.registroHoras.groupBy.mockResolvedValue([
+      { operarioCuil: '20-1', contratoId: 3, _sum: { horas: 30 } },
+    ]);
+    prismaMock.perfilContratoImputacion.findMany.mockResolvedValue([{ cuil: '20-1', contratoId: 1 }]);
+    prismaMock.contrato.findMany.mockResolvedValue([{ id: 3, codigo: 'K7', nombre: 'Gasnor K7' }]);
+
+    const r = await service.getAnalisis(2026, 8, 1);
+    expect(r.contratos).toHaveLength(1);
+    expect(r.contratos[0]).toMatchObject({ contratoId: 3, monto: 900, horas: 30 });
   });
 
   it('composición: plus y bono salen de plus[].monto y noRemunerativo', async () => {
