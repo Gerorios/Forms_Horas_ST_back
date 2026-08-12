@@ -100,6 +100,14 @@ export class LiquidacionController {
     return this.service.getPerfiles();
   }
 
+  // Contratos activos para el selector de imputación en Perfiles: el
+  // Liquidador no accede a /admin/contratos ni /registros-horas/mis-contratos
+  // (addendum plan 2026-08-12).
+  @Get('contratos')
+  getContratos() {
+    return this.service.getContratos();
+  }
+
   @Post('perfiles/masivo')
   upsertPerfilesMasivo(@Body() dto: UpsertPerfilesMasivoDto) {
     const { cuils, ...resto } = dto;
