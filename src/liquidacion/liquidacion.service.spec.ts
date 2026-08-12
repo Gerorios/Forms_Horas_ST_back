@@ -398,10 +398,10 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
   });
 
   describe('getSueldosMensualizados (ADR-016)', () => {
-    it('devuelve el sueldo vigente más reciente ≤ el mes consultado, por empleado', async () => {
+    it('devuelve el sueldo vigente más reciente ≤ el mes consultado, por empleado, con su categoría', async () => {
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
-        { cuil: '20111111111', empleado: { apellido_nombre: 'PEREZ JUAN' } },
-        { cuil: '20222222222', empleado: { apellido_nombre: 'GOMEZ ANA' } },
+        { cuil: '20111111111', empleado: { apellido_nombre: 'PEREZ JUAN' }, categoria: { nombre: 'Oficial' } },
+        { cuil: '20222222222', empleado: { apellido_nombre: 'GOMEZ ANA' }, categoria: null },
       ]);
       prismaMock.sueldoMensualizado.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(where.cuil === '20111111111' ? { monto: 500000 } : null),
@@ -409,8 +409,8 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
 
       const r = await service.getSueldosMensualizados(2026, 8);
       expect(r).toEqual([
-        { cuil: '20111111111', apellidoNombre: 'PEREZ JUAN', monto: '500000' },
-        { cuil: '20222222222', apellidoNombre: 'GOMEZ ANA', monto: null },
+        { cuil: '20111111111', apellidoNombre: 'PEREZ JUAN', categoria: 'Oficial', monto: '500000' },
+        { cuil: '20222222222', apellidoNombre: 'GOMEZ ANA', categoria: null, monto: null },
       ]);
     });
   });
