@@ -457,13 +457,28 @@ export class LiquidacionService {
   }
 
   // ---- Perfiles de liquidación (régimen + categoría por empleado) ----
-  getPerfiles() {
-    return this.prisma.perfilLiquidacion.findMany({
+  async getPerfiles() {
+    const perfiles = await this.prisma.perfilLiquidacion.findMany({
       include: {
         empleado: { select: { apellido_nombre: true, legajo: true, cargo: true } },
         categoria: { select: { id: true, nombre: true } },
+        contratosImputacion: { select: { contratoId: true } },
       },
       orderBy: { cuil: 'asc' },
+    });
+    return perfiles.map(({ contratosImputacion, ...p }) => ({
+      ...p,
+      contratosImputacionIds: contratosImputacion.map((c) => c.contratoId),
+    }));
+  }
+
+  // Listado de contratos activos para el selector de imputación en Perfiles —
+  // el Liquidador no puede usar /admin/contratos ni /registros-horas/mis-contratos.
+  getContratos() {
+    return this.prisma.contrato.findMany({
+      where: { activo: true },
+      select: { id: true, codigo: true, nombre: true },
+      orderBy: { codigo: 'asc' },
     });
   }
 
@@ -471,7 +486,7 @@ export class LiquidacionService {
     const empleado = await this.prisma.snuempleados.findUnique({ where: { cuil } });
     if (!empleado) throw new NotFoundException('No existe un empleado con ese CUIL');
 
-    return this.prisma.perfilLiquidacion.upsert({
+    const upsertArgs = {
       where: { cuil },
       create: {
         cuil,
@@ -486,6 +501,26 @@ export class LiquidacionService {
         modalidadPago: dto.modalidadPago,
         permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
+    };
+
+    // Sin el campo en el body no se tocan las asignaciones; presente (aunque
+    // vacío) reemplaza el set completo. Si el régimen cambia a uno que no usa
+    // imputación, las filas se conservan igual (dejan de usarse — addendum
+    // plan 2026-08-12).
+    if (dto.contratosImputacionIds === undefined) {
+      return this.prisma.perfilLiquidacion.upsert(upsertArgs);
+    }
+
+    const ids = dto.contratosImputacionIds;
+    return this.prisma.$transaction(async (tx) => {
+      const perfil = await tx.perfilLiquidacion.upsert(upsertArgs);
+      await tx.perfilContratoImputacion.deleteMany({ where: { cuil } });
+      if (ids.length) {
+        await tx.perfilContratoImputacion.createMany({
+          data: ids.map((contratoId) => ({ cuil, contratoId })),
+        });
+      }
+      return perfil;
     });
   }
 

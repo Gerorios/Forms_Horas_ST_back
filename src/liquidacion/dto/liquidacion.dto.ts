@@ -37,6 +37,16 @@ export class UpsertPerfilLiquidacionDto {
   @IsIn(['en_b', 'con_descuentos'])
   modalidadPago?: 'en_b' | 'con_descuentos';
 
+  /**
+   * Contratos de imputación para el Análisis (solo regímenes mensualizado/
+   * fijo/por_tantos). Presente = reemplaza el set completo; ausente = no
+   * tocar. El upsert masivo NO usa este campo (addendum plan 2026-08-12).
+   */
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  contratosImputacionIds?: number[];
+
   /** Solo aplica con regimen='mensualizado': además del monto fijo, cobra horas extra sobre lo declarado (ver ADR-017). */
   @IsOptional()
   @IsBoolean()

@@ -13,7 +13,10 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
     montoNovedadPlus: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     rangoKmPorTantos: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     kmPorTantos: { findMany: jest.fn(), upsert: jest.fn() },
-    perfilLiquidacion: { findMany: jest.fn() },
+    perfilLiquidacion: { findMany: jest.fn(), upsert: jest.fn() },
+    perfilContratoImputacion: { deleteMany: jest.fn(), createMany: jest.fn() },
+    contrato: { findMany: jest.fn() },
+    snuempleados: { findUnique: jest.fn() },
     sueldoMensualizado: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), create: jest.fn() },
     usuario: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
@@ -394,6 +397,98 @@ describe('LiquidacionService — edición de rondas cargadas (amendment ADR-010)
         create: { anio: 2026, mes: 8 },
         update: {},
       });
+    });
+  });
+
+  describe('perfiles — contratos de imputación (addendum plan 2026-08-12)', () => {
+    beforeEach(() => {
+      prismaMock.snuempleados.findUnique.mockResolvedValue({ cuil: '20111111111' });
+      prismaMock.perfilLiquidacion.upsert.mockResolvedValue({ cuil: '20111111111', regimen: 'mensualizado' });
+    });
+
+    it('getPerfiles devuelve contratosImputacionIds sin romper los campos existentes', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          cuil: '20111111111',
+          regimen: 'mensualizado',
+          categoriaUocraId: null,
+          modalidadPago: null,
+          empleado: { apellido_nombre: 'PEREZ JUAN', legajo: '12', cargo: 'chofer' },
+          categoria: null,
+          contratosImputacion: [{ contratoId: 3 }, { contratoId: 7 }],
+        },
+      ]);
+
+      const r = await service.getPerfiles();
+      expect(prismaMock.perfilLiquidacion.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({ contratosImputacion: { select: { contratoId: true } } }),
+        }),
+      );
+      expect(r[0]).toMatchObject({
+        cuil: '20111111111',
+        regimen: 'mensualizado',
+        empleado: { apellido_nombre: 'PEREZ JUAN', legajo: '12', cargo: 'chofer' },
+        contratosImputacionIds: [3, 7],
+      });
+      expect((r[0] as any).contratosImputacion).toBeUndefined();
+    });
+
+    it('upsertPerfil con contratosImputacionIds reemplaza el set completo (deleteMany + createMany)', async () => {
+      await service.upsertPerfil('20111111111', {
+        regimen: 'mensualizado',
+        contratosImputacionIds: [3, 7],
+      } as any);
+
+      expect(prismaMock.perfilContratoImputacion.deleteMany).toHaveBeenCalledWith({
+        where: { cuil: '20111111111' },
+      });
+      expect(prismaMock.perfilContratoImputacion.createMany).toHaveBeenCalledWith({
+        data: [
+          { cuil: '20111111111', contratoId: 3 },
+          { cuil: '20111111111', contratoId: 7 },
+        ],
+      });
+    });
+
+    it('upsertPerfil con contratosImputacionIds vacío borra el set sin crear nada', async () => {
+      await service.upsertPerfil('20111111111', {
+        regimen: 'fijo',
+        contratosImputacionIds: [],
+      } as any);
+
+      expect(prismaMock.perfilContratoImputacion.deleteMany).toHaveBeenCalledWith({
+        where: { cuil: '20111111111' },
+      });
+      expect(prismaMock.perfilContratoImputacion.createMany).not.toHaveBeenCalled();
+    });
+
+    it('upsertPerfil sin contratosImputacionIds no toca las asignaciones', async () => {
+      await service.upsertPerfil('20111111111', { regimen: 'jornalizado' } as any);
+
+      expect(prismaMock.perfilContratoImputacion.deleteMany).not.toHaveBeenCalled();
+      expect(prismaMock.perfilContratoImputacion.createMany).not.toHaveBeenCalled();
+      expect(prismaMock.perfilLiquidacion.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { cuil: '20111111111' } }),
+      );
+    });
+
+    it('getContratos lista los activos ordenados por código', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([
+        { id: 1, codigo: 'K5', nombre: 'Gasnor K5' },
+        { id: 2, codigo: 'K9', nombre: 'Gasnor K9' },
+      ]);
+
+      const r = await service.getContratos();
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith({
+        where: { activo: true },
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: { codigo: 'asc' },
+      });
+      expect(r).toEqual([
+        { id: 1, codigo: 'K5', nombre: 'Gasnor K5' },
+        { id: 2, codigo: 'K9', nombre: 'Gasnor K9' },
+      ]);
     });
   });
 

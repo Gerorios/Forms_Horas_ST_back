@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, R
 import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
 import { PanelService } from './panel.service';
+import { AnalisisService } from './analisis.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
@@ -25,6 +26,7 @@ export class LiquidacionController {
     private service: LiquidacionService,
     private calculo: CalculoService,
     private panel: PanelService,
+    private analisis: AnalisisService,
   ) {}
 
   // El LISTADO lo necesita el Liquidador (Perfiles asigna categoría, Tarifas
@@ -98,6 +100,14 @@ export class LiquidacionController {
     return this.service.getPerfiles();
   }
 
+  // Contratos activos para el selector de imputación en Perfiles: el
+  // Liquidador no accede a /admin/contratos ni /registros-horas/mis-contratos
+  // (addendum plan 2026-08-12).
+  @Get('contratos')
+  getContratos() {
+    return this.service.getContratos();
+  }
+
   @Post('perfiles/masivo')
   upsertPerfilesMasivo(@Body() dto: UpsertPerfilesMasivoDto) {
     const { cuils, ...resto } = dto;
@@ -154,6 +164,18 @@ export class LiquidacionController {
     @Query('quincena', ParseIntPipe) quincena: number,
   ) {
     return this.calculo.getAlertasQuincena(anio, mes, quincena);
+  }
+
+  // ---- Análisis de la quincena (ver plan 2026-08-12). Roles heredados del
+  // controller (Admin, Liquidador) — sin decorador propio, decisión del plan. ----
+
+  @Get('analisis')
+  getAnalisis(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.analisis.getAnalisis(anio, mes, quincena);
   }
 
   // ---- Panel de quincenas y detalle con drill-down (ver plan 2026-08-04) ----
