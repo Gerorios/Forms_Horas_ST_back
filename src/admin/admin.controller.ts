@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateContratoDto, UpdateContratoDto } from './dto/contrato.dto';
 import { CreateTareaDto, UpdateTareaDto, CreateMovilDto, UpdateMovilDto, CrearMovilesMasivoDto, CreateProvinciaDto, UpdateProvinciaDto, CreateTipoNovedadDto, UpdateTipoNovedadDto, ToggleActivoDto } from './dto/catalogo.dto';
@@ -9,6 +9,7 @@ import {
   CreateTipoCombustibleDto,
   UpdateTipoCombustibleDto,
   ToggleActivoCombustibleDto,
+  GuardarAliasDto,
 } from './dto/catalogo-combustible.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -149,6 +150,11 @@ export class AdminController {
   @Patch('tipos-combustible/:id')
   actualizarTipoCombustible(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTipoCombustibleDto) {
     return this.service.actualizarTipoCombustible(id, dto);
+  }
+
+  @Put('tipos-combustible/:id/alias')
+  guardarAliasTipoCombustible(@Param('id', ParseIntPipe) id: number, @Body() dto: GuardarAliasDto) {
+    return this.service.guardarAliasTipoCombustible(id, dto.alias);
   }
 
   @Patch('tipos-combustible/:id/activo')

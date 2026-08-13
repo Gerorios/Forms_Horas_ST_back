@@ -535,7 +535,10 @@ export class LiquidacionService {
     const fecha = new Date(anio, mes - 1, 1);
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: 'mensualizado' },
-      include: { empleado: { select: { apellido_nombre: true } } },
+      include: {
+        empleado: { select: { apellido_nombre: true } },
+        categoria: { select: { nombre: true } },
+      },
       orderBy: { cuil: 'asc' },
     });
     return Promise.all(
@@ -547,6 +550,9 @@ export class LiquidacionService {
         return {
           cuil: p.cuil,
           apellidoNombre: p.empleado.apellido_nombre,
+          // La categoría no afecta el sueldo fijo, pero sí el bono no
+          // remunerativo (ver §52) — el Liquidador la quiere a la vista.
+          categoria: p.categoria?.nombre ?? null,
           monto: vigente ? vigente.monto.toString() : null,
         };
       }),

@@ -27,22 +27,28 @@ export class LiquidacionController {
     private panel: PanelService,
   ) {}
 
+  // El LISTADO lo necesita el Liquidador (Perfiles asigna categoría, Tarifas
+  // las muestra); el ABM (crear/editar/activar) es solo Admin — la gestión
+  // del catálogo se movió al panel de Admin (decisión 2026-08-12).
   @Get('categorias-uocra')
   getCategorias() {
     return this.service.getCategorias();
   }
 
   @Post('categorias-uocra')
+  @Roles('Admin')
   createCategoria(@Body() dto: CreateCategoriaUocraDto) {
     return this.service.createCategoria(dto);
   }
 
   @Post('categorias-uocra/:id/activo')
+  @Roles('Admin')
   toggleCategoria(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleActivoDto) {
     return this.service.toggleCategoria(id, dto.activo);
   }
 
   @Post('categorias-uocra/:id')
+  @Roles('Admin')
   updateCategoria(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoriaUocraDto) {
     return this.service.updateCategoria(id, dto);
   }

@@ -12,8 +12,8 @@ const jsonModelo = (extra: object) => JSON.stringify({
 
 describe('ExtraccionTicketService', () => {
   const prismaMock: any = {
-    estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
-    tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+    estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
+    tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
     movil: { findMany: jest.fn().mockResolvedValue([]) },
   };
 
@@ -39,6 +39,7 @@ describe('ExtraccionTicketService', () => {
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
       patente: null, km: null, movilId: null,
+      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
     });
   });
 
@@ -61,6 +62,7 @@ describe('ExtraccionTicketService', () => {
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
       patente: null, km: null, movilId: null,
+      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
     });
   });
   it('usa OpenAI como proveedor alternativo cuando solo hay OPENAI_API_KEY', async () => {
@@ -87,6 +89,7 @@ describe('ExtraccionTicketService', () => {
         tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
         lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
         patente: null, km: null, movilId: null,
+        tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
       });
     } finally {
       global.fetch = fetchOriginal;
@@ -194,8 +197,8 @@ describe('ExtraccionTicketService', () => {
 
   it('matchea patente contra el maestro de móviles y parsea kilometraje', async () => {
     const movilMock: any = {
-      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
-      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
@@ -210,8 +213,8 @@ describe('ExtraccionTicketService', () => {
 
   it('patente leída que no está en el maestro → movilId null, patente presente', async () => {
     const movilMock: any = {
-      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario' }]) },
-      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil' }]) },
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
@@ -221,6 +224,58 @@ describe('ExtraccionTicketService', () => {
     const r = await service.extraer(foto);
     expect(r.sugerencias?.movilId).toBeNull();
     expect(r.sugerencias?.patente).toBe('ZZ 999 ZZ');
+  });
+
+  it('matchea el tipo por alias cuando el nombre impreso no coincide con el catálogo', async () => {
+    const aliasMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([
+        { id: 5, nombre: 'Gasoil premium', aliases: [{ alias: 'INFINIA DIESEL' }] },
+      ]) },
+      movil: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ tipoCombustible: 'Infinia  Diesel' }) }],
+    }) } };
+    const service = new ExtraccionTicketService(aliasMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.tipoCombustibleId).toBe(5);
+    expect(r.sugerencias?.tipoCombustibleLeido).toBe('Infinia  Diesel');
+  });
+
+  it('matchea la estación por CUIT exacto antes que por nombre', async () => {
+    const cuitMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([
+        { id: 1, nombre: 'YPF Centro', cuit: '30111111118' },
+        { id: 2, nombre: 'Shell Norte', cuit: '30222222229' },
+      ]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
+      movil: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ estacion: 'ESTACION DE SERVICIO SRL', cuitEstacion: '30-22222222-9' }) }],
+    }) } };
+    const service = new ExtraccionTicketService(cuitMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.estacionId).toBe(2);
+    expect(r.sugerencias?.cuitEstacionLeido).toBe('30222222229');
+  });
+
+  it('CUIT desconocido: estación sin sugerir pero cuitEstacionLeido presente para el hint', async () => {
+    const cuitMock: any = {
+      estacionServicio: { findMany: jest.fn().mockResolvedValue([
+        { id: 1, nombre: 'YPF Centro', cuit: '30111111118' },
+      ]) },
+      tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
+      movil: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: jsonModelo({ estacion: null, cuitEstacion: '30999999995' }) }],
+    }) } };
+    const service = new ExtraccionTicketService(cuitMock as PrismaService, clienteMock as any);
+    const r = await service.extraer(foto);
+    expect(r.sugerencias?.estacionId).toBeNull();
+    expect(r.sugerencias?.cuitEstacionLeido).toBe('30999999995');
   });
 
   it('sin patente en la respuesta → patente y movilId null', async () => {

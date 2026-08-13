@@ -1845,3 +1845,135 @@ ADR-016 (mismo síntoma que en la VPS en §43).
 **Pendientes (heredados):** fix de seguridad de `GET /novedades` (`27a8d07`, sigue en pausa
 a pedido del usuario); smoke test del panel como JefeContrato real; decidir si alerta
 cruzada / Δ quincena vuelven al panel.
+
+---
+
+## 54. Combustible: alias de tipos + CUIT de estaciones para la extracción IA (2026-08-11)
+
+Sesión con `/grill-with-docs` (misma sesión larga de §51/§53). Pedido del dueño de producto:
+que la extracción complete también el tipo de combustible "como viene en el recibo" y que la
+estación se asigne por CUIT. Rama `feature/combustible-alias-cuit` en ambos repos, plan en
+`docs/superpowers/plans/2026-08-11-combustible-alias-cuit.md`, ejecutado con dos subagentes
+en paralelo (uno por repo) + ajustes inline.
+
+### Decisiones del grilling (glosario actualizado)
+
+- **Alias por tipo** (opción elegida entre alias / tipos-por-marca / auto-alta): tabla
+  `sth_tipo_combustible_alias` (alias únicos, N por tipo), ABM dentro de la pantalla
+  existente de Admin → Tipos de combustible (input coma-separado). El catálogo se mantiene
+  con pocas categorías reales; los nombres comerciales viven como alias.
+- **CUIT en estaciones**: columna `cuit` CHAR(11) única y opcional en
+  `sth_estaciones_servicio`. El matcheo de la extracción es **CUIT-primero** (exacto, solo
+  dígitos) con caída al matcheo por nombre. CUIT desconocido = **hint sin auto-alta**
+  ("CUIT leído: 30-… — no está en el maestro"), mismo criterio que la patente.
+- **Carga inicial de estaciones**: diferida — el usuario pasa la lista (nombre + CUIT) y se
+  aplica en las dos bases. PENDIENTE al cerrar.
+- La extracción ya leía `tipoCombustible` y `cuitEstacion` del ticket (el prompt no se tocó);
+  lo nuevo es el matcheo y los campos `tipoCombustibleLeido`/`cuitEstacionLeido` en las
+  sugerencias para los hints del formulario.
+
+### Implementación
+
+- Backend: schema + DDL `docs/sql/2026-08-11-alias-combustible-cuit-estacion.sql` (aplicado
+  primero SOLO a `testing`); matcheo nombre→alias y CUIT→nombre en
+  `ExtraccionTicketService` (19 tests); `PUT /admin/tipos-combustible/:id/alias` (reemplaza
+  el set) + `cuit` en DTOs/service de estaciones (spec nuevo `admin-combustible.spec.ts`);
+  `normalizar` ahora colapsa whitespace interno (necesario para el match exacto de alias).
+- Frontend: `aliases: string[]` y `cuit` en tipos/hooks; edit-rows de Admin con input de
+  alias y de CUIT (acepta guiones, normaliza a 11 dígitos, vacío = null, inválido = toast
+  sin enviar); hints de tipo/CUIT sin match en la carga nueva (patrón del hint de patente).
+  Tests: 9/9 estaciones, 7/7 tipos, 10/10 nueva carga, tsc limpio.
+
+### Prueba local accidentada (nota operativa)
+
+Los dev servers levantados como background tasks de la sesión de Claude **se matan solos**
+entre turnos; relanzarlos en ventanas de PowerShell tampoco sobrevivió (¿cerradas por el
+usuario?). Solución que quedó: procesos ocultos (`Start-Process -WindowStyle Hidden`) con
+logs espejados a `C:\Temp\claude\forms-horas-dev\*.log` + un Monitor que avisa si un puerto
+deja de responder. Aprendizaje del primer intento fallido del usuario: "no pudimos leer el
+ticket" también aparece cuando el backend está caído, y **las fotos reenviadas por WhatsApp
+llegan recomprimidas** (~1600px) — para tickets térmicos conviene foto directa de cámara o
+WhatsApp "como documento".
+
+### Deploy (autorizado explícitamente por el usuario)
+
+PRs de ambos repos mergeados a main, DDL aplicado en `Horas_Sertec`, deploy VPS completo y
+limpieza de ramas remotas viejas en los dos repos (ver detalle del cierre en los PRs).
+
+**Pendientes:** cargar la lista real de estaciones (nombre + CUIT) cuando el usuario la
+pase; cargar los alias reales de los tipos; fix de seguridad de `GET /novedades`
+(`27a8d07`) sigue en pausa.
+
+---
+
+## 55. Combustible: CUIT en el alta + carga masiva de estaciones reales (2026-08-11)
+
+Cierre de los pendientes de §54, mismo día.
+
+- **CUIT en el alta de estación** (front PR #27, deployado con OK explícito): el campo estaba
+  solo en la fila de edición; ahora el formulario de alta lo tiene con la misma validación
+  (acepta guiones, guarda 11 dígitos, opcional, inválido = toast sin enviar). TDD, 11/11.
+- **Carga masiva de las 38 estaciones reales** (razón social + CUIT pasados por el dueño de
+  producto — nombres tal como vienen del sistema contable, algunos truncados): script
+  idempotente (scratchpad, no committeado) que cruza **por CUIT primero y por nombre
+  después** — existente con CUIT = skip; existente sin CUIT = completa; inexistente = crea;
+  nombre igual con OTRO cuit = conflicto sin tocar. Resultado: `testing` 38 creadas / 0
+  conflictos (las 9 manuales previas intactas); `Horas_Sertec` 33 creadas / 5 salteadas (las
+  que el usuario ya había cargado a mano, reconocidas por CUIT — una incluso con doble
+  espacio en el nombre) / 0 conflictos. Cualquier ticket de esas estaciones ahora se asigna
+  solo por CUIT en la extracción.
+- Nota: quedan estaciones viejas sin CUIT en ambas bases (previas a la feature) — matchean
+  solo por nombre hasta que alguien les complete el CUIT por Admin.
+
+**Pendientes:** alias reales de los tipos de combustible (el usuario los carga por Admin a
+medida que aparezcan tickets, o pasa un listado); fix de `GET /novedades` en pausa
+(hashes rescatables en memoria: back `27a8d07`, front `7ab7eb1`+`21261e1`).
+
+---
+
+## 56. Reporte diario: fecha obligatoria sin default + foto de ticket desde galería (2026-08-11 a 12)
+
+Dos pedidos chicos del dueño de producto, ambos frontend puro.
+
+- **Foto del ticket desde la galería** (PR #28, deployado con OK explícito): el input tenía
+  `capture="environment"`, que en el celular abre la cámara directo sin opción de galería
+  (la UI ya prometía ambas). Sin el atributo, el selector nativo ofrece cámara/galería/
+  archivos. Test nuevo del componente `FotoTicket` para que el `capture` no vuelva. Motivo
+  real del pedido: poder elegir la foto original de la cámara en vez de la versión
+  recomprimida de WhatsApp (ver §54).
+- **Fecha del reporte de horas sin default** (grilling corto, decisión 2026-08-12): cargas
+  reales quedaban con la fecha de "hoy" porque nadie tocaba el campo. Ahora: arranca vacía,
+  "Reportar" sin fecha no envía y marca el campo ("Elegí la fecha del reporte.", patrón
+  `intentoEnviar`), y tras cada envío exitoso **se vuelve a vaciar** (elegido explícitamente
+  sobre conservarla para cargas en tanda). Solo el reporte de horas — Combustible mantiene
+  su default porque ahí la fecha la sugiere el ticket. Backend sin cambios (el DTO ya exigía
+  fecha). Tests 7/7 + tsc.
+
+---
+
+## 57. Tarifas del Liquidador: incremento % de categorías + mejoras (2026-08-12)
+
+Grilling corto + tres pedidos del dueño de producto probando en local (rama
+`feature/mejoras-tarifas-liquidador` en ambos repos; el incremento % base salió antes por
+PR #30 del front).
+
+- **Incremento % masivo de categorías UOCRA** (pestaña Precios de Tarifas): el Liquidador
+  pone el % del aumento UOCRA (ej. 5, acepta decimales y negativos) y todas las categorías
+  se prellenan con el valor aumentado (2 decimales) **sobre lo que hay en los campos** — no
+  guarda hasta confirmar el guardado normal (auditado, ADR-010). Solo categorías; montos de
+  novedad y rangos km sin atajo. Mismo patrón que mensualizados (ADR-016). Lógica en helper
+  puro `aplicarIncremento` con tests propios — el render completo de esa pestaña CUELGA
+  vitest en esta máquina (limitación conocida §52; testear por helper, no por render).
+- **Modal de confirmación del %** (feedback probando: "no me doy cuenta cuando estoy
+  aumentando"): "Aplicar a categorías" abre un modal que dice en grande "Aumentar/Bajar
+  todas las categorías un X%" antes de prellenar + toast de constancia.
+- **Columna Categoría en Sueldos mensualizados**: Empleado · Categoría · Sueldo (la
+  categoría no afecta el sueldo fijo pero sí el bono no remunerativo, ver §52). El GET de
+  sueldos incluye `categoria` (nombre del perfil, null si no tiene).
+- **Categorías UOCRA se muda a Admin** (`/admin/categorias-uocra`): el Liquidador usa las
+  categorías (Perfiles/Tarifas consumen el GET, que sigue Admin+Liquidador) pero **no
+  administra el catálogo** — crear/editar/activar pasaron a `@Roles('Admin')` y la entrada
+  se quitó del nav de Liquidación.
+
+Verificación: backend 21/21 (`liquidacion.service.spec`) + build; frontend helper 4/4,
+mensualizados 4/4, regresión tabs, tsc. Probado por el usuario en local contra `testing`.
