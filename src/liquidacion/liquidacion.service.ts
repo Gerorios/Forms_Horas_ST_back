@@ -478,11 +478,13 @@ export class LiquidacionService {
         regimen: dto.regimen,
         categoriaUocraId: dto.categoriaUocraId,
         modalidadPago: dto.modalidadPago,
+        permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
       update: {
         regimen: dto.regimen,
         categoriaUocraId: dto.categoriaUocraId,
         modalidadPago: dto.modalidadPago,
+        permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
     });
   }
@@ -510,11 +512,13 @@ export class LiquidacionService {
             regimen: dto.regimen,
             categoriaUocraId: dto.categoriaUocraId,
             modalidadPago: dto.modalidadPago,
+            permiteHorasExtra: dto.permiteHorasExtra ?? false,
           },
           update: {
             regimen: dto.regimen,
             categoriaUocraId: dto.categoriaUocraId,
             modalidadPago: dto.modalidadPago,
+            permiteHorasExtra: dto.permiteHorasExtra ?? false,
           },
         }),
       ),

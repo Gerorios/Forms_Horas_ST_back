@@ -163,6 +163,36 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
   });
 
+  describe('régimen "fijo" (básico = tarifa × 88, sin horas extra)', () => {
+    it('básico = tarifa × 88, sin horas extra sin importar lo declarado', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          cuil: '20777777777',
+          regimen: 'fijo',
+          categoriaUocraId: 1,
+          modalidadPago: 'con_descuentos',
+          permiteHorasExtra: false,
+          empleado: { apellido_nombre: 'FIJO TEST', legajo: 4, cargo: 'Oficial', provincia: 'Córdoba' },
+          categoria: { id: 1, nombre: 'Oficial' },
+        },
+      ]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
+      ]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: '20777777777', _sum: { horas: 20 } }]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.horasTotal).toBe(88);
+      expect(fila.horasCct).toBe(88);
+      expect(fila.horasExtra).toBe(0);
+      expect(fila.totalBruto).toBe(88_000);
+      expect(fila.montoHorasExtra).toBe(0);
+    });
+  });
+
   describe('régimen "mensualizado" (ADR-016 — sueldo vigente, no por quincena exacta)', () => {
     const PERFIL_MENSUALIZADO = {
       cuil: '20888888888',
@@ -214,6 +244,77 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
 
       expect(fila.totalBruto).toBe(600_000);
       expect(fila.datoFaltante).toBeNull();
+    });
+
+    describe('permiteHorasExtra (ADR-017 — caso real: mensualizado que también cobra extras)', () => {
+      beforeEach(() => {
+        prismaMock.sueldoMensualizado.findMany.mockResolvedValue([
+          { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 7, 1), monto: 500_000 },
+        ]);
+        prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+          { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
+        ]);
+      });
+
+      it('con el flag: lo declarado ES la hora extra directamente (sin restar nada), básico intacto', async () => {
+        prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+          { ...PERFIL_MENSUALIZADO, categoriaUocraId: 1, categoria: { id: 1, nombre: 'Oficial' }, permiteHorasExtra: true },
+        ]);
+        // El operario declaró 5hs por Reporte diario — son 5hs EXTRA, su jornal nunca se carga.
+        prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: PERFIL_MENSUALIZADO.cuil, _sum: { horas: 5 } }]);
+
+        const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+        expect(fila.horasCct).toBe(1);
+        expect(fila.horasExtra).toBe(5); // no se resta nada, lo declarado ya es el extra
+        expect(fila.montoHorasExtra).toBe(7_500); // 5 × 1000 × 1.5
+        expect(fila.totalBruto).toBe(500_000); // básico (monto fijo) sin cambios
+        expect(fila.horasTotal).toBe(6); // 1 (formalismo de mensualizado) + 5
+        expect(fila.datoFaltante).toBeNull();
+      });
+
+      it('sin el flag: mismo perfil, ignora lo declarado (comportamiento actual sin cambios)', async () => {
+        prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+          { ...PERFIL_MENSUALIZADO, categoriaUocraId: 1, categoria: { id: 1, nombre: 'Oficial' }, permiteHorasExtra: false },
+        ]);
+        prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: PERFIL_MENSUALIZADO.cuil, _sum: { horas: 5 } }]);
+
+        const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+        expect(fila.horasTotal).toBe(1);
+        expect(fila.horasExtra).toBe(0);
+        expect(fila.montoHorasExtra).toBe(0);
+        expect(fila.totalBruto).toBe(500_000);
+      });
+
+      it('con el flag pero sin categoría/tarifa asignada: datoFaltante puntual del extra, básico intacto', async () => {
+        prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+          { ...PERFIL_MENSUALIZADO, categoriaUocraId: null, categoria: null, permiteHorasExtra: true },
+        ]);
+        prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([]);
+        prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: PERFIL_MENSUALIZADO.cuil, _sum: { horas: 5 } }]);
+
+        const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+        expect(fila.datoFaltante).toBe('Sin categoría UOCRA / tarifa asignada (necesaria para las horas extra)');
+        expect(fila.horasExtra).toBe(5); // se calcula igual, solo falta convertirlo a $
+        expect(fila.montoHorasExtra).toBe(0);
+        expect(fila.totalBruto).toBe(500_000); // el básico (monto fijo) no depende de la categoría
+      });
+
+      it('con el flag pero sin sueldo vigente: prioriza el datoFaltante del sueldo (más bloqueante)', async () => {
+        prismaMock.sueldoMensualizado.findMany.mockResolvedValue([]);
+        prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+          { ...PERFIL_MENSUALIZADO, categoriaUocraId: 1, categoria: { id: 1, nombre: 'Oficial' }, permiteHorasExtra: true },
+        ]);
+        prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: PERFIL_MENSUALIZADO.cuil, _sum: { horas: 5 } }]);
+
+        const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+        expect(fila.datoFaltante).toBe('Falta cargar el sueldo mensualizado (Tarifas > Sueldos mensualizados)');
+        expect(fila.totalBruto).toBe(0);
+        expect(fila.montoHorasExtra).toBe(7_500); // el extra sí se puede calcular, no depende del sueldo
+      });
     });
   });
 });

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -35,6 +36,11 @@ export class UpsertPerfilLiquidacionDto {
   @IsOptional()
   @IsIn(['en_b', 'con_descuentos'])
   modalidadPago?: 'en_b' | 'con_descuentos';
+
+  /** Solo aplica con regimen='mensualizado': además del monto fijo, cobra horas extra sobre lo declarado (ver ADR-017). */
+  @IsOptional()
+  @IsBoolean()
+  permiteHorasExtra?: boolean;
 }
 
 export class UpsertPerfilesMasivoDto extends UpsertPerfilLiquidacionDto {

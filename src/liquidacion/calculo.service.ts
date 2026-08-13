@@ -175,12 +175,28 @@ export class CalculoService {
           sueldosMensualizados.filter((s) => s.cuil === perfil.cuil),
           fechaVigencia,
         );
-        horasTotal = 1;
         horasCct = 1;
         if (sueldo != null) {
           basico = Number(sueldo.monto);
         } else {
           datoFaltante = 'Falta cargar el sueldo mensualizado (Tarifas > Sueldos mensualizados)';
+        }
+        // permiteHorasExtra (ADR-017): además del monto fijo, cobra horas
+        // extra. Lo declarado por Reporte diario NO es el total trabajado
+        // (a diferencia de jornalizado) — es directamente el excedente sobre
+        // su jornal, que nunca se carga, así que no se resta nada. El básico
+        // (monto fijo) no usa la categoría UOCRA, pero el extra sí la
+        // necesita para la tarifa × 1.5.
+        if (perfil.permiteHorasExtra) {
+          horasExtra = horasAprobadasPorCuil.get(perfil.cuil) ?? 0;
+          if (tarifaHoraNum != null) {
+            montoExtra = horasExtra * tarifaHoraNum * 1.5;
+          } else if (datoFaltante == null) {
+            datoFaltante = 'Sin categoría UOCRA / tarifa asignada (necesaria para las horas extra)';
+          }
+          horasTotal = horasCct + horasExtra;
+        } else {
+          horasTotal = 1;
         }
       } else if (perfil.regimen === 'por_tantos') {
         const kmTotal = kmPorCuil.get(perfil.cuil);
