@@ -230,6 +230,11 @@ model PerfilLiquidacion {
   regimen          RegimenLiquidacion
   categoriaUocraId Int?               @map("categoria_uocra_id")
   modalidadPago    ModalidadPago?     @map("modalidad_pago")
+  // Solo tiene sentido con regimen='mensualizado': además del monto fijo,
+  // cobra horas extra sobre lo declarado directamente (sin restar nada — lo
+  // declarado YA es el excedente sobre su jornal, que nunca se carga). Ver
+  // ADR-017.
+  permiteHorasExtra Boolean           @default(false) @map("permite_horas_extra")
 
   empleado  snuempleados    @relation(fields: [cuil], references: [cuil])
   categoria CategoriaUocra? @relation(fields: [categoriaUocraId], references: [id])
