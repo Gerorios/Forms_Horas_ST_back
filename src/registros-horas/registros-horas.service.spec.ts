@@ -51,7 +51,7 @@ describe('RegistrosHorasService', () => {
       expect(r[0].tieneAlertaCruzada).toBe(false);
     });
 
-    it('operario con horas el mismo día repartidas en dos lotes dispara la alerta', async () => {
+    it('dos registros idénticos en todo (duplicado exacto) disparan la alerta', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.registroHoras.findMany
         .mockResolvedValueOnce([
@@ -60,16 +60,22 @@ describe('RegistrosHorasService', () => {
         ]) // filas
         .mockResolvedValueOnce([
           {
+            id: 1,
             operarioCuil: '20-2-2',
             fecha: new Date('2026-08-01'),
             horas: 4,
-            loteId: 'lote-A',
+            contratoId: 1,
+            tareas: [{ tareaId: 10 }],
+            moviles: [{ movilId: 5 }],
           },
           {
+            id: 2,
             operarioCuil: '20-2-2',
             fecha: new Date('2026-08-01'),
             horas: 4,
-            loteId: 'lote-B',
+            contratoId: 1,
+            tareas: [{ tareaId: 10 }],
+            moviles: [{ movilId: 5 }],
           },
         ]) // filasQuincenaCompleta
         .mockResolvedValueOnce([]); // filasAnteriores
@@ -81,6 +87,44 @@ describe('RegistrosHorasService', () => {
 
       expect(r).toHaveLength(1);
       expect(r[0].tieneAlertaCruzada).toBe(true);
+    });
+
+    it('mismo día repartido en dos lotes con horas distintas NO dispara la alerta (regla vieja sí)', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          { operarioCuil: '20-2-2', horas: 8, estado: 'aprobado' },
+          { operarioCuil: '20-2-2', horas: 4, estado: 'aprobado' },
+        ]) // filas
+        .mockResolvedValueOnce([
+          {
+            id: 1,
+            operarioCuil: '20-2-2',
+            fecha: new Date('2026-08-01'),
+            horas: 8,
+            contratoId: 1,
+            tareas: [],
+            moviles: [],
+          },
+          {
+            id: 2,
+            operarioCuil: '20-2-2',
+            fecha: new Date('2026-08-01'),
+            horas: 4,
+            contratoId: 2,
+            tareas: [],
+            moviles: [],
+          },
+        ]) // filasQuincenaCompleta
+        .mockResolvedValueOnce([]); // filasAnteriores
+      prismaMock.snuempleados.findMany.mockResolvedValue([
+        { cuil: '20-2-2', apellido_nombre: 'Perez, Juan' },
+      ]);
+
+      const r = await service.resumenOperarios(usuario, 2026, 8, 1);
+
+      expect(r).toHaveLength(1);
+      expect(r[0].tieneAlertaCruzada).toBe(false);
     });
   });
 

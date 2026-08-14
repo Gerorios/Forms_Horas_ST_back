@@ -14,6 +14,7 @@ import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
 import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/quincena';
+import { duplicadosExactos } from '../common/duplicados';
 
 // Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
@@ -656,8 +657,7 @@ export class RegistrosHorasService {
     // `alertaHoras` grabado al momento de cargar, que queda desactualizado si
     // una carga posterior en OTRO lote sube el total del día (ver glosario,
     // "Ideas a futuro — Duplicación de horas entre contratos"). De paso se
-    // arma el set de loteIds por operario+fecha: más de uno es la señal de
-    // duplicación cruzada (mismo operario/día repartido en envíos distintos).
+    // detectan duplicados EXACTOS (regla 2026-08-14, src/common/duplicados.ts).
     const operarioCuils = [...new Set(filas.map((f) => f.operarioCuil))];
     const fechas = [...new Set(filas.map((f) => f.fecha.toISOString()))].map((s) => new Date(s));
     const filasDelDia = await this.prisma.registroHoras.findMany({
@@ -666,17 +666,23 @@ export class RegistrosHorasService {
         fecha: { in: fechas },
         estado: { not: 'desaprobado' },
       },
-      select: { operarioCuil: true, fecha: true, horas: true, loteId: true },
+      select: {
+        id: true,
+        operarioCuil: true,
+        fecha: true,
+        horas: true,
+        contratoId: true,
+        tareas: { select: { tareaId: true } },
+        moviles: { select: { movilId: true } },
+      },
     });
     const clave = (operarioCuil: string, fecha: Date) => `${operarioCuil}_${fecha.toISOString()}`;
     const totalPorClave = new Map<string, number>();
-    const lotesPorClave = new Map<string, Set<string>>();
     for (const r of filasDelDia) {
       const k = clave(r.operarioCuil, r.fecha);
       totalPorClave.set(k, (totalPorClave.get(k) ?? 0) + Number(r.horas));
-      if (!lotesPorClave.has(k)) lotesPorClave.set(k, new Set());
-      lotesPorClave.get(k)!.add(r.loteId);
     }
+    const { idsDuplicados } = duplicadosExactos(filasDelDia);
 
     return filas.map((f) => {
       const k = clave(f.operarioCuil, f.fecha);
@@ -688,7 +694,7 @@ export class RegistrosHorasService {
           ? { cuil: f.aprobadoPor.cuil, nombre: nombreUsuario(f.aprobadoPor) }
           : null,
         totalHorasDia: totalPorClave.get(k) ?? Number(f.horas),
-        duplicadoCruzado: (lotesPorClave.get(k)?.size ?? 1) > 1,
+        duplicadoCruzado: idsDuplicados.has(f.id),
       };
     });
   }
@@ -758,29 +764,23 @@ export class RegistrosHorasService {
     });
     const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
 
-    // Duplicado cruzado / total diario ≥16hs: igual criterio que porAprobar,
-    // pero acá se mira TODA la quincena y CRUZANDO todos los contratos (no
-    // solo los míos) — si no, un jefe con un solo contrato nunca vería la
-    // señal que justamente sirve para detectar que hay carga en otro lado.
+    // Duplicado exacto (regla 2026-08-14, src/common/duplicados.ts): igual
+    // criterio que porAprobar, pero acá se mira TODA la quincena y CRUZANDO
+    // todos los contratos (no solo los míos) — si no, un jefe con un solo
+    // contrato nunca vería la señal de que hay un clon cargado en otro lado.
     const filasQuincenaCompleta = await this.prisma.registroHoras.findMany({
       where: { operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
-      select: { operarioCuil: true, fecha: true, horas: true, loteId: true },
+      select: {
+        id: true,
+        operarioCuil: true,
+        fecha: true,
+        horas: true,
+        contratoId: true,
+        tareas: { select: { tareaId: true } },
+        moviles: { select: { movilId: true } },
+      },
     });
-    const acumPorOperarioFecha = new Map<string, { operarioCuil: string; total: number; lotes: Set<string> }>();
-    for (const r of filasQuincenaCompleta) {
-      const k = `${r.operarioCuil}|${r.fecha.toISOString()}`;
-      let e = acumPorOperarioFecha.get(k);
-      if (!e) {
-        e = { operarioCuil: r.operarioCuil, total: 0, lotes: new Set() };
-        acumPorOperarioFecha.set(k, e);
-      }
-      e.total += Number(r.horas);
-      e.lotes.add(r.loteId);
-    }
-    const conAlertaCruzada = new Set<string>();
-    for (const e of acumPorOperarioFecha.values()) {
-      if (e.lotes.size > 1) conAlertaCruzada.add(e.operarioCuil);
-    }
+    const conAlertaCruzada = duplicadosExactos(filasQuincenaCompleta).cuilesConDuplicado;
 
     // Horas aprobadas de la quincena anterior, mismo scope de "mis
     // contratos" (comparable con lo de arriba) — para ver si le estoy

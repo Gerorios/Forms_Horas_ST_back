@@ -156,30 +156,36 @@ describe('PanelService', () => {
       expect(r.filas[0].duplicadoCruzado).toBe(false);
     });
 
-    it('detecta duplicado cruzado: mismo cuil+fecha cargado en 2 lotes distintos', async () => {
+    it('detecta duplicado EXACTO: dos registros idénticos en todo (aunque en lotes distintos)', async () => {
       calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
       prismaMock.registroHoras.groupBy
         .mockResolvedValueOnce([]) // pendientes por cuil
         .mockResolvedValueOnce([]); // horas aprobadas para sinPerfil
       prismaMock.registroHoras.findMany.mockResolvedValue([
         {
+          id: 1,
           operarioCuil: '20-1-1',
           fecha: new Date(2026, 7, 5),
           horas: 8,
+          contratoId: 1,
           estado: 'aprobado',
           loteId: 'L1',
           contrato: { codigo: 'CTR1' },
-          tareas: [],
+          tareas: [{ tareaId: 10, tarea: { nombre: 'Tarea A' } }],
+          moviles: [{ movilId: 5 }],
           cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
         },
         {
+          id: 2,
           operarioCuil: '20-1-1',
           fecha: new Date(2026, 7, 5),
           horas: 8,
+          contratoId: 1,
           estado: 'aprobado',
           loteId: 'L2',
           contrato: { codigo: 'CTR1' },
-          tareas: [],
+          tareas: [{ tareaId: 10, tarea: { nombre: 'Tarea A' } }],
+          moviles: [{ movilId: 5 }],
           cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
         },
       ]);
@@ -190,6 +196,48 @@ describe('PanelService', () => {
       const r = await service.getDetalleQuincena(2026, 8, 1);
 
       expect(r.filas[0].duplicadoCruzado).toBe(true);
+    });
+
+    it('NO marca duplicado si el mismo día tiene horas distintas en 2 lotes (la regla vieja lo marcaba)', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy
+        .mockResolvedValueOnce([]) // pendientes por cuil
+        .mockResolvedValueOnce([]); // horas aprobadas para sinPerfil
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        {
+          id: 1,
+          operarioCuil: '20-1-1',
+          fecha: new Date(2026, 7, 5),
+          horas: 8,
+          contratoId: 1,
+          estado: 'aprobado',
+          loteId: 'L1',
+          contrato: { codigo: 'CTR1' },
+          tareas: [],
+          moviles: [],
+          cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
+        },
+        {
+          id: 2,
+          operarioCuil: '20-1-1',
+          fecha: new Date(2026, 7, 5),
+          horas: 4,
+          contratoId: 1,
+          estado: 'aprobado',
+          loteId: 'L2',
+          contrato: { codigo: 'CTR1' },
+          tareas: [],
+          moviles: [],
+          cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
+        },
+      ]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].duplicadoCruzado).toBe(false);
     });
 
     it('mensualizado expone horasTotal=1 y horasCct=1 reales (para que se vea la cuenta básico = monto × 1)', async () => {
