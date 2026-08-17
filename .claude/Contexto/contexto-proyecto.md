@@ -1977,3 +1977,62 @@ PR #30 del front).
 
 Verificación: backend 21/21 (`liquidacion.service.spec`) + build; frontend helper 4/4,
 mensualizados 4/4, regresión tabs, tsc. Probado por el usuario en local contra `testing`.
+
+---
+
+## 58. Incidente MySQL, migración DNS a Cloudflare y regla de duplicado exacto (2026-08-13 a 14)
+
+Dos días intensos: caída de producción, migración de infraestructura DNS y cambios de reglas.
+
+### Incidente: producción caída ~22 h (2026-08-13/14)
+
+- **Causa raíz encadenada**: el `connectTimeout` de 1s del adapter mariadb abortaba
+  handshakes cuando el MySQL compartido (191.101.235.7, admin = IT externo) se puso lento por
+  saturación (`max_connections` default 151, colmado por ~80 conexiones fantasma de los
+  restarts del nest watch + el Render viejo del portal + carga normal). Cada aborto sumó a
+  `max_connect_errors` (default 100) → **MySQL bloqueó la IP de la VPS** (error 1129).
+- El reinicio del servidor MySQL por IT no alcanzó: el backend vivo re-llenó el contador en
+  <1 min. Procedimiento correcto (documentado en memoria `mysql-compartido-incidente`):
+  **parar backend → FLUSH HOSTS → deploy → arrancar**.
+- **Vacunas deployadas** (PR #30 y #32 back): `connectTimeout` 10s, config por objeto con
+  `allowPublicKeyRetrieval`, `enableShutdownHooks` + `$disconnect` (mata la fábrica de
+  fantasmas), pool ocioso `minimumIdle: 2` / `idleTimeout: 600`.
+- Pendiente de IT (verificado sin aplicar al 14/8): `SET PERSIST max_connections=500` y
+  `SET PERSIST max_connect_errors=100000`.
+- Durante la ventana también se aplicó a `Horas_Sertec` el DDL de mensualizado-horas-extra
+  que había quedado solo en `testing` (rompió Liquidación al deployar #29 — recordatorio:
+  TODO DDL va a las DOS bases).
+
+### Merges del día 14
+
+- PR #29 (back) y #32 (front): mensualizado-horas-extra (del otro equipo).
+- PR #31 (back) y #33 (front): **Análisis de la quincena** completo (motor + pantalla +
+  contratos de imputación; DDL aplicado a ambas bases).
+- PR #34 (front): selectores de quincena arrancan en la **quincena en curso** (antes:
+  la anterior) — criterio unificado en toda la app.
+
+### Migración DNS a Cloudflare (2026-08-14)
+
+- Motivo: oficina de otra provincia sin acceso por **agujero de ruteo** de su ISP hacia la
+  VPS (IP 45.224.143.224 sin ruta desde el 10/8; vecinas .188/.196 llegaban bien).
+- `serytec.com.ar` delegado a `carlane/elliott.ns.cloudflare.com` (cuenta Cloudflare Free
+  `reporteserytec@gmail.com`; titular nic.ar: Armando Le Fort). Zona replicada y verificada
+  registro por registro (12): correo wcaup y web corporativa en DNS-only (sin cambios),
+  `misregistros` y `certificaciones` con proxy naranja. Hoja de emergencia con rollback
+  entregada al usuario; detalle en memoria `dns-cloudflare-serytec`.
+- Beneficios colaterales: HTTP/2/3 + CDN para los sistemas (ítem de la auditoría de
+  latencia resuelto gratis).
+
+### Regla de duplicado EXACTO (2026-08-14)
+
+Pedido del dueño de producto: duplicado = **clon total** (operario + fecha + horas +
+contrato + tareas + móviles), reemplaza la regla vieja "mismo operario+día en >1 lote" que
+marcaba repartos legítimos. Helper común `src/common/duplicados.ts` (8 tests) aplicado en
+panel.service (tabla liquidación), porAprobar (Aprobaciones) y resumenOperarios (Control
+general); front: badges "⚠ posible duplicado" con la explicación nueva. Backend 30/30,
+front 56/56 + tsc.
+
+**Pendientes al cierre**: prueba de la oficina remota vía Cloudflare; `SET PERSIST` de IT;
+parqueados por pedido explícito: tabla de hechos de liquidación (cierre de quincena +
+export Excel + consumo del analista), informe de auditoría de latencia (entrevista por la
+pregunta 5), chequeo automático de esquema post-deploy.

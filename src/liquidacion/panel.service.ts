@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena } from '../common/quincena';
+import { duplicadosExactos } from '../common/duplicados';
 
 export interface QuincenaResumen {
   anio: number;
@@ -161,28 +162,20 @@ export class PanelService {
     const pendientesPorCuil = new Map(pendientesAgg.map((p) => [p.operarioCuil, p._count._all]));
 
     // Registros no desaprobados del rango: sirven tanto para detectar
-    // duplicado cruzado (mismo cuil+fecha en >1 loteId — regla de Control
-    // general) como para armar los días del expand (subset 'aprobado').
+    // duplicados EXACTOS (regla 2026-08-14 en src/common/duplicados.ts) como
+    // para armar los días del expand (subset 'aprobado').
     const registrosRango = await this.prisma.registroHoras.findMany({
       where: { operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
       include: {
         contrato: { select: { codigo: true } },
         tareas: { include: { tarea: { select: { nombre: true } } } },
+        moviles: { select: { movilId: true } },
         cargadoPor: { select: { cuil: true, email: true, nombreFueraNomina: true } },
       },
       orderBy: { fecha: 'asc' },
     });
 
-    const lotesPorClave = new Map<string, Set<string>>();
-    for (const r of registrosRango) {
-      const k = `${r.operarioCuil}|${r.fecha.toISOString()}`;
-      if (!lotesPorClave.has(k)) lotesPorClave.set(k, new Set());
-      lotesPorClave.get(k)!.add(r.loteId);
-    }
-    const cuilesConDuplicado = new Set<string>();
-    for (const [k, lotes] of lotesPorClave) {
-      if (lotes.size > 1) cuilesConDuplicado.add(k.split('|')[0]);
-    }
+    const { cuilesConDuplicado } = duplicadosExactos(registrosRango);
 
     const cargadores = [...new Set(registrosRango.map((r) => r.cargadoPorCuil))];
     const empleadosCargadores =
