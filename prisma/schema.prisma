@@ -516,7 +516,8 @@ model EstacionServicio {
   cuit      String? @unique @db.Char(11)
   activo    Boolean @default(true)
 
-  cargas CargaCombustible[]
+  cargas  CargaCombustible[]
+  aliases EstacionServicioAlias[]
 
   @@map("sth_estaciones_servicio")
 }
@@ -543,6 +544,24 @@ model TipoCombustibleAlias {
   tipoCombustible TipoCombustible @relation(fields: [tipoCombustibleId], references: [id])
 
   @@map("sth_tipo_combustible_alias")
+}
+
+// Alias de estaciones: cómo aparece impreso el nombre en los tickets frente al
+// nombre del catálogo ("ESTACION SVR SRL" → Estación Sur S.R.L.). Se generan
+// solos cuando el CUIT del ticket confirma la estación elegida por el operario;
+// sin esa prueba quedan como sugeridos (aprobado=false) hasta que un Admin los
+// acepte — un alias errado envenenaría futuras extracciones (plan 2026-08-18).
+model EstacionServicioAlias {
+  id         Int      @id @default(autoincrement())
+  estacionId Int      @map("estacion_id")
+  alias      String   @unique
+  aprobado   Boolean  @default(false)
+  creadoPor  String?  @map("creado_por") @db.Char(13)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  estacion EstacionServicio @relation(fields: [estacionId], references: [id])
+
+  @@map("sth_estacion_servicio_alias")
 }
 
 model CargaCombustible {
