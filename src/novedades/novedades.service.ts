@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNovedadDto } from './dto/create-novedad.dto';
 import { ResolverNovedadDto } from './dto/resolver-novedad.dto';
+import { rangoQuincena } from '../common/quincena';
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -54,9 +55,20 @@ export class NovedadesService {
   }
 
   findAll(
-    filtros: { operarioCuil?: string; estadoHys?: string },
+    filtros: {
+      operarioCuil?: string;
+      estadoHys?: string;
+      periodo?: { anio: number; mes: number; quincena: number };
+    },
     usuario: { cuil: string; rol: string },
   ) {
+    // Sin período: todas (sin acotar por fecha). Con período: novedades que
+    // SE SUPERPONEN con la quincena (no solo las que arrancan ahí) — mismo
+    // criterio que ya usa CalculoService para el motor de liquidación.
+    const rango = filtros.periodo
+      ? rangoQuincena(filtros.periodo.anio, filtros.periodo.mes, filtros.periodo.quincena)
+      : null;
+
     return this.prisma.novedad.findMany({
       where: {
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
@@ -65,6 +77,12 @@ export class NovedadesService {
         // cargó, no el listado completo — mismo criterio que "Cargas que hice"
         // para horas (ADR-001). El resto de los roles con acceso ven todo.
         ...(usuario.rol === 'JefeCuadrilla' ? { cargadoPorCuil: usuario.cuil } : {}),
+        ...(rango
+          ? {
+              fechaInicio: { lte: rango.hasta },
+              OR: [{ fechaFin: { gte: rango.desde } }, { fechaFin: null, fechaInicio: { gte: rango.desde } }],
+            }
+          : {}),
       },
       include: INCLUDE_BASICO,
       orderBy: { fechaInicio: 'desc' },
