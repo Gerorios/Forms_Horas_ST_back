@@ -128,14 +128,20 @@ export class RegistrosHorasService {
     // Alerta >=16 hs por operario/día: se calcula ANTES de la transacción
     // (son lecturas) para no agotar el timeout de la transacción interactiva.
     // >24hs (techo imposible) bloquea la carga entera, ninguno se crea.
+    // UN groupBy para todos los operarios (fix N+1 2026-08-18: antes era un
+    // aggregate por operario — 20 operarios = 20 idas a la BD remota).
+    const previasPorOperario = await this.prisma.registroHoras.groupBy({
+      by: ['operarioCuil'],
+      where: { operarioCuil: { in: dto.operarioCuils }, fecha, estado: { not: 'desaprobado' } },
+      _sum: { horas: true },
+    });
+    const previasMap = new Map(
+      previasPorOperario.map((p) => [p.operarioCuil, Number(p._sum.horas ?? 0)]),
+    );
     const alertaPorOperario = new Map<string, boolean>();
     const excedidos: string[] = [];
     for (const operarioCuil of dto.operarioCuils) {
-      const previas = await this.prisma.registroHoras.aggregate({
-        where: { operarioCuil, fecha, estado: { not: 'desaprobado' } },
-        _sum: { horas: true },
-      });
-      const totalDia = Number(previas._sum.horas ?? 0) + horasBatchPorOperario;
+      const totalDia = (previasMap.get(operarioCuil) ?? 0) + horasBatchPorOperario;
       alertaPorOperario.set(operarioCuil, totalDia >= UMBRAL_ALERTA_HORAS);
       if (totalDia > TECHO_HORAS_IMPOSIBLE) excedidos.push(operarioCuil);
     }
@@ -189,6 +195,10 @@ export class RegistrosHorasService {
       estado?: string;
       operarioCuil?: string;
       cargadoPorCuil?: string;
+      // Rango server-side (fix de crecimiento 2026-08-18): Mis registros pide
+      // la quincena visible en vez de la vida entera del usuario.
+      desde?: string;
+      hasta?: string;
     },
     usuario: { cuil: string; rol: string },
   ) {
@@ -208,7 +218,11 @@ export class RegistrosHorasService {
     }
     return this.prisma.registroHoras.findMany({
       where: {
-        ...(filtros.fecha ? { fecha: new Date(filtros.fecha) } : {}),
+        ...(filtros.fecha
+          ? { fecha: new Date(filtros.fecha) }
+          : filtros.desde && filtros.hasta
+            ? { fecha: { gte: new Date(filtros.desde), lte: new Date(filtros.hasta) } }
+            : {}),
         ...(filtros.contratoId ? { contratoId: filtros.contratoId } : {}),
         ...(filtros.estado ? { estado: filtros.estado as any } : {}),
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
@@ -371,19 +385,27 @@ export class RegistrosHorasService {
           },
         });
 
+        // Alerta >=16hs recalculada excluyendo lo desaprobado (las filas recién
+        // rechazadas ya no cuentan) — mismo criterio que create(). UN groupBy
+        // para todas las filas del lote (fix N+1 2026-08-18).
+        const previasLote = await tx.registroHoras.groupBy({
+          by: ['operarioCuil', 'fecha'],
+          where: {
+            operarioCuil: { in: filas.map((f) => f.operarioCuil) },
+            fecha: { in: filas.map((f) => f.fecha) },
+            estado: { not: 'desaprobado' },
+          },
+          _sum: { horas: true },
+        });
+        const previasPorClave = new Map(
+          previasLote.map((p) => [`${p.operarioCuil}|${p.fecha.toISOString()}`, Number(p._sum.horas ?? 0)]),
+        );
+
         const nuevas = [];
         for (const original of filas) {
-          // Alerta >=16hs recalculada excluyendo lo desaprobado (la fila que
-          // acabamos de rechazar ya no cuenta) — mismo criterio que create().
-          const previas = await tx.registroHoras.aggregate({
-            where: {
-              operarioCuil: original.operarioCuil,
-              fecha: original.fecha,
-              estado: { not: 'desaprobado' },
-            },
-            _sum: { horas: true },
-          });
-          const totalDia = Number(previas._sum.horas ?? 0) + Number(dto.horasCorregidas);
+          const totalDia =
+            (previasPorClave.get(`${original.operarioCuil}|${original.fecha.toISOString()}`) ?? 0) +
+            Number(dto.horasCorregidas);
           if (totalDia > TECHO_HORAS_IMPOSIBLE) {
             throw new BadRequestException(
               `Con esta corrección, ${original.operarioCuil} tendría ${totalDia}hs el día — no es humanamente posible. Puede haber una carga duplicada en otro contrato o lote.`,
@@ -597,7 +619,17 @@ export class RegistrosHorasService {
   async porAprobar(
     usuario: { cuil: string; rol: string },
     estadoQuery?: string,
-    filtros?: { contratoId?: number; operarioCuil?: string; cargadoPorCuil?: string; fecha?: string },
+    filtros?: {
+      contratoId?: number;
+      operarioCuil?: string;
+      cargadoPorCuil?: string;
+      fecha?: string;
+      // Rango server-side (fix de crecimiento 2026-08-18): aprobados/rechazados
+      // crecen sin techo; el front pide la quincena visible en vez de todo el
+      // histórico y filtrar en cliente.
+      desde?: string;
+      hasta?: string;
+    },
   ) {
     const ESTADOS_VALIDOS = ['pendiente', 'aprobado', 'desaprobado'] as const;
     const estado = (estadoQuery ?? 'pendiente') as (typeof ESTADOS_VALIDOS)[number];
@@ -631,7 +663,11 @@ export class RegistrosHorasService {
         contratoId: { in: misContratoIds },
         ...(filtros?.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
         ...(filtros?.cargadoPorCuil ? { cargadoPorCuil: filtros.cargadoPorCuil } : {}),
-        ...(filtros?.fecha ? { fecha: new Date(filtros.fecha) } : {}),
+        ...(filtros?.fecha
+          ? { fecha: new Date(filtros.fecha) }
+          : filtros?.desde && filtros?.hasta
+            ? { fecha: { gte: new Date(filtros.desde), lte: new Date(filtros.hasta) } }
+            : {}),
       },
       select: { loteId: true },
       distinct: ['loteId'],
