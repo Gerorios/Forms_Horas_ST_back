@@ -37,6 +37,7 @@ function snapshot(n: {
 export interface ResumenAusenciaOperario {
   operarioCuil: string;
   apellidoNombre: string;
+  legajo: number;
   diasJustificados: number;
   diasInjustificados: number;
   diasPendientes: number;
@@ -259,7 +260,7 @@ export class NovedadesService {
         fechaInicio: { lte: hasta },
         OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
       },
-      include: { operario: { select: { apellido_nombre: true } } },
+      include: { operario: { select: { apellido_nombre: true, legajo: true } } },
     });
 
     const porOperario = new Map<string, ResumenAusenciaOperario>();
@@ -269,6 +270,7 @@ export class NovedadesService {
         acc = {
           operarioCuil: n.operarioCuil,
           apellidoNombre: n.operario.apellido_nombre,
+          legajo: n.operario.legajo,
           diasJustificados: 0,
           diasInjustificados: 0,
           diasPendientes: 0,

@@ -308,28 +308,28 @@ describe('NovedadesService#resumenAusencias', () => {
         fechaInicio: new Date(2026, 7, 1),
         fechaFin: new Date(2026, 7, 3),
         estadoHys: 'aprobada',
-        operario: { apellido_nombre: 'JUSTIFICADO, JUAN' },
+        operario: { apellido_nombre: 'JUSTIFICADO, JUAN', legajo: 101 },
       },
       {
         operarioCuil: '20111111111',
         fechaInicio: new Date(2026, 7, 5),
         fechaFin: new Date(2026, 7, 5),
         estadoHys: 'desaprobada',
-        operario: { apellido_nombre: 'JUSTIFICADO, JUAN' },
+        operario: { apellido_nombre: 'JUSTIFICADO, JUAN', legajo: 101 },
       },
       {
         operarioCuil: '20222222222',
         fechaInicio: new Date(2026, 7, 10),
         fechaFin: null,
         estadoHys: 'pendiente',
-        operario: { apellido_nombre: 'PENDIENTE, PEDRO' },
+        operario: { apellido_nombre: 'PENDIENTE, PEDRO', legajo: 202 },
       },
       {
         operarioCuil: '20333333333',
         fechaInicio: new Date(2026, 7, 11),
         fechaFin: null,
         estadoHys: 'no_aplica',
-        operario: { apellido_nombre: 'SINAPROBACION, SOFIA' },
+        operario: { apellido_nombre: 'SINAPROBACION, SOFIA', legajo: 303 },
       },
     ]);
     calculoMock.diasClip.mockReturnValueOnce(3).mockReturnValueOnce(1).mockReturnValueOnce(1).mockReturnValueOnce(1);
@@ -341,6 +341,7 @@ describe('NovedadesService#resumenAusencias', () => {
         {
           operarioCuil: '20111111111',
           apellidoNombre: 'JUSTIFICADO, JUAN',
+          legajo: 101,
           diasJustificados: 3,
           diasInjustificados: 1,
           diasPendientes: 0,
@@ -348,6 +349,7 @@ describe('NovedadesService#resumenAusencias', () => {
         {
           operarioCuil: '20222222222',
           apellidoNombre: 'PENDIENTE, PEDRO',
+          legajo: 202,
           diasJustificados: 0,
           diasInjustificados: 0,
           diasPendientes: 1,
@@ -355,6 +357,7 @@ describe('NovedadesService#resumenAusencias', () => {
         {
           operarioCuil: '20333333333',
           apellidoNombre: 'SINAPROBACION, SOFIA',
+          legajo: 303,
           diasJustificados: 0,
           diasInjustificados: 0,
           diasPendientes: 1, // no_aplica también cuenta como "pendiente" en el resumen
