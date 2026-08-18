@@ -2036,3 +2036,39 @@ front 56/56 + tsc.
 parqueados por pedido explícito: tabla de hechos de liquidación (cierre de quincena +
 export Excel + consumo del analista), informe de auditoría de latencia (entrevista por la
 pregunta 5), chequeo automático de esquema post-deploy.
+
+---
+
+## 59. Auditoría integral: fixes críticos de seguridad y de crecimiento (2026-08-18)
+
+Auditoría completa del sistema con 4 auditores paralelos (arquitectura back/front,
+seguridad, rendimiento) — informe entregado al dueño de producto. Veredicto: sistema
+sólido (17 ADRs, ~80 suites de tests, deuda mínima) con 2 críticos de seguridad y
+deuda de crecimiento. Se ejecutaron dos tandas de fixes, ambas con PR y deploy:
+
+### Seguridad (PR #35 back, #39 front)
+- `GET /novedades` sin @Roles (rescate del fix huérfano `27a8d07` del 4/8): roles +
+  JefeCuadrilla scopeado a lo que él cargó. Front: nav + guard de ruta (`7ab7eb1`);
+  el tercer commit huérfano (`21261e1`) quedó obsoleto y se descartó a propósito.
+- `GET /registros-horas` sin alcance → Admin libre; el resto solo se consulta a sí
+  mismo como operario o cargador (otro CUIL → 403). TDD 5 casos.
+- Quedan IGNORADOS por decisión explícita: throttler de login, CORS restringido,
+  reset de contraseña seguro, GET /empleados por rol.
+
+### Crecimiento (PR #36 back, #40 front)
+- `porAprobar` y `findAll` con `desde`/`hasta`: Aprobados/Rechazados y Mis registros
+  piden solo la quincena visible (antes bajaban TODO el histórico y filtraban en el
+  navegador — payload creciente sin techo). Front: `rangoQuincenaISO` (helper con
+  test anti-zona-horaria); Pendientes sigue trayendo la cola completa para el aviso
+  de rescate.
+- N+1 eliminado: control de horas imposibles de `createBatch` con UN `groupBy` (antes
+  un aggregate por operario) e ídem `corregirLote` (por lote, no por fila).
+- Índice compuesto `[estado, fecha]` en `sth_registros_horas`
+  (`docs/sql/2026-08-18-indice-estado-fecha.sql`) — aplicado a ambas bases.
+- Parqueado con decisión pendiente de UI: paginación de listados de combustible y
+  novedades; rediseño del loop de INSERTs de createBatch.
+
+También en esta fecha (PRs previos del día): regla de duplicado EXACTO deployada
+(#33/#35 front), filtros de Aprobaciones unificados en una sola barra con aviso de
+rescate (#36-38 front), y limpieza de datos: registros sueltos de ene/mayo y la 2ª
+quincena de julio (pre-arranque) borrados de ambas bases con respaldo JSON.
