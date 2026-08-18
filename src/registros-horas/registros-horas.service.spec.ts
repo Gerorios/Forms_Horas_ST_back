@@ -25,6 +25,61 @@ describe('RegistrosHorasService', () => {
     service = mod.get(RegistrosHorasService);
   });
 
+  describe('fixes de crecimiento (auditoría 2026-08-18)', () => {
+    it('porAprobar con desde/hasta acota los lotes por rango de fechas en el servidor', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]); // sin lotes → corta temprano
+      await service.porAprobar({ cuil: '20-1-1', rol: 'Admin' }, 'aprobado', {
+        desde: '2026-08-01',
+        hasta: '2026-08-15',
+      });
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.fecha).toEqual({ gte: new Date('2026-08-01'), lte: new Date('2026-08-15') });
+    });
+
+    it('findAll con desde/hasta filtra por rango en el servidor', async () => {
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      await service.findAll(
+        { desde: '2026-08-01', hasta: '2026-08-15' },
+        { cuil: '20-2-2', rol: 'Supervisor' },
+      );
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.fecha).toEqual({ gte: new Date('2026-08-01'), lte: new Date('2026-08-15') });
+      expect(where.operarioCuil).toBe('20-2-2'); // el alcance propio se mantiene
+    });
+
+    it('createBatch consulta las horas previas con UN groupBy (no un aggregate por operario)', async () => {
+      prismaMock.contratoHabilitado = { findMany: jest.fn().mockResolvedValue([{ contratoId: 1 }]) };
+      prismaMock.registroHoras.groupBy = jest.fn().mockResolvedValue([
+        { operarioCuil: '20-1-1', _sum: { horas: 10 } },
+      ]);
+      prismaMock.registroHoras.aggregate = jest.fn();
+      const txMock = {
+        registroHoras: {
+          create: jest.fn().mockResolvedValue({ id: 1 }),
+        },
+      };
+      prismaMock.$transaction = jest.fn((cb: any) => cb(txMock));
+
+      const r = await service.createBatch(
+        {
+          fecha: '2026-08-18',
+          operarioCuils: ['20-1-1', '20-2-2'],
+          provinciaId: 1,
+          lineas: [{ contratoId: 1, horas: 4, tareaIds: [1] }],
+        } as any,
+        '20-9-9',
+      );
+
+      expect(prismaMock.registroHoras.groupBy).toHaveBeenCalledTimes(1);
+      expect(prismaMock.registroHoras.aggregate).not.toHaveBeenCalled();
+      expect(r.creados).toBe(2);
+      // 20-1-1 tenía 10hs previas + 4 del batch = 14 → sin alerta; 20-2-2: 0+4
+      const creadas = txMock.registroHoras.create.mock.calls.map((c: any) => c[0].data);
+      expect(creadas.find((d: any) => d.operarioCuil === '20-1-1').alertaHoras).toBe(false);
+    });
+  });
+
   describe('findAll — alcance por usuario (auditoría 2026-08-18)', () => {
     beforeEach(() => prismaMock.registroHoras.findMany.mockResolvedValue([]));
 

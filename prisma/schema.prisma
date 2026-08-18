@@ -432,6 +432,7 @@ model RegistroHoras {
   @@index([fecha])
   @@index([operarioCuil, fecha])
   @@index([contratoId, estado])
+  @@index([estado, fecha])
   @@index([loteId])
   @@index([loteIdOrigen])
   @@map("sth_registros_horas")

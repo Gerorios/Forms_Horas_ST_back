@@ -36,9 +36,11 @@ export class RegistrosHorasController {
     @Query('estado') estado?: string,
     @Query('operarioCuil') operarioCuil?: string,
     @Query('cargadoPorCuil') cargadoPorCuil?: string,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
   ) {
     return this.service.findAll(
-      { fecha, contratoId, estado, operarioCuil, cargadoPorCuil },
+      { fecha, contratoId, estado, operarioCuil, cargadoPorCuil, desde, hasta },
       { cuil: req.user.cuil, rol: req.user.rol },
     );
   }
@@ -51,6 +53,8 @@ export class RegistrosHorasController {
     @Query('operarioCuil') operarioCuil: string | undefined,
     @Query('cargadoPorCuil') cargadoPorCuil: string | undefined,
     @Query('fecha') fecha: string | undefined,
+    @Query('desde') desde: string | undefined,
+    @Query('hasta') hasta: string | undefined,
     @Request() req,
   ) {
     return this.service.porAprobar({ cuil: req.user.cuil, rol: req.user.rol }, estado, {
@@ -58,6 +62,8 @@ export class RegistrosHorasController {
       operarioCuil,
       cargadoPorCuil,
       fecha,
+      desde,
+      hasta,
     });
   }
 
