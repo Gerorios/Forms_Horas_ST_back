@@ -25,6 +25,44 @@ describe('RegistrosHorasService', () => {
     service = mod.get(RegistrosHorasService);
   });
 
+  describe('findAll — alcance por usuario (auditoría 2026-08-18)', () => {
+    beforeEach(() => prismaMock.registroHoras.findMany.mockResolvedValue([]));
+
+    it('Admin consulta libre: los filtros pasan tal cual', async () => {
+      await service.findAll({ operarioCuil: '20-9-9' }, { cuil: '20-1-1', rol: 'Admin' });
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ operarioCuil: '20-9-9' }) }),
+      );
+    });
+
+    it('no-Admin sin params queda scopeado a sus propios registros como operario', async () => {
+      await service.findAll({}, { cuil: '20-2-2', rol: 'Supervisor' });
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ operarioCuil: '20-2-2' }) }),
+      );
+    });
+
+    it('no-Admin pidiendo el operarioCuil de OTRO recibe Forbidden', () => {
+      expect(() =>
+        service.findAll({ operarioCuil: '20-9-9' }, { cuil: '20-2-2', rol: 'JefeCuadrilla' }),
+      ).toThrow('Solo podés consultar tus propios registros');
+      expect(prismaMock.registroHoras.findMany).not.toHaveBeenCalled();
+    });
+
+    it('no-Admin pidiendo cargadoPorCuil de OTRO recibe Forbidden', () => {
+      expect(() =>
+        service.findAll({ cargadoPorCuil: '20-9-9' }, { cuil: '20-2-2', rol: 'JefeCuadrilla' }),
+      ).toThrow('Solo podés consultar tus propios registros');
+    });
+
+    it('no-Admin puede pedir lo que él mismo cargó (cargadoPorCuil propio, sin forzar operario)', async () => {
+      await service.findAll({ cargadoPorCuil: '20-2-2' }, { cuil: '20-2-2', rol: 'JefeCuadrilla' });
+      const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
+      expect(where.cargadoPorCuil).toBe('20-2-2');
+      expect(where.operarioCuil).toBeUndefined();
+    });
+  });
+
   describe('resumenOperarios — alerta cruzada', () => {
     it('operario con muchas horas (18) en un solo lote/día no dispara la alerta', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
