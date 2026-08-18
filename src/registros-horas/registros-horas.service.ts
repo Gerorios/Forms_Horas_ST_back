@@ -182,13 +182,30 @@ export class RegistrosHorasService {
     );
   }
 
-  findAll(filtros: {
-    fecha?: string;
-    contratoId?: number;
-    estado?: string;
-    operarioCuil?: string;
-    cargadoPorCuil?: string;
-  }) {
+  findAll(
+    filtros: {
+      fecha?: string;
+      contratoId?: number;
+      estado?: string;
+      operarioCuil?: string;
+      cargadoPorCuil?: string;
+    },
+    usuario: { cuil: string; rol: string },
+  ) {
+    // Alcance (auditoría 2026-08-18): solo Admin consulta libre. El resto se
+    // consulta a SÍ MISMO — como operario (Mis registros) o como cargador
+    // (Cargas que hice). El acceso cross-usuario de los jefes vive en
+    // porAprobar/paneles, que scopean por contratos habilitados.
+    if (usuario.rol !== 'Admin') {
+      const pideOtroOperario = filtros.operarioCuil && filtros.operarioCuil !== usuario.cuil;
+      const pideOtroCargador = filtros.cargadoPorCuil && filtros.cargadoPorCuil !== usuario.cuil;
+      if (pideOtroOperario || pideOtroCargador) {
+        throw new ForbiddenException('Solo podés consultar tus propios registros.');
+      }
+      if (!filtros.operarioCuil && !filtros.cargadoPorCuil) {
+        filtros = { ...filtros, operarioCuil: usuario.cuil };
+      }
+    }
     return this.prisma.registroHoras.findMany({
       where: {
         ...(filtros.fecha ? { fecha: new Date(filtros.fecha) } : {}),

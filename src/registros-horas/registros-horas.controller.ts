@@ -30,13 +30,17 @@ export class RegistrosHorasController {
 
   @Get()
   findAll(
+    @Request() req,
     @Query('fecha') fecha?: string,
     @Query('contratoId', new ParseIntPipe({ optional: true })) contratoId?: number,
     @Query('estado') estado?: string,
     @Query('operarioCuil') operarioCuil?: string,
     @Query('cargadoPorCuil') cargadoPorCuil?: string,
   ) {
-    return this.service.findAll({ fecha, contratoId, estado, operarioCuil, cargadoPorCuil });
+    return this.service.findAll(
+      { fecha, contratoId, estado, operarioCuil, cargadoPorCuil },
+      { cuil: req.user.cuil, rol: req.user.rol },
+    );
   }
 
   @Get('por-aprobar')
