@@ -22,9 +22,19 @@ export class NovedadesController {
   findAll(
     @Query('operarioCuil') operarioCuil: string | undefined,
     @Query('estadoHys') estadoHys: string | undefined,
+    @Query('anio') anio: string | undefined,
+    @Query('mes') mes: string | undefined,
+    @Query('quincena') quincena: string | undefined,
     @Request() req,
   ) {
-    return this.service.findAll({ operarioCuil, estadoHys }, { cuil: req.user.cuil, rol: req.user.rol });
+    const periodo =
+      anio && mes && quincena
+        ? { anio: Number(anio), mes: Number(mes), quincena: Number(quincena) }
+        : undefined;
+    return this.service.findAll(
+      { operarioCuil, estadoHys, periodo },
+      { cuil: req.user.cuil, rol: req.user.rol },
+    );
   }
 
   @Patch(':id/resolver-hys')
