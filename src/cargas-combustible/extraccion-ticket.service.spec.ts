@@ -15,6 +15,7 @@ describe('ExtraccionTicketService', () => {
     estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
     tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
     movil: { findMany: jest.fn().mockResolvedValue([]) },
+    cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 
   beforeEach(() => {
@@ -39,7 +40,7 @@ describe('ExtraccionTicketService', () => {
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
       patente: null, km: null, movilId: null,
-      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
+      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null, camposInseguros: [], alertaDuplicado: null,
     });
   });
 
@@ -62,7 +63,7 @@ describe('ExtraccionTicketService', () => {
       tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
       lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
       patente: null, km: null, movilId: null,
-      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
+      tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null, camposInseguros: [], alertaDuplicado: null,
     });
   });
   it('usa OpenAI como proveedor alternativo cuando solo hay OPENAI_API_KEY', async () => {
@@ -89,7 +90,7 @@ describe('ExtraccionTicketService', () => {
         tipoComprobante: null, medioPagoSugerido: null, confianzaNumero: null,
         lineaOrigenNumero: null, precioLitro: null, advertenciaCoherencia: null,
         patente: null, km: null, movilId: null,
-        tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null,
+        tipoCombustibleLeido: 'gasoil', cuitEstacionLeido: null, camposInseguros: [], alertaDuplicado: null,
       });
     } finally {
       global.fetch = fetchOriginal;
@@ -200,6 +201,7 @@ describe('ExtraccionTicketService', () => {
       estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
       content: [{ type: 'text', text: jsonModelo({ patente: 'AB 123 CD', kilometraje: 123456 }) }],
@@ -216,6 +218,7 @@ describe('ExtraccionTicketService', () => {
       estacionServicio: { findMany: jest.fn().mockResolvedValue([{ id: 1, nombre: 'YPF Centenario', cuit: null }]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([{ id: 7, identificador: 'AB123CD' }]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
       content: [{ type: 'text', text: jsonModelo({ patente: 'ZZ 999 ZZ', kilometraje: 100 }) }],
@@ -233,6 +236,7 @@ describe('ExtraccionTicketService', () => {
         { id: 5, nombre: 'Gasoil premium', aliases: [{ alias: 'INFINIA DIESEL' }] },
       ]) },
       movil: { findMany: jest.fn().mockResolvedValue([]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
       content: [{ type: 'text', text: jsonModelo({ tipoCombustible: 'Infinia  Diesel' }) }],
@@ -251,6 +255,7 @@ describe('ExtraccionTicketService', () => {
       ]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
       content: [{ type: 'text', text: jsonModelo({ estacion: 'ESTACION DE SERVICIO SRL', cuitEstacion: '30-22222222-9' }) }],
@@ -268,6 +273,7 @@ describe('ExtraccionTicketService', () => {
       ]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([{ id: 2, nombre: 'Gasoil', aliases: [] }]) },
       movil: { findMany: jest.fn().mockResolvedValue([]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const clienteMock = { messages: { create: jest.fn().mockResolvedValue({
       content: [{ type: 'text', text: jsonModelo({ estacion: null, cuitEstacion: '30999999995' }) }],
@@ -296,6 +302,7 @@ describe('ExtraccionTicketService — resolución de dependencias vía Nest DI',
       estacionServicio: { findMany: jest.fn().mockResolvedValue([]) },
       tipoCombustible: { findMany: jest.fn().mockResolvedValue([]) },
       movil: { findMany: jest.fn().mockResolvedValue([]) },
+      cargaCombustible: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const moduleRef = await Test.createTestingModule({
       providers: [ExtraccionTicketService, { provide: PrismaService, useValue: prismaMock }],
