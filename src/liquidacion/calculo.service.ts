@@ -221,12 +221,15 @@ export class CalculoService {
 
       const novedadesCuil = novedadesPorCuil.get(perfil.cuil) ?? [];
 
-      // Presentismo: 20% del básico, salvo Ausencia desaprobada o Suspensión en el período.
-      const ausenciaDesaprobada = novedadesCuil.some(
-        (n) => n.tipoNovedad.nombre === 'Ausencia' && n.estadoHys === 'desaprobada',
-      );
+      // Presentismo: 20% del básico, salvo Ausencia (cualquier estadoHys —
+      // pendiente, aprobada o desaprobada) o Suspensión en el período. Antes
+      // solo la desaprobada lo hacía perder; cambio de regla 2026-08-18: con
+      // Ausencia justificada o injustificada, o todavía sin resolver, igual
+      // se pierde el presentismo (ver contexto sección "ausencias
+      // justificada/injustificada").
+      const tieneAusencia = novedadesCuil.some((n) => n.tipoNovedad.nombre === 'Ausencia');
       const suspension = novedadesCuil.some((n) => n.tipoNovedad.nombre === 'Suspensión');
-      const tienePresentismo = !ausenciaDesaprobada && !suspension;
+      const tienePresentismo = !tieneAusencia && !suspension;
       const presentismo = tienePresentismo ? basico * 0.2 : 0;
 
       // Plus de novedades (Guardia Pasiva, Viáticos, etc.): se paga POR CARGA de

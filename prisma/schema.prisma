@@ -479,6 +479,9 @@ model Novedad {
   estadoHys          EstadoHys @default(no_aplica) @map("estado_hys")
   aprobadoHysPorCuil String?   @map("aprobado_hys_por_cuil") @db.Char(13)
   aprobadoHysEn      DateTime? @map("aprobado_hys_en")
+  // Descargo/comentario que deja HyS al resolver (aprobar/desaprobar) una
+  // novedad de Ausencia/Accidente — se limpia si se reabre o se corrige.
+  descargoHys        String?   @map("descargo_hys") @db.Text
 
   operario       snuempleados @relation("NovedadOperario", fields: [operarioCuil], references: [cuil])
   tipoNovedad    TipoNovedad  @relation(fields: [tipoNovedadId], references: [id])

@@ -8,5 +8,8 @@ import { LiquidacionController } from './liquidacion.controller';
 @Module({
   providers: [LiquidacionService, CalculoService, PanelService, AnalisisService],
   controllers: [LiquidacionController],
+  // CalculoService también lo usa NovedadesService (resumen-ausencias, ver
+  // ADR de esa feature) para clipear días de Ausencia a la quincena.
+  exports: [CalculoService],
 })
 export class LiquidacionModule {}

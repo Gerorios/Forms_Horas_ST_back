@@ -193,6 +193,100 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
   });
 
+  describe('presentismo y Ausencia (regla 2026-08-18: cualquier estadoHys hace perder presentismo)', () => {
+    const PERFIL_JORNALIZADO = {
+      cuil: '20444444444',
+      regimen: 'jornalizado',
+      categoriaUocraId: 1,
+      modalidadPago: 'en_b',
+      empleado: { apellido_nombre: 'PRESENTISMO TEST', legajo: 5, cargo: 'Oficial', provincia: 'Córdoba' },
+      categoria: { id: 1, nombre: 'Oficial' },
+    };
+
+    beforeEach(() => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([PERFIL_JORNALIZADO]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
+      ]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([
+        { operarioCuil: PERFIL_JORNALIZADO.cuil, _sum: { horas: 80 } },
+      ]);
+    });
+
+    it('sin novedades: mantiene presentismo', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(true);
+      expect(fila.montoPresentismo).toBe(fila.totalBruto * 0.2);
+    });
+
+    it('Ausencia PENDIENTE (todavía sin resolver por HyS) también hace perder presentismo', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'pendiente',
+          tipoNovedad: { nombre: 'Ausencia' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(false);
+      expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Ausencia APROBADA (justificada) también hace perder presentismo (cambio de regla)', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'aprobada',
+          tipoNovedad: { nombre: 'Ausencia' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(false);
+      expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Ausencia DESAPROBADA (injustificada) sigue haciendo perder presentismo (sin cambios)', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'desaprobada',
+          tipoNovedad: { nombre: 'Ausencia' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(false);
+      expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Suspensión sigue haciendo perder presentismo (sin cambios)', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 6,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'no_aplica',
+          tipoNovedad: { nombre: 'Suspensión' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(false);
+      expect(fila.montoPresentismo).toBe(0);
+    });
+  });
+
   describe('régimen "mensualizado" (ADR-016 — sueldo vigente, no por quincena exacta)', () => {
     const PERFIL_MENSUALIZADO = {
       cuil: '20888888888',
