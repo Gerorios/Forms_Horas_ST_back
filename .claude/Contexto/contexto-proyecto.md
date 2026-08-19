@@ -2075,6 +2075,54 @@ quincena de julio (pre-arranque) borrados de ambas bases con respaldo JSON.
 
 ---
 
+## 60. Combustible: extracción de tickets de alta confianza — RAG + doble lectura (2026-08-18)
+
+Grilling con el dueño de producto por inconsistencias al detectar estación, patente y
+número de remito. Se explicó qué es RAG y se decidió aplicarlo en su forma simple.
+
+**Criterio rector elegido: MÁXIMA PRECISIÓN** — mejor un campo vacío que un dato
+equivocado (el error caro no es el hueco, es el error silencioso que aparece en la
+liquidación).
+
+### Decisiones del grilling
+1. Precisión sobre cobertura: ante duda, campo vacío.
+2. Estación y móvil obligatorios de desplegable; la IA solo pre-selecciona con certeza
+   (se verificó que la obligatoriedad YA existía en `formularioValido`).
+3. Remito: doble lectura + verificación aritmética + anti-duplicado.
+4. Aprendizaje: alias automático solo con CUIT confirmatorio; sin esa prueba, alias
+   sugerido con aprobación de Admin.
+5. Doble lectura con **gpt-5.1** (OpenAI, donde el usuario tiene créditos).
+
+### Hallazgo de proveedor
+El código tenía Anthropic (claude-haiku-4-5) como primario y OpenAI como fallback, pero
+en producción **solo está `OPENAI_API_KEY`**: la rama Anthropic nunca se ejecutaba. Se
+agregó `IA_PROVEEDOR` (default `openai`) — antes, cargar una env var cambiaba el modelo
+en silencio.
+
+### Implementado (PR #38 back, #42 front)
+- **RAG simple**: 47 estaciones (39 con CUIT), 79 móviles y tipos viajan EN el prompt
+  (~130 ítems ≈ 2K tokens); el modelo elige de lista cerrada. Sin embeddings ni base
+  vectorial: ese problema (millones de docs que no entran) acá no existe.
+- **Doble lectura**: dos llamadas en paralelo; un campo se acepta solo si ambas
+  coinciden, si no va null + `camposInseguros`. Una sola lectura válida = modo degradado.
+- **Orden de confianza**: CUIT exacto > id elegido por el modelo (validado contra
+  catálogo, nunca inventa) > matcheo por texto (ahora también por alias).
+- **Verificaciones**: aritmética (litros×precio=monto, tolerancia $1) y anti-duplicado
+  (mismo comprobante + estación no anulada).
+- **Alias de estaciones** (`sth_estacion_servicio_alias`, DDL a ambas bases): aprobado
+  automático cuando el CUIT confirma; el resto queda para la cola de aprobación.
+- **UI**: badge "⚠ revisá con la foto" por campo + banners de duplicado y de datos no
+  concluyentes.
+
+Verificación: backend 171/171, frontend 13/13, tsc.
+
+**Pendiente conocido**: la cola de alias *sugeridos* (caso sin CUIT) necesita que el
+front mande el texto leído al guardar + pantalla de Admin para aprobar. El caso con
+CUIT —la mayoría, por los tickets fiscales— ya aprende solo. **La prueba de campo con
+fotos reales quedó pendiente por decisión del usuario: se deployó sin ella.**
+
+---
+
 ## 61. Ausencias justificada/injustificada + hardening de la revisión (2026-08-19)
 
 Trabajo de **Rodrigo Carrazana** (rama `feature/ausencias-justificada-injustificada`,
