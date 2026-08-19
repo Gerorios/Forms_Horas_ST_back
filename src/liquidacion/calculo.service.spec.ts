@@ -230,6 +230,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
           fechaInicio: new Date(2026, 7, 2),
           fechaFin: new Date(2026, 7, 2),
           estadoHys: 'pendiente',
+          estado: 'activa',
           tipoNovedad: { nombre: 'Ausencia' },
         },
       ]);
@@ -246,6 +247,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
           fechaInicio: new Date(2026, 7, 2),
           fechaFin: new Date(2026, 7, 2),
           estadoHys: 'aprobada',
+          estado: 'activa',
           tipoNovedad: { nombre: 'Ausencia' },
         },
       ]);
@@ -262,6 +264,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
           fechaInicio: new Date(2026, 7, 2),
           fechaFin: new Date(2026, 7, 2),
           estadoHys: 'desaprobada',
+          estado: 'activa',
           tipoNovedad: { nombre: 'Ausencia' },
         },
       ]);
@@ -278,12 +281,26 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
           fechaInicio: new Date(2026, 7, 2),
           fechaFin: new Date(2026, 7, 2),
           estadoHys: 'no_aplica',
+          estado: 'activa',
           tipoNovedad: { nombre: 'Suspensión' },
         },
       ]);
       const [fila] = await service.calcularQuincena(2026, 8, 1);
       expect(fila.tienePresentismo).toBe(false);
       expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Ausencia ANULADA no se trae de la query (where filtra estado: activa) y no hace perder presentismo', async () => {
+      // Simula lo que Prisma devolvería en producción: la anulada nunca llega
+      // porque el where ya filtra estado: 'activa'.
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.tienePresentismo).toBe(true);
+      expect(fila.montoPresentismo).toBe(fila.totalBruto * 0.2);
+      const where = prismaMock.novedad.findMany.mock.calls[0][0].where;
+      expect(where.estado).toBe('activa');
     });
   });
 

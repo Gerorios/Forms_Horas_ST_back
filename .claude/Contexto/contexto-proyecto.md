@@ -2203,3 +2203,34 @@ siendo mías — marcarlas "otro contrato" sería mentir.
 Es solo visualización: aprobar/editar sigue scopeado como siempre.
 Verificación: backend 209/209 (7 casos de detalleDiario) + build; frontend 21/21 + tsc.
 Probado por el usuario en local antes del merge.
+
+---
+
+## 63. Editar/anular novedades: el alcance de HyS también vale sobre el tipo destino (2026-08-19)
+
+Feature de Rodrigo (rama `feature/ausencias-editar-anular`): HyS puede editar y anular
+novedades, restringido al tipo Ausencia; Admin sin restricción. Se agrega el eje de
+**vigencia** (`estado: activa|anulada`, con motivo/quién/cuándo), distinto de `estadoHys`
+— mismo modelo que las cargas de combustible. Anular va en transacción con su fila de
+Auditoría, y una novedad anulada queda congelada: no se puede editar, resolver ni reabrir.
+
+**Hallazgo de la revisión previa al merge**: `verificarAlcanceTipo()` miraba solo el tipo
+que la novedad tenía **antes** de editar, pero `tipoNovedadId` es un campo editable. Un
+HyS podía agarrar una Ausencia (que sí puede tocar) y **convertirla en otro tipo**,
+escapándose de su restricción — y si el tipo destino tiene `generaPlus`, el efecto llega
+a la liquidación. Corregido: cuando la edición cambia el tipo, el alcance se verifica
+también contra el **destino** (404 si el tipo no existe). Editar mandando el mismo tipo
+no cuenta como cambio y no va a la base.
+
+**Completitud verificada**: son 4 los lugares que leen novedades y los 4 excluyen las
+anuladas donde corresponde — `CalculoService` (liquidación), `PanelService` (drill-down),
+el resumen de ausencias, y `findAll` (filtrable por `estado`; sin filtro devuelve todo y
+el front filtra a activas por defecto, con checkbox "Ver anuladas").
+
+⚠️ **Requiere DDL previo al deploy**: `docs/sql/2026-08-19-anular-novedad.sql` (4 columnas
+nuevas en `sth_novedades`), a mano en LAS DOS bases (`Horas_Sertec` y `testing`), NUNCA con
+`prisma migrate`. Si se deploya sin correrlo, el módulo de novedades se cae.
+Orden obligado: DDL → merge → deploy.
+
+Verificación: backend 230/230 (4 casos nuevos del alcance por tipo) + build; frontend
+tsc limpio, ausencias 20/20 y novedades 22/22.

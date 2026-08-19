@@ -467,6 +467,11 @@ enum EstadoHys {
   no_aplica
 }
 
+enum EstadoNovedad {
+  activa
+  anulada
+}
+
 model Novedad {
   id                 Int       @id @default(autoincrement())
   operarioCuil       String    @map("operario_cuil") @db.Char(13)
@@ -482,6 +487,10 @@ model Novedad {
   // Descargo/comentario que deja HyS al resolver (aprobar/desaprobar) una
   // novedad de Ausencia/Accidente — se limpia si se reabre o se corrige.
   descargoHys        String?   @map("descargo_hys") @db.Text
+  estado             EstadoNovedad @default(activa)
+  motivoAnulacion    String?   @map("motivo_anulacion") @db.Text
+  anuladaPorCuil     String?   @map("anulada_por_cuil") @db.Char(13)
+  anuladaEn          DateTime? @map("anulada_en")
 
   operario       snuempleados @relation("NovedadOperario", fields: [operarioCuil], references: [cuil])
   tipoNovedad    TipoNovedad  @relation(fields: [tipoNovedadId], references: [id])
