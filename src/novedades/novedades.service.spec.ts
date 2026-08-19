@@ -88,6 +88,7 @@ describe('NovedadesService#findAll', () => {
 describe('NovedadesService#update', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
+    tipoNovedad: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
@@ -258,6 +259,52 @@ describe('NovedadesService#update', () => {
         rol: 'Admin',
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  /** El alcance también se juzga sobre el tipo DESTINO: si no, HyS convertía
+   * una Ausencia (que sí puede tocar) en otro tipo y se escapaba de su
+   * restricción — con impacto en liquidación si el destino tiene generaPlus. */
+  it('HyS recibe 403 si intenta convertir una Ausencia en otro tipo', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA); // es Ausencia
+    prismaMock.tipoNovedad.findUnique.mockResolvedValue({ id: 6, nombre: 'Accidente' });
+
+    await expect(
+      service.update(1, { tipoNovedadId: 6 }, undefined, { cuil: '20666666666', rol: 'HyS' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prismaMock.novedad.update).not.toHaveBeenCalled();
+  });
+
+  it('HyS puede editar una Ausencia mandando su MISMO tipo (no es un cambio)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
+    prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
+
+    await expect(
+      service.update(1, { tipoNovedadId: 5, justificacionTexto: 'nuevo' }, undefined, {
+        cuil: '20666666666',
+        rol: 'HyS',
+      }),
+    ).resolves.toBeDefined();
+    // Mismo tipo: no hace falta ir a buscar el destino a la base.
+    expect(prismaMock.tipoNovedad.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('Admin sí puede convertir una Ausencia en otro tipo (sin restricción)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
+    prismaMock.tipoNovedad.findUnique.mockResolvedValue({ id: 6, nombre: 'Accidente' });
+    prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_RESUELTA, tipoNovedadId: 6 });
+
+    await expect(
+      service.update(1, { tipoNovedadId: 6 }, undefined, { cuil: '20000000000', rol: 'Admin' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('404 si el tipo destino no existe', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
+    prismaMock.tipoNovedad.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.update(1, { tipoNovedadId: 999 }, undefined, { cuil: '20000000000', rol: 'Admin' }),
+    ).rejects.toThrow(NotFoundException);
   });
 });
 

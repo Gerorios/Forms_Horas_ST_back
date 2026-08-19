@@ -142,6 +142,8 @@ export class NovedadesService {
   /**
    * HyS solo puede editar/anular novedades de tipo Ausencia; Admin no tiene
    * restricción de tipo (ver feature editar/anular ausencias 2026-08-19).
+   * En `update` se llama DOS veces: sobre el tipo actual y sobre el destino
+   * cuando la edición cambia el tipo.
    */
   private verificarAlcanceTipo(tipoNombre: string, usuario: { rol: string }) {
     if (usuario.rol === 'HyS' && tipoNombre !== 'Ausencia') {
@@ -165,6 +167,15 @@ export class NovedadesService {
     const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     this.verificarAlcanceTipo(novedad.tipoNovedad.nombre, usuario);
+    // El alcance vale también sobre el tipo DESTINO: mirando solo el de origen,
+    // HyS podía agarrar una Ausencia (que sí puede tocar) y convertirla en otro
+    // tipo, escapándose de su restricción — y si el destino tiene generaPlus,
+    // eso además pega en la liquidación.
+    if (dto.tipoNovedadId && dto.tipoNovedadId !== novedad.tipoNovedadId) {
+      const destino = await this.prisma.tipoNovedad.findUnique({ where: { id: dto.tipoNovedadId } });
+      if (!destino) throw new NotFoundException('Tipo de novedad no encontrado');
+      this.verificarAlcanceTipo(destino.nombre, usuario);
+    }
     // Anulada = registro congelado, no se puede seguir editando (mismo
     // criterio que CargasCombustibleService#puedeModificar).
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
