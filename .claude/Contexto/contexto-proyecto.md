@@ -2176,23 +2176,30 @@ realidad la persona hizo más horas dedicadas a otro contrato y los jefes no lo
 estarían viendo".
 
 **Decisiones del grilling**:
-1. **Criterio de inclusión: por día** — el mismo que ya usaba la tabla de +13hs
-   (`controlDiario`): mis contratos deciden qué DÍAS (operario+fecha) entran; una vez
-   dentro, se muestran TODAS las filas de esa persona ese día. Un día sin ninguna fila
-   mía no entra.
+1. **Criterio de inclusión: por PERSONA** (corregido el mismo día, ver abajo) — mis
+   contratos deciden qué OPERARIOS entran: los que tienen al menos una fila mía en la
+   quincena. De cada uno se muestra TODA su quincena, incluidos los días que cargó
+   entero en un contrato ajeno.
 2. **Formato desplegable** (ajuste tras verlo en local): en vez de filas sueltas, un
    renglón por operario-día con el **total de la jornada** que se abre y muestra cada
    contrato con sus horas, estado, tareas y la **observación completa** (antes iba
    truncada en una columna angosta). Mismo componente visual que la tabla de +13hs.
    Los registros ajenos van atenuados con chip "otro contrato"; el renglón cerrado
    avisa "incluye otros contratos". Las desaprobadas figuran con "(no suma al total)".
-3. **El filtro de contrato decide qué días entran**, pero igual se muestra la jornada
-   completa (consistente con la tabla de +13hs).
+3. **El filtro de contrato decide qué operarios entran**, pero igual se muestra la
+   quincena completa de cada uno.
+
+**Corrección del criterio (mismo día, tras verlo en local)**: el primer criterio fue
+**por día** (el día entraba si tenía al menos una fila mía). Los jefes pidieron ver
+**todos los registros de sus personas, hayan cargado o no en su contrato** — los
+"registros sueltos". Con el criterio por día, un día que la persona cargó entero en
+otro contrato simplemente no aparecía, y es justo el caso que necesitan detectar para
+saber dónde estuvo. Se cambió la unidad de inclusión de operario+fecha a operario.
 
 **Sutileza que atrapó un test**: `esMiContrato` se juzga contra TODOS mis contratos, no
 contra los filtrados. Si soy jefe de K5/K8 y filtro por K5, las filas de K8 siguen
 siendo mías — marcarlas "otro contrato" sería mentir.
 
 Es solo visualización: aprobar/editar sigue scopeado como siempre.
-Verificación: backend 208/208 (6 casos nuevos de detalleDiario), frontend 21/21 + tsc.
+Verificación: backend 209/209 (7 casos de detalleDiario) + build; frontend 21/21 + tsc.
 Probado por el usuario en local antes del merge.

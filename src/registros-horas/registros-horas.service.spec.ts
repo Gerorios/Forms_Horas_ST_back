@@ -327,10 +327,11 @@ describe('RegistrosHorasService', () => {
       expect(where.operarioCuil).toEqual({ in: ['20-2-2'] });
     });
 
-    /** Jornada completa (decisión 2026-08-19): el día entra por mis contratos,
-     * pero se muestra TODO lo que el operario hizo ese día — si no, un jefe ve
-     * "8 hs" cuando la persona en realidad trabajó 12 repartidas con otro
-     * contrato. Mismo criterio que la tabla de +13hs. */
+    /** Jornada completa (decisión 2026-08-19): mis contratos deciden qué
+     * OPERARIOS entran, y de cada uno se muestra toda su quincena — incluidos
+     * los días que cargó entero en otro contrato ("registros sueltos"). Si no,
+     * un jefe ve "8 hs" cuando la persona trabajó 12 repartidas con otro
+     * contrato, y no ve nada de los días que no lo tocaron a él. */
     const filaDe = (id: number, contratoId: number, codigo: string, fecha: Date, cuil = '20-2-2') => ({
       id, fecha, contratoId, operarioCuil: cuil, horas: 4, estado: 'aprobado',
       contrato: { codigo }, operario: { apellido_nombre: 'Perez Juan' }, tareas: [],
@@ -354,33 +355,39 @@ describe('RegistrosHorasService', () => {
       expect(r[0].registros.find((x) => x.id === 11)?.esMiContrato).toBe(false);
     });
 
-    it('un día SIN ninguna fila de mis contratos no entra', async () => {
+    /** El pedido de los jefes (2026-08-19): los "registros sueltos". Un día que
+     * el operario cargó entero en un contrato ajeno igual tiene que verse, si
+     * no el jefe no se entera de que la persona estuvo trabajando en otro lado
+     * (y por qué llega al tope de horas o no aparece donde él la esperaba). */
+    it('un día suelto en contrato ajeno igual entra si el operario es mío', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.registroHoras.findMany.mockResolvedValue([
         filaDe(10, 1, 'K5', new Date(2026, 7, 3)),
         filaDe(20, 9, 'K9', new Date(2026, 7, 4)), // otro día, solo contrato ajeno
       ]);
       const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
-      expect(idsDe(r)).toEqual([10]);
+      expect(idsDe(r)).toEqual([10, 20]);
+      const suelto = r.find((d) => d.fecha === '2026-08-04');
+      expect(suelto?.registros[0].esMiContrato).toBe(false);
     });
 
-    it('el filtro de contrato decide qué días entran, pero igual muestra la jornada completa', async () => {
+    it('el filtro de contrato decide qué operarios entran, pero igual muestra la quincena completa', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]); // jefe de K5 y K8
       prismaMock.registroHoras.findMany.mockResolvedValue([
         filaDe(10, 1, 'K5', new Date(2026, 7, 3)),
         filaDe(11, 2, 'K8', new Date(2026, 7, 3)),
         filaDe(12, 9, 'K9', new Date(2026, 7, 3)),
-        filaDe(20, 2, 'K8', new Date(2026, 7, 5)), // día sin K5 → no entra si filtro K5
+        filaDe(20, 2, 'K8', new Date(2026, 7, 5)), // día sin K5: entra igual, el operario es mío
       ]);
       const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
         contratoIds: [1],
       });
-      expect(idsDe(r)).toEqual([10, 11, 12]);
-      const k8 = r[0].registros.find((x) => x.id === 11);
+      expect(idsDe(r)).toEqual([10, 11, 12, 20]);
+      const k8 = r.flatMap((d) => d.registros).find((x) => x.id === 11);
       expect(k8?.esMiContrato).toBe(true); // K8 sigue siendo mío aunque filtré K5
     });
 
-    it('el día de OTRO operario no arrastra filas ajenas', async () => {
+    it('un operario que NUNCA aparece en mis contratos no entra', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.registroHoras.findMany.mockResolvedValue([
         filaDe(10, 1, 'K5', new Date(2026, 7, 3), '20-2-2'),
