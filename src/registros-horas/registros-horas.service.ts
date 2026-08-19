@@ -968,13 +968,16 @@ export class RegistrosHorasService {
   /** Detalle plano de la quincena (la tabla "Detalle Diario" del Looker):
    * una fila por registro, con contrato y nombre resueltos.
    *
-   * JORNADA COMPLETA (decisión 2026-08-19, mismo criterio que controlDiario):
-   * mis contratos deciden qué DÍAS entran (operario+fecha con al menos una
-   * fila mía), pero una vez que el día entró se muestra TODO lo que esa
-   * persona hizo ese día, incluidos los contratos de otros jefes, marcados
-   * con `esMiContrato: false`. Sin esto el jefe veía "8 hs" cuando el
-   * operario en realidad trabajó 12 repartidas con otro contrato, y no había
-   * forma de notarlo. Es solo visualización: aprobar sigue scopeado. */
+   * QUINCENA COMPLETA POR PERSONA (decisión 2026-08-19, corregida el mismo
+   * día): mis contratos deciden qué OPERARIOS entran (los que tienen al menos
+   * una fila mía en la quincena), y de cada uno se muestra TODA su quincena —
+   * incluidos los días que cargó entero en un contrato ajeno, los "registros
+   * sueltos". Las filas de otros jefes van marcadas con `esMiContrato: false`.
+   *
+   * Primero el criterio fue por DÍA (el día entraba si tenía una fila mía),
+   * pero así los jefes no veían los días en que la persona estuvo con otro
+   * contrato — que es justo lo que necesitan para entender dónde estuvo.
+   * Es solo visualización: aprobar sigue scopeado. */
   async detalleDiario(
     usuario: { cuil: string; rol: string },
     anio: number,
@@ -995,8 +998,8 @@ export class RegistrosHorasService {
 
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
     // Se traen TODAS las filas de la quincena (el filtro de contrato/provincia
-    // no recorta acá: decide más abajo qué días entran). El de operario sí va
-    // en el query, porque acota de qué personas hablamos.
+    // no recorta acá: decide más abajo qué operarios entran). El de operario sí
+    // va en el query, porque acota de qué personas hablamos.
     const filas = await this.prisma.registroHoras.findMany({
       where: {
         ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
@@ -1017,15 +1020,16 @@ export class RegistrosHorasService {
     // (solo las filtré de la vista): marcarlas "otro contrato" sería mentir.
     const mios = new Set(misContratoIds);
     const delFiltro = new Set(contratoIdsEfectivos);
-    // Un día (operario+fecha) entra si tiene al menos una fila en mis
-    // contratos filtrados — y en la provincia filtrada, si hay filtro.
-    const diasQueEntran = new Set<string>();
+    // Un OPERARIO entra si tiene al menos una fila en mis contratos filtrados
+    // — y en la provincia filtrada, si hay filtro. Una vez adentro se muestra
+    // toda su quincena, incluidos los días 100% de contratos ajenos.
+    const operariosQueEntran = new Set<string>();
     for (const f of filas) {
       if (
         delFiltro.has(f.contratoId) &&
         (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId))
       ) {
-        diasQueEntran.add(`${f.operarioCuil}|${f.fecha.toISOString()}`);
+        operariosQueEntran.add(f.operarioCuil);
       }
     }
 
@@ -1052,8 +1056,8 @@ export class RegistrosHorasService {
     };
     const dias = new Map<string, DiaDetalle>();
     for (const f of filas) {
+      if (!operariosQueEntran.has(f.operarioCuil)) continue;
       const clave = `${f.operarioCuil}|${f.fecha.toISOString()}`;
-      if (!diasQueEntran.has(clave)) continue;
       let d = dias.get(clave);
       if (!d) {
         d = {
