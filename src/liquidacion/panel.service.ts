@@ -219,7 +219,10 @@ export class PanelService {
     for (const n of novedades) {
       const fila = calculo.find((c) => c.cuil === n.operarioCuil);
       let efecto: string;
-      if (n.tipoNovedad.nombre === 'Ausencia' && n.estadoHys === 'desaprobada') {
+      if (n.tipoNovedad.nombre === 'Ausencia') {
+        // Cambio de regla 2026-08-18: cualquier Ausencia (pendiente,
+        // justificada o injustificada) hace perder el presentismo, no solo
+        // la desaprobada — ver CalculoService#calcularQuincena.
         efecto = 'pierde presentismo';
       } else if (n.tipoNovedad.nombre === 'Suspensión') {
         efecto = 'pierde presentismo (suspensión)';

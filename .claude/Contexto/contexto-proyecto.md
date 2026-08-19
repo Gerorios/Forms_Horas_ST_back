@@ -2120,3 +2120,47 @@ Verificación: backend 171/171, frontend 13/13, tsc.
 front mande el texto leído al guardar + pantalla de Admin para aprobar. El caso con
 CUIT —la mayoría, por los tickets fiscales— ya aprende solo. **La prueba de campo con
 fotos reales quedó pendiente por decisión del usuario: se deployó sin ella.**
+
+---
+
+## 61. Ausencias justificada/injustificada + hardening de la revisión (2026-08-19)
+
+Trabajo de **Rodrigo Carrazana** (rama `feature/ausencias-justificada-injustificada`,
+18/8) revisado antes de mergear, con tres arreglos encima pedidos por el dueño de
+producto.
+
+### Lo que trae la feature
+- HyS pasa de "aprobar/desaprobar" a **justificar/no justificar** con pestañas, puede
+  dejar un **descargo** escrito (columna nueva `descargo_hys`) y **reabrir** una
+  novedad ya resuelta.
+- El certificado se sube como **archivo real** (multipart + storage detrás de interfaz)
+  en vez de una URL que mandaba el cliente; se sirve por `GET /novedades/:id/adjunto`.
+- Admin puede **editar** novedades (si estaba resuelta vuelve a pendiente, auditado).
+- Pantalla nueva de **resumen de ausencias** por operario con export CSV (con legajo).
+
+### Cambio de regla de negocio (CONFIRMADO por el dueño de producto)
+Antes solo la Ausencia **desaprobada** hacía perder el 20% de presentismo. Ahora
+**cualquier Ausencia** lo hace perder — justificada, injustificada o aún pendiente.
+Se midió el impacto antes de decidir: 8 ausencias pendientes de 6 operarios en la
+quincena en curso al 19/8. El usuario confirmó: *"si la persona faltó pierde el
+presentismo, no importa el certificado"*. `calculo.service.ts` y `panel.service.ts`
+quedan alineados.
+
+### Hardening agregado en la revisión (rama `fix/ausencias-hardening`)
+- **Seguridad**: `GET /novedades/:id/adjunto` no verificaba propiedad — un
+  JefeCuadrilla podía leer el certificado médico de cualquier novedad probando ids
+  (secuenciales). Ahora aplica el mismo alcance que el listado.
+- **`MulterExceptionFilter` global**: un archivo grande devolvía 500 pelado; ahora 413
+  con mensaje accionable. Alcanza también a las fotos de tickets.
+- **Front**: validación de tipo y tamaño ANTES de subir, con mensaje que dice cuánto
+  pesa el archivo; y el export CSV avisa si falló la consulta o no hay datos, en vez
+  de bajar un archivo vacío en silencio.
+- **`NOVEDADES_ADJUNTOS_DIR`** documentada en `.env.example` (faltaba).
+
+Verificación: backend 185/185, frontend 20/20 en los módulos tocados, builds limpios.
+DDL `docs/sql/2026-08-18-descargo-hys.sql`: aplicado a `testing`; a `Horas_Sertec` en
+el deploy.
+
+**Pendientes menores no bloqueantes**: `update`/`reabrir` no usan transacción para el
+par cambio+auditoría; `reabrir` no valida el estado previo (una `no_aplica` puede
+volver a `pendiente`).

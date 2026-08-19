@@ -305,5 +305,27 @@ describe('PanelService', () => {
         efecto: 'pierde presentismo',
       });
     });
+
+    it('novedad de Ausencia pendiente TAMBIÉN produce efecto "pierde presentismo" (regla 2026-08-18: ya no depende de la resolución de HyS)', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 1),
+          fechaFin: new Date(2026, 7, 3),
+          estadoHys: 'pendiente',
+          tipoNovedad: { id: 5, nombre: 'Ausencia', generaPlus: false },
+        },
+      ]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].novedades[0]).toMatchObject({ tipo: 'Ausencia', efecto: 'pierde presentismo' });
+    });
   });
 });
