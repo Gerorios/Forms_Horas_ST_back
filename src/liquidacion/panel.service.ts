@@ -208,6 +208,9 @@ export class PanelService {
     const novedades = await this.prisma.novedad.findMany({
       where: {
         operarioCuil: { in: cuils },
+        // Una novedad anulada no debe aparecer en el drill-down de detalle ni
+        // contarse en su efecto — feature editar/anular ausencias 2026-08-19.
+        estado: 'activa',
         fechaInicio: { lte: hasta },
         // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
         // quincena solo si su unico dia (fechaInicio) cae dentro del rango.

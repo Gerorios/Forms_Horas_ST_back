@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNovedadDto } from './dto/create-novedad.dto';
 import { UpdateNovedadDto } from './dto/update-novedad.dto';
@@ -103,6 +103,7 @@ export class NovedadesService {
     filtros: {
       operarioCuil?: string;
       estadoHys?: string;
+      estado?: string;
       periodo?: { anio: number; mes: number; quincena: number };
     },
     usuario: { cuil: string; rol: string },
@@ -118,6 +119,10 @@ export class NovedadesService {
       where: {
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
         ...(filtros.estadoHys ? { estadoHys: filtros.estadoHys as any } : {}),
+        // Sin filtro: devuelve activas y anuladas por igual (mismo criterio que
+        // CargasCombustibleService#listar) — el frontend filtra a "activa" por
+        // defecto en su propio MultiFiltro, no se hardcodea acá.
+        ...(filtros.estado ? { estado: filtros.estado as any } : {}),
         // JefeCuadrilla puede cargar (ver ADR-007) pero solo ve lo que él mismo
         // cargó, no el listado completo — mismo criterio que "Cargas que hice"
         // para horas (ADR-001). El resto de los roles con acceso ven todo.
@@ -135,10 +140,21 @@ export class NovedadesService {
   }
 
   /**
-   * Edición completa de una novedad (Admin). Igual regla que "corregir" en
-   * registros-horas: si ya estaba resuelta por HyS (aprobada/desaprobada), la
-   * edición la vuelve a `pendiente` y limpia la resolución previa. Deja
-   * auditoría con el snapshot antes/después.
+   * HyS solo puede editar/anular novedades de tipo Ausencia; Admin no tiene
+   * restricción de tipo (ver feature editar/anular ausencias 2026-08-19).
+   */
+  private verificarAlcanceTipo(tipoNombre: string, usuario: { rol: string }) {
+    if (usuario.rol === 'HyS' && tipoNombre !== 'Ausencia') {
+      throw new ForbiddenException('HyS solo puede editar/anular novedades de tipo Ausencia');
+    }
+  }
+
+  /**
+   * Edición completa de una novedad (HyS restringido a Ausencia, Admin sin
+   * restricción). Igual regla que "corregir" en registros-horas: si ya estaba
+   * resuelta por HyS (aprobada/desaprobada), la edición la vuelve a
+   * `pendiente` y limpia la resolución previa. Deja auditoría con el snapshot
+   * antes/después.
    */
   async update(
     id: number,
@@ -146,8 +162,12 @@ export class NovedadesService {
     adjunto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' | 'application/pdf' } | undefined,
     usuario: { cuil: string; rol: string },
   ) {
-    const novedad = await this.prisma.novedad.findUnique({ where: { id } });
+    const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    this.verificarAlcanceTipo(novedad.tipoNovedad.nombre, usuario);
+    // Anulada = registro congelado, no se puede seguir editando (mismo
+    // criterio que CargasCombustibleService#puedeModificar).
+    if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
     let adjuntoUrl = novedad.adjuntoUrl;
     if (adjunto) {
@@ -159,40 +179,80 @@ export class NovedadesService {
 
     const yaResuelta = novedad.estadoHys === 'aprobada' || novedad.estadoHys === 'desaprobada';
 
-    const updated = await this.prisma.novedad.update({
-      where: { id },
-      data: {
-        operarioCuil: dto.operarioCuil ?? undefined,
-        tipoNovedadId: dto.tipoNovedadId ?? undefined,
-        fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
-        fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
-        justificacionTexto: dto.justificacionTexto ?? undefined,
-        adjuntoUrl,
-        ...(yaResuelta
-          ? { estadoHys: 'pendiente' as any, aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null }
-          : {}),
-      },
-      include: INCLUDE_BASICO,
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.novedad.update({
+        where: { id },
+        data: {
+          operarioCuil: dto.operarioCuil ?? undefined,
+          tipoNovedadId: dto.tipoNovedadId ?? undefined,
+          fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
+          fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
+          justificacionTexto: dto.justificacionTexto ?? undefined,
+          adjuntoUrl,
+          ...(yaResuelta
+            ? { estadoHys: 'pendiente' as any, aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null }
+            : {}),
+        },
+        include: INCLUDE_BASICO,
+      });
 
-    await this.prisma.auditoria.create({
-      data: {
-        tabla: 'sth_novedades',
-        registroId: id,
-        usuarioCuil: usuario.cuil,
-        accion: 'editar',
-        campo: 'novedad',
-        valorAnterior: JSON.stringify(snapshot(novedad)),
-        valorNuevo: JSON.stringify(snapshot(updated)),
-      },
-    });
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades',
+          registroId: id,
+          usuarioCuil: usuario.cuil,
+          accion: 'editar',
+          campo: 'novedad',
+          valorAnterior: JSON.stringify(snapshot(novedad)),
+          valorNuevo: JSON.stringify(snapshot(updated)),
+        },
+      });
 
-    return updated;
+      return updated;
+    });
+  }
+
+  /**
+   * Anula una novedad (HyS restringido a Ausencia, Admin sin restricción).
+   * Mismo patrón que CargasCombustibleService#anular: transacción con el
+   * update de estado y la fila de Auditoria.
+   */
+  async anular(id: number, motivo: string, usuario: { cuil: string; rol: string }) {
+    const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
+    if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    this.verificarAlcanceTipo(novedad.tipoNovedad.nombre, usuario);
+    if (novedad.estado === 'anulada') throw new BadRequestException('Ya está anulada');
+
+    return this.prisma.$transaction(async (tx) => {
+      const anulada = await tx.novedad.update({
+        where: { id },
+        data: {
+          estado: 'anulada',
+          motivoAnulacion: motivo,
+          anuladaPorCuil: usuario.cuil,
+          anuladaEn: new Date(),
+        },
+        include: INCLUDE_BASICO,
+      });
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades',
+          registroId: id,
+          usuarioCuil: usuario.cuil,
+          accion: 'anular',
+          campo: 'estado',
+          valorAnterior: 'activa',
+          valorNuevo: 'anulada',
+        },
+      });
+      return anulada;
+    });
   }
 
   async resolverHys(id: number, dto: ResolverNovedadDto, aprobadoPorCuil: string) {
     const novedad = await this.prisma.novedad.findUnique({ where: { id } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
     return this.prisma.novedad.update({
       where: { id },
@@ -211,26 +271,29 @@ export class NovedadesService {
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
     const novedad = await this.prisma.novedad.findUnique({ where: { id } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    const updated = await this.prisma.novedad.update({
-      where: { id },
-      data: { estadoHys: 'pendiente', aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null },
-      include: INCLUDE_BASICO,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.novedad.update({
+        where: { id },
+        data: { estadoHys: 'pendiente', aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null },
+        include: INCLUDE_BASICO,
+      });
+
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades',
+          registroId: id,
+          usuarioCuil: usuario.cuil,
+          accion: 'reabrir',
+          campo: 'estadoHys',
+          valorAnterior: novedad.estadoHys,
+          valorNuevo: 'pendiente',
+        },
+      });
+
+      return updated;
     });
-
-    await this.prisma.auditoria.create({
-      data: {
-        tabla: 'sth_novedades',
-        registroId: id,
-        usuarioCuil: usuario.cuil,
-        accion: 'reabrir',
-        campo: 'estadoHys',
-        valorAnterior: novedad.estadoHys,
-        valorNuevo: 'pendiente',
-      },
-    });
-
-    return updated;
   }
 
   async obtenerAdjunto(
@@ -266,6 +329,9 @@ export class NovedadesService {
     const novedades = await this.prisma.novedad.findMany({
       where: {
         tipoNovedad: { nombre: 'Ausencia' },
+        // Agregación interna (no filtrable como findAll): una Ausencia
+        // anulada nunca debe contarse en el resumen.
+        estado: 'activa',
         fechaInicio: { lte: hasta },
         OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
       },

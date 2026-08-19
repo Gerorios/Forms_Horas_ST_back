@@ -117,6 +117,9 @@ export class CalculoService {
     const novedades = await this.prisma.novedad.findMany({
       where: {
         operarioCuil: { in: cuils },
+        // Una novedad anulada nunca debe afectar la liquidación (ni quitar
+        // presentismo ni sumar plus) — feature editar/anular ausencias 2026-08-19.
+        estado: 'activa',
         fechaInicio: { lte: hasta },
         // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
         // quincena solo si su unico dia (fechaInicio) cae dentro del rango.

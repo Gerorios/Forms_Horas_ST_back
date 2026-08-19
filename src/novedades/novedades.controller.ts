@@ -20,6 +20,7 @@ import { NovedadesService } from './novedades.service';
 import { CreateNovedadDto } from './dto/create-novedad.dto';
 import { UpdateNovedadDto } from './dto/update-novedad.dto';
 import { ResolverNovedadDto } from './dto/resolver-novedad.dto';
+import { AnularNovedadDto } from './dto/anular-novedad.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -59,6 +60,7 @@ export class NovedadesController {
   findAll(
     @Query('operarioCuil') operarioCuil: string | undefined,
     @Query('estadoHys') estadoHys: string | undefined,
+    @Query('estado') estado: string | undefined,
     @Query('anio') anio: string | undefined,
     @Query('mes') mes: string | undefined,
     @Query('quincena') quincena: string | undefined,
@@ -69,7 +71,7 @@ export class NovedadesController {
         ? { anio: Number(anio), mes: Number(mes), quincena: Number(quincena) }
         : undefined;
     return this.service.findAll(
-      { operarioCuil, estadoHys, periodo },
+      { operarioCuil, estadoHys, estado, periodo },
       { cuil: req.user.cuil, rol: req.user.rol },
     );
   }
@@ -97,7 +99,7 @@ export class NovedadesController {
   }
 
   @Patch(':id')
-  @Roles('Admin')
+  @Roles('HyS', 'Admin')
   @UseInterceptors(FileInterceptor('adjunto', { limits: { fileSize: MAX_ADJUNTO_BYTES } }))
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -112,6 +114,12 @@ export class NovedadesController {
       adjunto && { buffer: adjunto.buffer, mimetype: adjunto.mimetype as 'image/jpeg' | 'image/png' | 'application/pdf' },
       { cuil: req.user.cuil, rol: req.user.rol },
     );
+  }
+
+  @Patch(':id/anular')
+  @Roles('HyS', 'Admin')
+  anular(@Param('id', ParseIntPipe) id: number, @Body() dto: AnularNovedadDto, @Request() req) {
+    return this.service.anular(id, dto.motivo, { cuil: req.user.cuil, rol: req.user.rol });
   }
 
   @Patch(':id/resolver-hys')

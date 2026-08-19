@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { NovedadesService } from './novedades.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from '../liquidacion/calculo.service';
@@ -89,6 +89,7 @@ describe('NovedadesService#update', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
     auditoria: { create: jest.fn() },
+    $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   const adjuntoStorageMock = {
     guardar: jest.fn(),
@@ -109,6 +110,8 @@ describe('NovedadesService#update', () => {
     aprobadoHysPorCuil: '20999999999',
     aprobadoHysEn: new Date(2026, 7, 5),
     descargoHys: 'no corresponde',
+    estado: 'activa',
+    tipoNovedad: { id: 5, nombre: 'Ausencia' },
   };
 
   beforeEach(async () => {
@@ -204,12 +207,217 @@ describe('NovedadesService#update', () => {
     const data = prismaMock.novedad.update.mock.calls[0][0].data;
     expect(data.adjuntoUrl).toBe('2026/08/nuevo.jpg');
   });
+
+  it('HyS puede editar una novedad de tipo Ausencia', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
+    prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
+
+    await expect(
+      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+        cuil: '20666666666',
+        rol: 'HyS',
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('HyS recibe 403 al intentar editar una novedad que no es Ausencia', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      ...NOVEDAD_RESUELTA,
+      tipoNovedad: { id: 6, nombre: 'Accidente' },
+    });
+
+    await expect(
+      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+        cuil: '20666666666',
+        rol: 'HyS',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('Admin puede editar cualquier tipo de novedad (sin restricción)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      ...NOVEDAD_RESUELTA,
+      tipoNovedad: { id: 6, nombre: 'Accidente' },
+    });
+    prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
+
+    await expect(
+      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+        cuil: '20000000000',
+        rol: 'Admin',
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('editar una novedad anulada lanza BadRequestException', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ ...NOVEDAD_RESUELTA, estado: 'anulada' });
+
+    await expect(
+      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+        cuil: '20000000000',
+        rol: 'Admin',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('NovedadesService#anular', () => {
+  const prismaMock: any = {
+    novedad: { findUnique: jest.fn(), update: jest.fn() },
+    auditoria: { create: jest.fn() },
+    $transaction: jest.fn((fn: any) => fn(prismaMock)),
+  };
+  let service: NovedadesService;
+
+  const NOVEDAD_ACTIVA = {
+    id: 1,
+    operarioCuil: '20111111111',
+    tipoNovedadId: 5,
+    estado: 'activa',
+    tipoNovedad: { id: 5, nombre: 'Ausencia' },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const mod = await Test.createTestingModule({
+      providers: [
+        NovedadesService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: CalculoService, useValue: { diasClip: jest.fn() } },
+        { provide: NOVEDAD_ADJUNTO_STORAGE, useValue: {} },
+      ],
+    }).compile();
+    service = mod.get(NovedadesService);
+  });
+
+  it('404 si la novedad no existe', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(null);
+    await expect(
+      service.anular(999, 'motivo', { cuil: '20000000000', rol: 'Admin' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('HyS puede anular una novedad de tipo Ausencia', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_ACTIVA);
+    prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_ACTIVA, estado: 'anulada' });
+
+    await expect(
+      service.anular(1, 'motivo', { cuil: '20666666666', rol: 'HyS' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('HyS recibe 403 al intentar anular una novedad que no es Ausencia', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      ...NOVEDAD_ACTIVA,
+      tipoNovedad: { id: 6, nombre: 'Accidente' },
+    });
+
+    await expect(
+      service.anular(1, 'motivo', { cuil: '20666666666', rol: 'HyS' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('Admin puede anular cualquier tipo de novedad (sin restricción)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      ...NOVEDAD_ACTIVA,
+      tipoNovedad: { id: 6, nombre: 'Accidente' },
+    });
+    prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_ACTIVA, estado: 'anulada' });
+
+    await expect(
+      service.anular(1, 'motivo', { cuil: '20000000000', rol: 'Admin' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('anular una novedad ya anulada lanza BadRequestException', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ ...NOVEDAD_ACTIVA, estado: 'anulada' });
+
+    await expect(
+      service.anular(1, 'motivo', { cuil: '20000000000', rol: 'Admin' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('la transacción escribe el update de estado y la fila de Auditoria', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_ACTIVA);
+    prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_ACTIVA, estado: 'anulada' });
+
+    await service.anular(1, 'Carga duplicada', { cuil: '20777777777', rol: 'Admin' });
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.novedad.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({
+          estado: 'anulada',
+          motivoAnulacion: 'Carga duplicada',
+          anuladaPorCuil: '20777777777',
+        }),
+      }),
+    );
+    expect(prismaMock.auditoria.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tabla: 'sth_novedades',
+          registroId: 1,
+          usuarioCuil: '20777777777',
+          accion: 'anular',
+          campo: 'estado',
+          valorAnterior: 'activa',
+          valorNuevo: 'anulada',
+        }),
+      }),
+    );
+  });
+});
+
+describe('NovedadesService#resolverHys', () => {
+  const prismaMock: any = {
+    novedad: { findUnique: jest.fn(), update: jest.fn() },
+  };
+  let service: NovedadesService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const mod = await Test.createTestingModule({
+      providers: [
+        NovedadesService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: CalculoService, useValue: { diasClip: jest.fn() } },
+        { provide: NOVEDAD_ADJUNTO_STORAGE, useValue: {} },
+      ],
+    }).compile();
+    service = mod.get(NovedadesService);
+  });
+
+  it('404 si la novedad no existe', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(null);
+    await expect(
+      service.resolverHys(999, { estadoHys: 'aprobada' }, '20000000000'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('resolver una novedad anulada lanza BadRequestException', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'anulada' });
+    await expect(
+      service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('resuelve una novedad activa sin problemas', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa' });
+    prismaMock.novedad.update.mockResolvedValue({ id: 1, estadoHys: 'aprobada' });
+
+    await expect(
+      service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000'),
+    ).resolves.toBeDefined();
+  });
 });
 
 describe('NovedadesService#reabrir', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
     auditoria: { create: jest.fn() },
+    $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   let service: NovedadesService;
 
@@ -230,6 +438,13 @@ describe('NovedadesService#reabrir', () => {
     prismaMock.novedad.findUnique.mockResolvedValue(null);
     await expect(service.reabrir(999, { cuil: '20000000000', rol: 'HyS' })).rejects.toThrow(
       NotFoundException,
+    );
+  });
+
+  it('reabrir una novedad anulada lanza BadRequestException', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 2, estadoHys: 'aprobada', estado: 'anulada' });
+    await expect(service.reabrir(2, { cuil: '20000000000', rol: 'HyS' })).rejects.toThrow(
+      BadRequestException,
     );
   });
 
@@ -294,10 +509,41 @@ describe('NovedadesService#resumenAusencias', () => {
 
     const where = prismaMock.novedad.findMany.mock.calls[0][0].where;
     expect(where.tipoNovedad).toEqual({ nombre: 'Ausencia' });
+    expect(where.estado).toBe('activa');
     expect(where.fechaInicio).toEqual({ lte: new Date(2026, 7, 15) });
     expect(where.OR).toEqual([
       { fechaFin: { gte: new Date(2026, 7, 1) } },
       { fechaFin: null, fechaInicio: { gte: new Date(2026, 7, 1) } },
+    ]);
+  });
+
+  it('operario con una Ausencia activa y otra anulada: la anulada no llega (where filtra estado: activa) y no cuenta días', async () => {
+    // El where ya excluye estado: 'anulada' (verificado en el test anterior),
+    // así que Prisma nunca devolvería la anulada — solo la activa participa
+    // del resumen para este operario.
+    prismaMock.novedad.findMany.mockResolvedValue([
+      {
+        operarioCuil: '20444444444',
+        fechaInicio: new Date(2026, 7, 2),
+        fechaFin: new Date(2026, 7, 2),
+        estadoHys: 'aprobada',
+        estado: 'activa',
+        operario: { apellido_nombre: 'MIXTO, MARIO', legajo: 404 },
+      },
+    ]);
+    calculoMock.diasClip.mockReturnValueOnce(1);
+
+    const resumen = await service.resumenAusencias(2026, 8, 1);
+
+    expect(resumen).toEqual([
+      {
+        operarioCuil: '20444444444',
+        apellidoNombre: 'MIXTO, MARIO',
+        legajo: 404,
+        diasJustificados: 1,
+        diasInjustificados: 0,
+        diasPendientes: 0,
+      },
     ]);
   });
 

@@ -290,6 +290,7 @@ describe('PanelService', () => {
           fechaInicio: new Date(2026, 7, 1),
           fechaFin: new Date(2026, 7, 3),
           estadoHys: 'desaprobada',
+          estado: 'activa',
           tipoNovedad: { id: 5, nombre: 'Ausencia', generaPlus: false },
         },
       ]);
@@ -318,6 +319,7 @@ describe('PanelService', () => {
           fechaInicio: new Date(2026, 7, 1),
           fechaFin: new Date(2026, 7, 3),
           estadoHys: 'pendiente',
+          estado: 'activa',
           tipoNovedad: { id: 5, nombre: 'Ausencia', generaPlus: false },
         },
       ]);
@@ -326,6 +328,23 @@ describe('PanelService', () => {
       const r = await service.getDetalleQuincena(2026, 8, 1);
 
       expect(r.filas[0].novedades[0]).toMatchObject({ tipo: 'Ausencia', efecto: 'pierde presentismo' });
+    });
+
+    it('novedad de Ausencia ANULADA no llega en la query (where filtra estado: activa) y no produce "pierde presentismo"', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      // Simula lo que Prisma devolvería en producción: la anulada nunca llega
+      // porque el where ya filtra estado: 'activa'.
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].novedades).toHaveLength(0);
+      const where = prismaMock.novedad.findMany.mock.calls[0][0].where;
+      expect(where.estado).toBe('activa');
     });
   });
 });
