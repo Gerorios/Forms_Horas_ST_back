@@ -966,7 +966,15 @@ export class RegistrosHorasService {
   }
 
   /** Detalle plano de la quincena (la tabla "Detalle Diario" del Looker):
-   * una fila por registro, con contrato y nombre resueltos. */
+   * una fila por registro, con contrato y nombre resueltos.
+   *
+   * JORNADA COMPLETA (decisión 2026-08-19, mismo criterio que controlDiario):
+   * mis contratos deciden qué DÍAS entran (operario+fecha con al menos una
+   * fila mía), pero una vez que el día entró se muestra TODO lo que esa
+   * persona hizo ese día, incluidos los contratos de otros jefes, marcados
+   * con `esMiContrato: false`. Sin esto el jefe veía "8 hs" cuando el
+   * operario en realidad trabajó 12 repartidas con otro contrato, y no había
+   * forma de notarlo. Es solo visualización: aprobar sigue scopeado. */
   async detalleDiario(
     usuario: { cuil: string; rol: string },
     anio: number,
@@ -986,35 +994,95 @@ export class RegistrosHorasService {
     if (contratoIdsEfectivos.length === 0) return [];
 
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    // Se traen TODAS las filas de la quincena (el filtro de contrato/provincia
+    // no recorta acá: decide más abajo qué días entran). El de operario sí va
+    // en el query, porque acota de qué personas hablamos.
     const filas = await this.prisma.registroHoras.findMany({
       where: {
-        contratoId: { in: contratoIdsEfectivos },
-        ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
         ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
         fecha: { gte: desde, lte: hasta },
       },
       select: {
         id: true, fecha: true, contratoId: true, operarioCuil: true, horas: true, estado: true,
-        observacion: true,
+        observacion: true, provinciaId: true,
         contrato: { select: { codigo: true } },
         operario: { select: { apellido_nombre: true } },
         tareas: { select: { tarea: { select: { nombre: true } } } },
       },
       orderBy: { fecha: 'desc' },
     });
-    return filas
-      .map((f) => ({
+
+    // OJO: "mío" se juzga contra TODOS mis contratos, no contra los filtrados.
+    // Si soy jefe de K5/K8 y filtro por K5, las filas de K8 siguen siendo mías
+    // (solo las filtré de la vista): marcarlas "otro contrato" sería mentir.
+    const mios = new Set(misContratoIds);
+    const delFiltro = new Set(contratoIdsEfectivos);
+    // Un día (operario+fecha) entra si tiene al menos una fila en mis
+    // contratos filtrados — y en la provincia filtrada, si hay filtro.
+    const diasQueEntran = new Set<string>();
+    for (const f of filas) {
+      if (
+        delFiltro.has(f.contratoId) &&
+        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId))
+      ) {
+        diasQueEntran.add(`${f.operarioCuil}|${f.fecha.toISOString()}`);
+      }
+    }
+
+    // Se devuelve AGRUPADO por operario-día (decisión 2026-08-19: mismo
+    // formato desplegable que la tabla de +13hs, que ya se usaba y gusta).
+    // Las desaprobadas aparecen en el detalle pero no suman al total, igual
+    // que en controlDiario.
+    type DiaDetalle = {
+      operarioCuil: string;
+      operarioNombre: string;
+      fecha: string;
+      totalHoras: number;
+      contratos: string[];
+      registros: {
+        id: number;
+        contratoId: number;
+        contratoCodigo: string;
+        horas: number;
+        estado: string;
+        tareas: string[];
+        observacion: string | null;
+        esMiContrato: boolean;
+      }[];
+    };
+    const dias = new Map<string, DiaDetalle>();
+    for (const f of filas) {
+      const clave = `${f.operarioCuil}|${f.fecha.toISOString()}`;
+      if (!diasQueEntran.has(clave)) continue;
+      let d = dias.get(clave);
+      if (!d) {
+        d = {
+          operarioCuil: f.operarioCuil,
+          operarioNombre: f.operario.apellido_nombre,
+          fecha: f.fecha.toISOString().slice(0, 10),
+          totalHoras: 0,
+          contratos: [],
+          registros: [],
+        };
+        dias.set(clave, d);
+      }
+      if (f.estado !== 'desaprobado') d.totalHoras += Number(f.horas);
+      if (!d.contratos.includes(f.contrato.codigo)) d.contratos.push(f.contrato.codigo);
+      d.registros.push({
         id: f.id,
-        fecha: f.fecha.toISOString().slice(0, 10),
         contratoId: f.contratoId,
         contratoCodigo: f.contrato.codigo,
-        operarioCuil: f.operarioCuil,
-        operarioNombre: f.operario.apellido_nombre,
         horas: Number(f.horas),
         estado: f.estado,
         tareas: f.tareas.map((t) => t.tarea.nombre),
         observacion: f.observacion ?? null,
-      }))
+        /** false = registro de otro jefe: contexto de la jornada, no accionable. */
+        esMiContrato: mios.has(f.contratoId),
+      });
+    }
+
+    return [...dias.values()]
+      .map((d) => ({ ...d, totalHoras: Math.round(d.totalHoras * 100) / 100 }))
       .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
   }
 
