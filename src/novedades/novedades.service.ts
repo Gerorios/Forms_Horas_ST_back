@@ -233,13 +233,22 @@ export class NovedadesService {
     return updated;
   }
 
-  async obtenerAdjunto(id: number): Promise<{ buffer: Buffer; mimetype: string }> {
+  async obtenerAdjunto(
+    id: number,
+    usuario: { cuil: string; rol: string },
+  ): Promise<{ buffer: Buffer; mimetype: string }> {
     const novedad = await this.prisma.novedad.findUnique({
       where: { id },
-      select: { adjuntoUrl: true },
+      select: { adjuntoUrl: true, cargadoPorCuil: true },
     });
     if (!novedad || !novedad.adjuntoUrl) {
       throw new NotFoundException('La novedad no tiene adjunto');
+    }
+    // Mismo alcance que el listado (findAll): el JefeCuadrilla solo ve lo que
+    // él cargó. Sin esto, con el id en la URL podía leer el certificado médico
+    // de cualquier novedad — los ids son secuenciales (revisión 2026-08-19).
+    if (usuario.rol === 'JefeCuadrilla' && novedad.cargadoPorCuil !== usuario.cuil) {
+      throw new ForbiddenException('No podés ver el adjunto de una novedad que no cargaste.');
     }
     return this.adjuntoStorage.leer(novedad.adjuntoUrl);
   }

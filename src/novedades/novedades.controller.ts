@@ -86,8 +86,11 @@ export class NovedadesController {
 
   @Get(':id/adjunto')
   @Roles('HyS', 'JefeContrato', 'Supervisor', 'Liquidador', 'Admin', 'JefeCuadrilla')
-  async adjunto(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
-    const { buffer, mimetype } = await this.service.obtenerAdjunto(id);
+  async adjunto(@Param('id', ParseIntPipe) id: number, @Request() req, @Res() res: Response) {
+    const { buffer, mimetype } = await this.service.obtenerAdjunto(id, {
+      cuil: req.user.cuil,
+      rol: req.user.rol,
+    });
     res.setHeader('Content-Type', mimetype);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(buffer);
