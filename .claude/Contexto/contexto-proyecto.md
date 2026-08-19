@@ -2180,8 +2180,12 @@ estarían viendo".
    (`controlDiario`): mis contratos deciden qué DÍAS (operario+fecha) entran; una vez
    dentro, se muestran TODAS las filas de esa persona ese día. Un día sin ninguna fila
    mía no entra.
-2. **Filas ajenas atenuadas** con chip "otro contrato" y **sin link a Aprobaciones**
-   (ahí no hay nada que ese jefe pueda resolver) + leyenda explicando por qué aparecen.
+2. **Formato desplegable** (ajuste tras verlo en local): en vez de filas sueltas, un
+   renglón por operario-día con el **total de la jornada** que se abre y muestra cada
+   contrato con sus horas, estado, tareas y la **observación completa** (antes iba
+   truncada en una columna angosta). Mismo componente visual que la tabla de +13hs.
+   Los registros ajenos van atenuados con chip "otro contrato"; el renglón cerrado
+   avisa "incluye otros contratos". Las desaprobadas figuran con "(no suma al total)".
 3. **El filtro de contrato decide qué días entran**, pero igual se muestra la jornada
    completa (consistente con la tabla de +13hs).
 
@@ -2190,4 +2194,5 @@ contra los filtrados. Si soy jefe de K5/K8 y filtro por K5, las filas de K8 sigu
 siendo mías — marcarlas "otro contrato" sería mentir.
 
 Es solo visualización: aprobar/editar sigue scopeado como siempre.
-Verificación: backend 208/208 (5 casos nuevos), frontend 23/23 (2 nuevos) + tsc.
+Verificación: backend 208/208 (6 casos nuevos de detalleDiario), frontend 21/21 + tsc.
+Probado por el usuario en local antes del merge.

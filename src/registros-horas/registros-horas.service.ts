@@ -1029,23 +1029,60 @@ export class RegistrosHorasService {
       }
     }
 
-    return filas
-      .filter((f) => diasQueEntran.has(`${f.operarioCuil}|${f.fecha.toISOString()}`))
-      .map((f) => ({
+    // Se devuelve AGRUPADO por operario-día (decisión 2026-08-19: mismo
+    // formato desplegable que la tabla de +13hs, que ya se usaba y gusta).
+    // Las desaprobadas aparecen en el detalle pero no suman al total, igual
+    // que en controlDiario.
+    type DiaDetalle = {
+      operarioCuil: string;
+      operarioNombre: string;
+      fecha: string;
+      totalHoras: number;
+      contratos: string[];
+      registros: {
+        id: number;
+        contratoId: number;
+        contratoCodigo: string;
+        horas: number;
+        estado: string;
+        tareas: string[];
+        observacion: string | null;
+        esMiContrato: boolean;
+      }[];
+    };
+    const dias = new Map<string, DiaDetalle>();
+    for (const f of filas) {
+      const clave = `${f.operarioCuil}|${f.fecha.toISOString()}`;
+      if (!diasQueEntran.has(clave)) continue;
+      let d = dias.get(clave);
+      if (!d) {
+        d = {
+          operarioCuil: f.operarioCuil,
+          operarioNombre: f.operario.apellido_nombre,
+          fecha: f.fecha.toISOString().slice(0, 10),
+          totalHoras: 0,
+          contratos: [],
+          registros: [],
+        };
+        dias.set(clave, d);
+      }
+      if (f.estado !== 'desaprobado') d.totalHoras += Number(f.horas);
+      if (!d.contratos.includes(f.contrato.codigo)) d.contratos.push(f.contrato.codigo);
+      d.registros.push({
         id: f.id,
-        fecha: f.fecha.toISOString().slice(0, 10),
         contratoId: f.contratoId,
         contratoCodigo: f.contrato.codigo,
-        operarioCuil: f.operarioCuil,
-        operarioNombre: f.operario.apellido_nombre,
         horas: Number(f.horas),
         estado: f.estado,
         tareas: f.tareas.map((t) => t.tarea.nombre),
         observacion: f.observacion ?? null,
-        /** false = fila de otro jefe: se muestra como contexto de la jornada,
-         * no es accionable por este usuario. */
+        /** false = registro de otro jefe: contexto de la jornada, no accionable. */
         esMiContrato: mios.has(f.contratoId),
-      }))
+      });
+    }
+
+    return [...dias.values()]
+      .map((d) => ({ ...d, totalHoras: Math.round(d.totalHoras * 100) / 100 }))
       .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.operarioNombre.localeCompare(b.operarioNombre));
   }
 
