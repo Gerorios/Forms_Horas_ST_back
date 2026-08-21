@@ -8,7 +8,7 @@ import { CalculoService } from '../liquidacion/calculo.service';
 import { NOVEDAD_ADJUNTO_STORAGE, NovedadAdjuntoStorage } from './storage/novedad-adjunto-storage.interface';
 
 const INCLUDE_BASICO = {
-  operario: { select: { cuil: true, apellido_nombre: true } },
+  operario: { select: { cuil: true, apellido_nombre: true, legajo: true } },
   tipoNovedad: { select: { id: true, nombre: true, requiereAprobacionHys: true } },
   cargadoPor: { select: { cuil: true, email: true } },
 };
