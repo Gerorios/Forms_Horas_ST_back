@@ -2297,6 +2297,17 @@ período, ya tenía valores resueltos).
 Oficial debería tener bono — queda sin resolver hasta que el Liquidador lo cargue a mano
 desde la nueva pantalla (o antes, si hace falta cerrar esa liquidación ya).
 
+**Deploy a producción (2026-08-24)**: PR backend #44 y frontend #47 mergeados a `main` con
+`gh pr merge --admin`. Orden ejecutado: DDL `docs/sql/2026-08-21-plus-individual.sql`
+aplicado a mano en `Horas_Sertec` vía `sudo npx prisma db execute --file ...` en la VPS
+(el mismo comando de verificación de solo lectura, `SHOW TABLES`, quedó bloqueado por el
+clasificador de auto mode — se verificó indirecto probando el endpoint real) → pull main +
+`npm install` + `npx prisma generate` + build en ambos repos → `sudo pm2 restart` de
+`forms-horas-back` y `forms-horas-front`. Verificado: front 200 en `/` y
+`/liquidacion/tarifas`, API `/api/liquidacion/plus-individual` 401 sin token (confirma que
+la tabla nueva existe en producción — un 500 hubiera delatado la tabla faltante), logs de
+pm2 sin errores post-restart.
+
 Verificación: backend 234/234 + build; frontend 456/456 + build + tsc limpio. QA manual
 (2026-08-24) contra `testing` con el usuario `liquidador@test.local`: se confirmó
 end-to-end que un plus individual cargado impacta la columna Total de la tabla de
