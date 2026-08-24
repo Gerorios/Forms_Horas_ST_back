@@ -2323,3 +2323,40 @@ $X". En Categorías, el incremento por % ("Aplicar a todas") pasa a calcularse s
 sobre el último precio de cada categoría (no sobre lo tipeado en el input), para que dé el
 mismo resultado se haya usado o no "Usar últimos precios" antes. Verificación: frontend
 458/458 (2 tests nuevos + 2 actualizados en `tarifas-page.test.tsx`) + tsc limpio.
+
+---
+
+## 65. Auditoría en Control general + verificación de MySQL + limpieza de datos de prueba (2026-08-24)
+
+**Merge y deploy de rama de Rodrigo**: `feat/auditoria-control-general` (back, PR #45) y
+`feat/auditoria-control-general-y-fecha-carga` (front, PR #48) — suman auditoría (quién
+cargó / quién aprobó y cuándo) al Detalle diario y al Control >13hs de Control general, más
+"Fecha de carga" en el detalle de una novedad (`Novedad.createdAt`, ya expuesto por el
+backend sin cambios — usa `include`, no `select`). Revisadas antes de mergear: sin
+conflictos (ambas basadas en el `main` más reciente), backend 234/234 + build, frontend tsc
+limpio + 458/458 + build. Sin DDL (no toca `schema.prisma`). Mergeadas con `--admin
+--delete-branch`, deployadas a la VPS (pull + build + `pm2 restart`), verificado front 200 y
+API 401/403 según corresponde, logs sin errores.
+
+**Verificación de límites de MySQL** (pedido del usuario, tras aviso externo de un reinicio
+del servidor): `SHOW GLOBAL STATUS LIKE 'Uptime'` confirmó el reinicio (uptime de 124s al
+consultar) sin ningún síntoma del incidente de agosto — el backend no se cayó, cero errores
+en los logs de pm2. De paso, `SHOW VARIABLES LIKE 'max_conn%'` mostró que IT sí aplicó una
+mejora parcial no avisada: `max_connect_errors` subió de 100 a **1000** (no a los 100.000
+pedidos); `max_connections` sigue igual en **151**. Detalle y método de verificación en
+memoria `mysql-compartido-incidente`.
+
+**Borrado de datos de prueba en producción** (pedido explícito del usuario, con preview y
+confirmación antes de ejecutar): 2 registros de horas en `Horas_Sertec` con fecha en junio
+2026 o 2da quincena de julio 2026 (ids 1942 y 1943, ambos de IBANEZ ESTEBAN MARCELO,
+contrato K5, cargados el 2026-08-20) + sus 3 filas de `sth_registro_tareas` y 2 de
+`sth_registro_moviles` (sin `ON DELETE CASCADE` en el schema — se borraron en orden, en una
+transacción). Verificado: 0 registros restantes en ese rango tras el borrado.
+
+**Método usado para consultas/DDL ad-hoc en producción** (reutilizable): como `prisma db
+execute` no imprime resultados de SELECT/SHOW (solo corre DDL), las consultas de
+lectura/escritura puntuales se hacen copiando un script node temporal a
+`/var/www/Forms_Horas_ST_back` (mismo patrón que `PrismaService`: `PrismaClient` +
+`PrismaMariaDb` adapter, lee `.env` de la VPS) y corriéndolo con `sudo node`, borrándolo
+después. El clasificador de auto mode bloquea estas acciones por tocar la base de
+producción — piden confirmación explícita cada vez, incluso las de solo lectura.
