@@ -28,15 +28,6 @@ export class CalculoService {
     return diff > 0 ? diff : 0;
   }
 
-  /** De una lista ya cargada en memoria, la fila con vigenteDesde <= fecha más reciente. */
-  private masVigente<T extends { vigenteDesde: Date }>(rows: T[], fecha: Date): T | null {
-    let best: T | null = null;
-    for (const r of rows) {
-      if (r.vigenteDesde <= fecha && (!best || r.vigenteDesde > best.vigenteDesde)) best = r;
-    }
-    return best;
-  }
-
   /**
    * Rango de km "por tantos" (ver ADR-009) al que corresponde un total dado.
    * Los límites NO son uniformes — cada km tiene que caer en exactamente un
@@ -79,31 +70,27 @@ export class CalculoService {
 
     const tiposConPlus = await this.prisma.tipoNovedad.findMany({ where: { generaPlus: true, activo: true } });
 
-    // Sueldos mensualizados: "vigente" por empleado (igual patrón que las
-    // tarifas de categoría), no por quincena exacta — ver ADR-016.
-    const sueldosMensualizados = await this.prisma.sueldoMensualizado.findMany({
-      where: { cuil: { in: cuils }, vigenteDesde: { lte: fechaVigencia } },
-    });
+    // Sueldos mensualizados, tarifas por categoría, montos de novedad con
+    // plus, bono no remunerativo y rangos de km: los 5 campos de precios por
+    // período (ver ADR-018). Se busca SOLO la fila exacta del período — sin
+    // fila propia, es "sin resolver" (alerta), nunca se hereda de otro mes.
+    const [sueldosMensualizados, tarifas, montosPlus, bonos, rangosKm, plusIndividual] = await Promise.all([
+      this.prisma.sueldoMensualizado.findMany({ where: { cuil: { in: cuils }, vigenteDesde: fechaVigencia } }),
+      this.prisma.tarifaCategoriaUocra.findMany({ where: { vigenteDesde: fechaVigencia } }),
+      this.prisma.montoNovedadPlus.findMany({ where: { vigenteDesde: fechaVigencia } }),
+      this.prisma.bonoNoRemunerativo.findMany({ where: { vigenteDesde: fechaVigencia } }),
+      this.prisma.rangoKmPorTantos.findMany({ where: { vigenteDesde: fechaVigencia } }),
+      this.prisma.plusIndividual.findMany({ where: { cuil: { in: cuils }, anio, mes, quincena } }),
+    ]);
 
     const kmsPorTantos = await this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } });
     const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
+    const plusIndividualPorCuil = new Map(plusIndividual.map((p) => [p.cuil, p]));
 
-    // Catálogos versionados: tablas chicas, se traen enteras (sin filtro por
-    // categoría/tipo) y se resuelve "vigente" en memoria por clave.
-    const [tarifas, montosPlus, bonos, rangosKm] = await Promise.all([
-      this.prisma.tarifaCategoriaUocra.findMany(),
-      this.prisma.montoNovedadPlus.findMany(),
-      this.prisma.bonoNoRemunerativo.findMany(),
-      this.prisma.rangoKmPorTantos.findMany(),
-    ]);
-
-    // Rango de km vigente para el mes: el "último" vigenteDesde se resuelve
-    // una sola vez sobre TODA la tabla (no por bracket) y después, dentro de
-    // esa vigencia, cada perfil busca el bracket que le corresponde por km.
-    const kmVigencia = this.masVigente(rangosKm, fechaVigencia)?.vigenteDesde ?? null;
-    const rangosKmVigentes = kmVigencia
-      ? rangosKm.filter((r) => r.vigenteDesde.getTime() === kmVigencia.getTime())
-      : [];
+    // Rango de km del período: ya viene filtrado por vigenteDesde exacto —
+    // solo ordenar por bracket (kmDesde asc, ver buscarRangoKm).
+    const rangosKmVigentes = rangosKm;
+    const hayRangosKmDelPeriodo = rangosKm.length > 0;
 
     // Horas aprobadas del rango, sumadas por cuil en una sola query.
     const horasAprobadas = await this.prisma.registroHoras.groupBy({
@@ -137,10 +124,7 @@ export class CalculoService {
 
     for (const perfil of perfiles) {
       const tarifaHora = perfil.categoriaUocraId
-        ? (this.masVigente(
-            tarifas.filter((t) => t.categoriaUocraId === perfil.categoriaUocraId),
-            fechaVigencia,
-          )?.importeHora ?? null)
+        ? (tarifas.find((t) => t.categoriaUocraId === perfil.categoriaUocraId)?.importeHora ?? null)
         : null;
       const tarifaHoraNum = tarifaHora != null ? Number(tarifaHora) : null;
 
@@ -174,10 +158,7 @@ export class CalculoService {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
       } else if (perfil.regimen === 'mensualizado') {
-        const sueldo = this.masVigente(
-          sueldosMensualizados.filter((s) => s.cuil === perfil.cuil),
-          fechaVigencia,
-        );
+        const sueldo = sueldosMensualizados.find((s) => s.cuil === perfil.cuil) ?? null;
         horasCct = 1;
         if (sueldo != null) {
           basico = Number(sueldo.monto);
@@ -207,6 +188,8 @@ export class CalculoService {
           datoFaltante = 'Falta cargar los km de esta quincena';
         } else if (tarifaHoraNum == null) {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada (necesaria para convertir km a horas)';
+        } else if (!hayRangosKmDelPeriodo) {
+          datoFaltante = 'Falta cargar los rangos de km de este período (Tarifas > Precios)';
         } else {
           const rango = this.buscarRangoKm(rangosKmVigentes, kmTotal);
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
@@ -246,30 +229,32 @@ export class CalculoService {
           (n) => n.tipoNovedadId === tipo.id && n.fechaInicio >= desde && n.fechaInicio <= hasta,
         ).length;
         if (cantidad > 0) {
-          const montoVigente = this.masVigente(
-            montosPlus.filter((m) => m.tipoNovedadId === tipo.id),
-            fechaVigencia,
-          );
+          const montoVigente = montosPlus.find((m) => m.tipoNovedadId === tipo.id) ?? null;
+          if (montoVigente == null && datoFaltante == null) {
+            datoFaltante = `Falta cargar el monto de "${tipo.nombre}" de este período (Tarifas > Precios)`;
+          }
           const montoPorNovedad = montoVigente ? Number(montoVigente.montoPorDia) : null;
           plus.push({ tipoNovedadId: tipo.id, nombre: tipo.nombre, dias: cantidad, monto: montoPorNovedad ? cantidad * montoPorNovedad : 0 });
         }
       }
       const totalPlus = plus.reduce((s, p) => s + p.monto, 0);
 
-      // Bono no remunerativo (por categoría, opcional)
+      // Bono no remunerativo (por categoría, único campo OPCIONAL de precios
+      // — sin fila no se alerta ni se suma nada, ver ADR-018).
       let noRemunerativo = 0;
       if (perfil.categoriaUocraId) {
-        const bono = this.masVigente(
-          bonos.filter((b) => b.categoriaUocraId === perfil.categoriaUocraId),
-          fechaVigencia,
-        );
+        const bono = bonos.find((b) => b.categoriaUocraId === perfil.categoriaUocraId) ?? null;
         if (bono) {
           noRemunerativo =
             bono.tipo === 'monto_fijo' ? Number(bono.valor) : (tarifaHoraNum ?? 0) * (Number(bono.valor) / 100);
         }
       }
 
-      const total = basico + montoExtra + presentismo + totalPlus + noRemunerativo;
+      // Plus individual (ver ADR-018): monto puntual por empleado/quincena,
+      // independiente de categoría y del bono — no versionado por período.
+      const plusIndividualMonto = Number(plusIndividualPorCuil.get(perfil.cuil)?.monto ?? 0);
+
+      const total = basico + montoExtra + presentismo + totalPlus + noRemunerativo + plusIndividualMonto;
 
       const etiquetas: string[] = [];
       if (perfil.modalidadPago === 'en_b') etiquetas.push('Hs Extra y Presentismo en B');
@@ -295,6 +280,8 @@ export class CalculoService {
         montoPresentismo: presentismo,
         plus,
         noRemunerativo,
+        plusIndividual: plusIndividualMonto || null,
+        plusIndividualMotivo: plusIndividualPorCuil.get(perfil.cuil)?.motivo ?? null,
         novedadesTexto: etiquetas.join(' y '),
         total,
         datoFaltante,

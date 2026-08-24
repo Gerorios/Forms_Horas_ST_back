@@ -275,6 +275,8 @@ export class PanelService {
       presentismo: this.num(r.montoPresentismo),
       totalPlus: this.num(r.plus.reduce((s, p) => s + p.monto, 0)),
       noRemunerativo: this.num(r.noRemunerativo),
+      plusIndividual: r.plusIndividual != null ? this.num(r.plusIndividual) : null,
+      plusIndividualMotivo: r.plusIndividualMotivo,
       total: this.num(r.total),
       modalidadPago: r.modalidadPago,
       etiquetaNovedades: r.novedadesTexto,

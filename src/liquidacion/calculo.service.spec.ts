@@ -12,6 +12,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     montoNovedadPlus: { findMany: jest.fn() },
     bonoNoRemunerativo: { findMany: jest.fn() },
     rangoKmPorTantos: { findMany: jest.fn() },
+    plusIndividual: { findMany: jest.fn() },
     registroHoras: { groupBy: jest.fn() },
     novedad: { findMany: jest.fn() },
   };
@@ -32,6 +33,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     prismaMock.sueldoMensualizado.findMany.mockResolvedValue([]);
     prismaMock.montoNovedadPlus.findMany.mockResolvedValue([]);
     prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([]);
+    prismaMock.plusIndividual.findMany.mockResolvedValue([]);
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
     prismaMock.novedad.findMany.mockResolvedValue([]);
 
@@ -321,17 +323,26 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
     });
 
-    it('toma el sueldo vigente más reciente ≤ la quincena, sin importar que no haya fila para ese mes exacto', async () => {
+    it('sin fila EXACTA del período: datoFaltante, no arrastra el sueldo de un mes anterior (ADR-018)', async () => {
+      // La query real filtra por vigenteDesde exacto — el mock simula lo que
+      // Prisma devolvería: ninguna fila coincide con agosto (solo hay julio).
+      prismaMock.sueldoMensualizado.findMany.mockResolvedValue([]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.datoFaltante).toBe('Falta cargar el sueldo mensualizado (Tarifas > Sueldos mensualizados)');
+      expect(fila.totalBruto).toBe(0);
+    });
+
+    it('con fila exacta del período: la usa sin importar valores de otros meses', async () => {
       prismaMock.sueldoMensualizado.findMany.mockResolvedValue([
-        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 5, 1), monto: 500_000 }, // junio
-        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 6, 1), monto: 550_000 }, // julio (el más reciente ≤ agosto)
+        { cuil: PERFIL_MENSUALIZADO.cuil, vigenteDesde: new Date(2026, 7, 1), monto: 550_000 }, // agosto exacto
       ]);
-      const [fila] = await service.calcularQuincena(2026, 8, 1); // agosto, sin fila propia
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
 
       expect(fila.horasTotal).toBe(1);
       expect(fila.horasCct).toBe(1);
       expect(fila.horasExtra).toBe(0);
-      expect(fila.totalBruto).toBe(550_000); // el de julio, arrastrado
+      expect(fila.totalBruto).toBe(550_000);
       expect(fila.montoHorasExtra).toBe(0);
       expect(fila.datoFaltante).toBeNull();
     });
@@ -426,6 +437,80 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
         expect(fila.totalBruto).toBe(0);
         expect(fila.montoHorasExtra).toBe(7_500); // el extra sí se puede calcular, no depende del sueldo
       });
+    });
+  });
+
+  describe('precios por período, sin arrastre (ADR-018)', () => {
+    const PERFIL_JORNALIZADO = {
+      cuil: '20444444444',
+      regimen: 'jornalizado',
+      categoriaUocraId: 1,
+      modalidadPago: 'en_b',
+      empleado: { apellido_nombre: 'PRECIOS TEST', legajo: 5, cargo: 'Oficial', provincia: 'Córdoba' },
+      categoria: { id: 1, nombre: 'Oficial' },
+    };
+
+    beforeEach(() => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([PERFIL_JORNALIZADO]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
+      ]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: PERFIL_JORNALIZADO.cuil, _sum: { horas: 80 } }]);
+    });
+
+    it('bono de un mes anterior NO se arrastra: sin fila exacta, noRemunerativo=0 y sin datoFaltante (es opcional)', async () => {
+      prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([]); // simula lo que Prisma filtraría (agosto exacto)
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.noRemunerativo).toBe(0);
+      expect(fila.datoFaltante).toBeNull(); // opcional: sin fila no alerta
+    });
+
+    it('bono con fila exacta del período: se aplica', async () => {
+      prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), tipo: 'monto_fijo', valor: 33550 },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.noRemunerativo).toBe(33550);
+    });
+
+    it('novedad con plus pero sin monto vigente del período: datoFaltante, monto en 0', async () => {
+      prismaMock.tipoNovedad.findMany.mockResolvedValue([{ id: 5, nombre: 'Guardia Pasiva', generaPlus: true }]);
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'no_aplica',
+          estado: 'activa',
+          tipoNovedad: { nombre: 'Guardia Pasiva' },
+        },
+      ]);
+      prismaMock.montoNovedadPlus.findMany.mockResolvedValue([]); // sin fila del período exacto
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.datoFaltante).toBe('Falta cargar el monto de "Guardia Pasiva" de este período (Tarifas > Precios)');
+      expect(fila.plus[0].monto).toBe(0);
+    });
+
+    it('plus individual: se suma al total, con su motivo', async () => {
+      prismaMock.plusIndividual.findMany.mockResolvedValue([
+        { cuil: PERFIL_JORNALIZADO.cuil, monto: 15000, motivo: 'Manejo de máquina X' },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.plusIndividual).toBe(15000);
+      expect(fila.plusIndividualMotivo).toBe('Manejo de máquina X');
+      expect(fila.total).toBe(fila.totalBruto + fila.montoHorasExtra + fila.montoPresentismo + 15000);
+    });
+
+    it('sin plus individual cargado: null, no afecta el total', async () => {
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.plusIndividual).toBeNull();
+      expect(fila.plusIndividualMotivo).toBeNull();
     });
   });
 });

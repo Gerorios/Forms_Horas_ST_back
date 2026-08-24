@@ -101,62 +101,32 @@ export class BonoNoRemunerativoDto {
   valor: number;
 }
 
-export class CargarRondaTarifasDto {
-  @IsInt()
-  @Min(1)
-  @Max(12)
-  mes: number;
-
-  @IsInt()
-  anio: number;
-
+export class CategoriasPeriodoDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CategoriaPrecioDto)
   categorias: CategoriaPrecioDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => TipoNovedadMontoDto)
-  tiposNovedad: TipoNovedadMontoDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RangoKmDto)
-  rangosKm: RangoKmDto[];
-
-  /** Opcional: 0 o ninguno si UOCRA no anunció nada ese mes. */
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => BonoNoRemunerativoDto)
-  bonosNoRemunerativos?: BonoNoRemunerativoDto[];
 }
 
-// ---- Edición de rondas ya cargadas (amendment 2026-08-04 al ADR-010) ----
-
-export class EditarRondaTarifasDto {
+export class BonosPeriodoDto {
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => CategoriaPrecioDto)
-  categorias: CategoriaPrecioDto[];
+  @Type(() => BonoNoRemunerativoDto)
+  bonos: BonoNoRemunerativoDto[];
+}
 
+export class NovedadesPlusPeriodoDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TipoNovedadMontoDto)
   tiposNovedad: TipoNovedadMontoDto[];
+}
 
+export class RangosKmPeriodoDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RangoKmDto)
   rangosKm: RangoKmDto[];
-
-  /** Opcional: una categoría ausente acá que antes tenía bono se elimina. */
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => BonoNoRemunerativoDto)
-  bonosNoRemunerativos?: BonoNoRemunerativoDto[];
 }
 
 // ---- Datos variables por quincena (por tantos) — ver ADR-011 ----
@@ -214,4 +184,18 @@ export class CargarKmPorTantosDto extends QuincenaParamsDto {
   @ValidateNested({ each: true })
   @Type(() => KmPorTantosItemDto)
   kms: KmPorTantosItemDto[];
+}
+
+// ---- Plus individual (ver ADR-018): monto puntual por empleado/quincena,
+// con motivo — independiente de categoría, no versionado por período. ----
+
+export class CargarPlusIndividualDto extends QuincenaParamsDto {
+  @IsString()
+  cuil: string;
+
+  @IsNumber()
+  monto: number;
+
+  @IsString()
+  motivo: string;
 }

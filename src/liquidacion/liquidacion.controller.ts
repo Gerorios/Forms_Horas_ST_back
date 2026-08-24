@@ -6,12 +6,15 @@ import { AnalisisService } from './analisis.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
-  CargarRondaTarifasDto,
-  EditarRondaTarifasDto,
+  CategoriasPeriodoDto,
+  BonosPeriodoDto,
+  NovedadesPlusPeriodoDto,
+  RangosKmPeriodoDto,
   UpsertPerfilLiquidacionDto,
   UpsertPerfilesMasivoDto,
   GuardarSueldosMensualizadosDto,
   CargarKmPorTantosDto,
+  CargarPlusIndividualDto,
 } from './dto/liquidacion.dto';
 import { ToggleActivoDto } from '../admin/dto/catalogo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -55,35 +58,72 @@ export class LiquidacionController {
     return this.service.updateCategoria(id, dto);
   }
 
-  // ---- Ronda mensual de tarifas (ver ADR-010) ----
+  // ---- Precios por período: cada sección se lee/guarda de forma
+  // independiente, por período exacto — sin relleno de huecos ni bloqueo
+  // entre meses (ver ADR-018, reemplaza la ronda mensual única de ADR-010) ----
 
-  @Get('tarifas/estado')
-  getEstadoTarifas() {
-    return this.service.getEstadoTarifas();
+  @Get('tarifas/categorias/:anio/:mes')
+  getCategoriasPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
+    return this.service.getCategoriasPeriodo(anio, mes);
   }
 
-  @Post('tarifas/ronda')
-  cargarRondaTarifas(@Body() dto: CargarRondaTarifasDto) {
-    return this.service.cargarRondaTarifas(dto);
-  }
-
-  @Get('tarifas/ronda/:anio/:mes')
-  getRondaTarifas(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
-    return this.service.getRondaTarifas(anio, mes);
-  }
-
-  @Put('tarifas/ronda/:anio/:mes')
-  editarRondaTarifas(
+  @Put('tarifas/categorias/:anio/:mes')
+  guardarCategoriasPeriodo(
     @Param('anio', ParseIntPipe) anio: number,
     @Param('mes', ParseIntPipe) mes: number,
-    @Body() dto: EditarRondaTarifasDto,
+    @Body() dto: CategoriasPeriodoDto,
     @Request() req,
   ) {
-    return this.service.editarRondaTarifas(anio, mes, dto, req.user.cuil);
+    return this.service.guardarCategoriasPeriodo(anio, mes, dto, req.user.cuil);
   }
 
-  // ---- Sueldos mensualizados: sección propia dentro de Tarifas, comparte el
-  // estado "mes resuelto" (RondaTarifas) con la ronda de arriba — ver ADR-016 ----
+  @Get('tarifas/bonos/:anio/:mes')
+  getBonosPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
+    return this.service.getBonosPeriodo(anio, mes);
+  }
+
+  @Put('tarifas/bonos/:anio/:mes')
+  guardarBonosPeriodo(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Body() dto: BonosPeriodoDto,
+    @Request() req,
+  ) {
+    return this.service.guardarBonosPeriodo(anio, mes, dto, req.user.cuil);
+  }
+
+  @Get('tarifas/novedades-plus/:anio/:mes')
+  getNovedadesPlusPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
+    return this.service.getNovedadesPlusPeriodo(anio, mes);
+  }
+
+  @Put('tarifas/novedades-plus/:anio/:mes')
+  guardarNovedadesPlusPeriodo(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Body() dto: NovedadesPlusPeriodoDto,
+    @Request() req,
+  ) {
+    return this.service.guardarNovedadesPlusPeriodo(anio, mes, dto, req.user.cuil);
+  }
+
+  @Get('tarifas/rangos-km/:anio/:mes')
+  getRangosKmPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
+    return this.service.getRangosKmPeriodo(anio, mes);
+  }
+
+  @Put('tarifas/rangos-km/:anio/:mes')
+  guardarRangosKmPeriodo(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Body() dto: RangosKmPeriodoDto,
+    @Request() req,
+  ) {
+    return this.service.guardarRangosKmPeriodo(anio, mes, dto, req.user.cuil);
+  }
+
+  // ---- Sueldos mensualizados: sección propia dentro de Tarifas, mismo
+  // patrón de período independiente — ver ADR-018 (reemplaza ADR-016) ----
 
   @Get('tarifas/sueldos-mensualizados')
   getSueldosMensualizados(@Query('anio', ParseIntPipe) anio: number, @Query('mes', ParseIntPipe) mes: number) {
@@ -144,6 +184,28 @@ export class LiquidacionController {
   @Post('quincena/km-por-tantos')
   cargarKmPorTantos(@Body() dto: CargarKmPorTantosDto, @Request() req) {
     return this.service.cargarKmPorTantos(dto, req.user);
+  }
+
+  // ---- Plus individual (ver ADR-018): monto puntual por empleado/quincena,
+  // con motivo — independiente de categoría, no versionado por período. ----
+
+  @Get('plus-individual')
+  getPlusIndividual(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Query('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.getPlusIndividual(anio, mes, quincena);
+  }
+
+  @Post('plus-individual')
+  cargarPlusIndividual(@Body() dto: CargarPlusIndividualDto, @Request() req) {
+    return this.service.cargarPlusIndividual(dto, req.user.cuil);
+  }
+
+  @Delete('plus-individual/:id')
+  eliminarPlusIndividual(@Param('id', ParseIntPipe) id: number) {
+    return this.service.eliminarPlusIndividual(id);
   }
 
   // ---- Cálculo de la quincena ----
