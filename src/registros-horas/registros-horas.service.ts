@@ -616,6 +616,18 @@ export class RegistrosHorasService {
     }, { timeout: 30000, maxWait: 10000 });
   }
 
+  /** Mapa cuil→apellido_nombre para el conjunto de CUILs pedido (empleados en
+   * snuempleados). No hay FK física a snuempleados (ADR-008): quien llama
+   * decide el fallback (típicamente `nombreFueraNomina`) para los que no
+   * aparezcan acá — mismo criterio que admin.service.ts/panel.service.ts. */
+  private async mapaNombresPorCuil(cuils: Iterable<string>): Promise<Map<string, string>> {
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: [...new Set(cuils)] } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    return new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+  }
+
   async porAprobar(
     usuario: { cuil: string; rol: string },
     estadoQuery?: string,
@@ -696,11 +708,7 @@ export class RegistrosHorasService {
       cuilsUsuarios.add(f.cargadoPorCuil);
       if (f.aprobadoPorCuil) cuilsUsuarios.add(f.aprobadoPorCuil);
     }
-    const empleados = await this.prisma.snuempleados.findMany({
-      where: { cuil: { in: [...cuilsUsuarios] } },
-      select: { cuil: true, apellido_nombre: true },
-    });
-    const nombrePorCuil = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+    const nombrePorCuil = await this.mapaNombresPorCuil(cuilsUsuarios);
     const nombreUsuario = (u: { cuil: string; nombreFueraNomina: string | null }) =>
       nombrePorCuil.get(u.cuil) ?? u.nombreFueraNomina ?? '';
 
@@ -1007,13 +1015,26 @@ export class RegistrosHorasService {
       },
       select: {
         id: true, fecha: true, contratoId: true, operarioCuil: true, horas: true, estado: true,
-        observacion: true, provinciaId: true,
+        observacion: true, provinciaId: true, createdAt: true, aprobadoEn: true,
         contrato: { select: { codigo: true } },
         operario: { select: { apellido_nombre: true } },
         tareas: { select: { tarea: { select: { nombre: true } } } },
+        cargadoPor: { select: { cuil: true, nombreFueraNomina: true } },
+        aprobadoPor: { select: { cuil: true, nombreFueraNomina: true } },
       },
       orderBy: { fecha: 'desc' },
     });
+
+    // Auditoría: nombre para mostrar de quien cargó/aprobó cada fila, mismo
+    // criterio que porAprobar (snuempleados con fallback a nombreFueraNomina).
+    const cuilsAuditoria = new Set<string>();
+    for (const f of filas) {
+      cuilsAuditoria.add(f.cargadoPor.cuil);
+      if (f.aprobadoPor) cuilsAuditoria.add(f.aprobadoPor.cuil);
+    }
+    const nombrePorCuilAuditoria = await this.mapaNombresPorCuil(cuilsAuditoria);
+    const nombreUsuarioAuditoria = (u: { cuil: string; nombreFueraNomina: string | null }) =>
+      nombrePorCuilAuditoria.get(u.cuil) ?? u.nombreFueraNomina ?? '';
 
     // OJO: "mío" se juzga contra TODOS mis contratos, no contra los filtrados.
     // Si soy jefe de K5/K8 y filtro por K5, las filas de K8 siguen siendo mías
@@ -1052,6 +1073,10 @@ export class RegistrosHorasService {
         tareas: string[];
         observacion: string | null;
         esMiContrato: boolean;
+        cargadoPorNombre: string;
+        cargadoEn: string;
+        aprobadoPorNombre: string | null;
+        aprobadoEn: string | null;
       }[];
     };
     const dias = new Map<string, DiaDetalle>();
@@ -1082,6 +1107,10 @@ export class RegistrosHorasService {
         observacion: f.observacion ?? null,
         /** false = registro de otro jefe: contexto de la jornada, no accionable. */
         esMiContrato: mios.has(f.contratoId),
+        cargadoPorNombre: nombreUsuarioAuditoria(f.cargadoPor),
+        cargadoEn: f.createdAt.toISOString(),
+        aprobadoPorNombre: f.aprobadoPor ? nombreUsuarioAuditoria(f.aprobadoPor) : null,
+        aprobadoEn: f.aprobadoEn ? f.aprobadoEn.toISOString() : null,
       });
     }
 
@@ -1164,9 +1193,12 @@ export class RegistrosHorasService {
       },
       select: {
         id: true, operarioCuil: true, fecha: true, horas: true, estado: true, observacion: true,
+        createdAt: true, aprobadoEn: true,
         contrato: { select: { codigo: true } },
         operario: { select: { apellido_nombre: true } },
         tareas: { select: { tarea: { select: { nombre: true } } } },
+        cargadoPor: { select: { cuil: true, nombreFueraNomina: true } },
+        aprobadoPor: { select: { cuil: true, nombreFueraNomina: true } },
       },
     });
     const detallePorDia = new Map<string, typeof detalle>();
@@ -1175,6 +1207,17 @@ export class RegistrosHorasService {
       if (!detallePorDia.has(k)) detallePorDia.set(k, []);
       detallePorDia.get(k)!.push(f);
     }
+
+    // Auditoría: nombre para mostrar de quien cargó/aprobó, mismo criterio
+    // que detalleDiario/porAprobar.
+    const cuilsAuditoriaControl = new Set<string>();
+    for (const f of detalle) {
+      cuilsAuditoriaControl.add(f.cargadoPor.cuil);
+      if (f.aprobadoPor) cuilsAuditoriaControl.add(f.aprobadoPor.cuil);
+    }
+    const nombrePorCuilControl = await this.mapaNombresPorCuil(cuilsAuditoriaControl);
+    const nombreUsuarioControl = (u: { cuil: string; nombreFueraNomina: string | null }) =>
+      nombrePorCuilControl.get(u.cuil) ?? u.nombreFueraNomina ?? '';
 
     return superan
       .map((d) => {
@@ -1192,6 +1235,10 @@ export class RegistrosHorasService {
             estado: f.estado,
             tareas: f.tareas.map((t) => t.tarea.nombre),
             observacion: f.observacion ?? null,
+            cargadoPorNombre: nombreUsuarioControl(f.cargadoPor),
+            cargadoEn: f.createdAt.toISOString(),
+            aprobadoPorNombre: f.aprobadoPor ? nombreUsuarioControl(f.aprobadoPor) : null,
+            aprobadoEn: f.aprobadoEn ? f.aprobadoEn.toISOString() : null,
           })),
         };
       })
