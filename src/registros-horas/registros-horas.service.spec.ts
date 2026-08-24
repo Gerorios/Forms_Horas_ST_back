@@ -15,6 +15,9 @@ describe('RegistrosHorasService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: sin empleados en snuempleados — los tests de auditoría
+    // (cargadoPor/aprobadoPor) que necesiten un nombre real lo sobreescriben.
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         RegistrosHorasService,
@@ -287,6 +290,9 @@ describe('RegistrosHorasService', () => {
           horas: 8, estado: 'pendiente',
           contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'Zeta Juan' },
           tareas: [],
+          createdAt: new Date(2026, 7, 3, 18, 0), aprobadoEn: null,
+          cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super Visor' },
+          aprobadoPor: null,
         },
         {
           id: 11, fecha: new Date(2026, 7, 3), contratoId: 1, operarioCuil: '20-3-3',
@@ -294,6 +300,9 @@ describe('RegistrosHorasService', () => {
           contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'Alfa Pedro' },
           tareas: [{ tarea: { nombre: 'Zanjeo' } }, { tarea: { nombre: 'Tendido de cañería' } }],
           observacion: 'Viaje a Metán por fuga',
+          createdAt: new Date(2026, 7, 3, 20, 5), aprobadoEn: new Date(2026, 7, 4, 9, 0),
+          cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super Visor' },
+          aprobadoPor: { cuil: '20-8-8', nombreFueraNomina: 'Jefe Higiene' },
         },
       ]);
       const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
@@ -311,6 +320,10 @@ describe('RegistrosHorasService', () => {
         tareas: ['Zanjeo', 'Tendido de cañería'],
         observacion: 'Viaje a Metán por fuga',
         esMiContrato: true,
+        cargadoPorNombre: 'Super Visor',
+        cargadoEn: new Date(2026, 7, 3, 20, 5).toISOString(),
+        aprobadoPorNombre: 'Jefe Higiene',
+        aprobadoEn: new Date(2026, 7, 4, 9, 0).toISOString(),
       });
       expect(r[1].operarioNombre).toBe('Zeta Juan');
       expect(r[1].registros[0].tareas).toEqual([]);
@@ -336,6 +349,9 @@ describe('RegistrosHorasService', () => {
       id, fecha, contratoId, operarioCuil: cuil, horas: 4, estado: 'aprobado',
       contrato: { codigo }, operario: { apellido_nombre: 'Perez Juan' }, tareas: [],
       observacion: null, provinciaId: 1,
+      createdAt: new Date(2026, 7, 3, 20, 0), aprobadoEn: null,
+      cargadoPor: { cuil: '20-9-9', nombreFueraNomina: null },
+      aprobadoPor: null,
     });
 
     /** Ayuda: todos los ids de registros de todos los días devueltos. */
@@ -428,18 +444,27 @@ describe('RegistrosHorasService', () => {
             observacion: null, contrato: { codigo: 'K5' },
             operario: { apellido_nombre: 'Zeta Juan' },
             tareas: [{ tarea: { nombre: 'Zanjeo' } }],
+            createdAt: new Date(2026, 7, 3, 18, 0), aprobadoEn: new Date(2026, 7, 4, 9, 0),
+            cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super Visor' },
+            aprobadoPor: { cuil: '20-8-8', nombreFueraNomina: 'Jefe Higiene' },
           },
           {
             id: 2, operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 7, estado: 'pendiente',
             observacion: 'Viaje a Metán', contrato: { codigo: 'K9' },
             operario: { apellido_nombre: 'Zeta Juan' },
             tareas: [],
+            createdAt: new Date(2026, 7, 3, 18, 30), aprobadoEn: null,
+            cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super Visor' },
+            aprobadoPor: null,
           },
           {
             id: 3, operarioCuil: '20-3-3', fecha: new Date(2026, 7, 4), horas: 15, estado: 'aprobado',
             observacion: null, contrato: { codigo: 'K5' },
             operario: { apellido_nombre: 'Alfa Pedro' },
             tareas: [{ tarea: { nombre: 'Perforación' } }],
+            createdAt: new Date(2026, 7, 4, 19, 0), aprobadoEn: new Date(2026, 7, 5, 9, 0),
+            cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super Visor' },
+            aprobadoPor: { cuil: '20-8-8', nombreFueraNomina: 'Jefe Higiene' },
           },
         ]); // detalle de los días que superaron el umbral
       const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
