@@ -2234,3 +2234,81 @@ Orden obligado: DDL → merge → deploy.
 
 Verificación: backend 230/230 (4 casos nuevos del alcance por tipo) + build; frontend
 tsc limpio, ausencias 20/20 y novedades 22/22.
+
+---
+
+## 64. Precios por período, sin arrastre entre meses + Plus individual (ver ADR-018, 2026-08-21)
+
+**Origen**: el usuario preguntó por qué Lautaro Albero tenía un bono de $33.550 en la 1Q de
+agosto sin que existiera bono cargado para agosto — se descubrió que `masVigente()` (patrón
+de ADR-010) tomaba la fila con `vigenteDesde` más reciente ≤ la fecha, así que el bono de
+julio se arrastraba a agosto sin que nadie lo hubiera decidido para ese mes. El usuario pidió
+rediseñar TODO lo que sea precio (categorías, bonos, montos de novedad con plus, rangos de
+km, sueldos mensualizados) para que sea "por período", no por vigencia heredada.
+
+**Grilling + auditoría**: se armó un script que comparó, para las 3 rondas cargadas
+(jun/jul/ago 2026), qué campos tenían fila propia del período exacto vs. cuáles arrastraban
+de un mes anterior. Único caso real de arrastre encontrado: el bono de la categoría Oficial
+en agosto (heredaba julio). Los "faltantes" de sueldos mensualizados en jun/jul para 13
+empleados no eran arrastre — ya bloqueaban correctamente con `datoFaltante`.
+
+**Decisiones (ver ADR-018 para el detalle completo)**:
+1. `masVigente()` (fallback "≤ fecha") se elimina del cálculo. Cada período busca su fila
+   EXACTA — sin fila propia, es "sin resolver".
+2. Campos **obligatorios** (tarifa por categoría, monto de novedad con plus, rango de km,
+   sueldo mensualizado): sin resolver = alerta (`datoFaltante`) en preliquidación, nunca un
+   default silencioso. Se agregó la alerta que faltaba para monto de novedad con plus y rango
+   de km (antes calculaban $0 en silencio).
+3. **Bono no remunerativo**: único campo OPCIONAL. "Sin bono este mes" pasa a ser una
+   decisión explícita (fila real, valor 0), no la ausencia de fila.
+4. **Períodos independientes**: ningún mes bloquea a otro (decisión de producto explícita,
+   descartando la garantía "nunca hay huecos" de ADR-010). Se elimina el relleno automático
+   de huecos de `POST /liquidacion/tarifas/ronda`.
+5. `RondaTarifas` queda deprecada (no se lee ni se escribe más) — se mantiene la tabla sin
+   borrar (3 filas históricas), ver ADR-018.
+
+**API rediseñada**: se reemplazan `/tarifas/ronda` (POST/GET/PUT) y `/tarifas/estado` por 4
+endpoints seccionados e independientes: `/tarifas/categorias/:anio/:mes`,
+`/tarifas/bonos/:anio/:mes`, `/tarifas/novedades-plus/:anio/:mes`,
+`/tarifas/rangos-km/:anio/:mes` (GET+PUT cada uno, upsert directo sin distinguir
+crear/editar). Cada GET expone `resuelto` + `sugerencia` (último valor de un período
+ANTERIOR, con su propio período de origen) para prellenar sin aplicar solo.
+
+**Plus individual** (feature nueva, concepto de dominio distinto al bono): monto puntual
+para un empleado en una quincena puntual, con motivo — independiente de categoría y del
+bono no remunerativo, no versionado por período (mismo patrón que `KmPorTantos`). Tabla
+nueva `sth_plus_individual`. Decisión de producto final (contradice un borrador previo de
+esta misma sección): vive como una sección más **dentro de la pestaña Precios**
+(`seccion-plus-individual.tsx`, debajo de Rangos de km), no como pantalla propia de nav —
+conceptualmente sigue sin ser un "precio" versionado por período, pero en la UI se agrupó
+ahí por practicidad.
+
+**Interfaz**: pedido explícito del usuario — la pestaña "Precios" pasa de un único
+formulario largo a **4 tarjetas independientes** (Categorías, Bono, Novedades con plus,
+Rangos de km) + la sección de Plus individual, cada una con su propio modo
+lectura/edición, botón guardar y diálogo de confirmación (solo si esa sección, para ese
+período, ya tenía valores resueltos).
+
+⚠️ **Requiere DDL previo al deploy**: `docs/sql/2026-08-21-plus-individual.sql` (tabla nueva
+`sth_plus_individual`), a mano en LAS DOS bases (`Horas_Sertec` y `testing` — ya aplicado en
+`testing`), NUNCA con `prisma migrate`. Orden obligado: DDL → merge → deploy.
+
+**Pendiente operativo, no bloqueante**: nadie decidió todavía si agosto 2026 de la categoría
+Oficial debería tener bono — queda sin resolver hasta que el Liquidador lo cargue a mano
+desde la nueva pantalla (o antes, si hace falta cerrar esa liquidación ya).
+
+Verificación: backend 234/234 + build; frontend 456/456 + build + tsc limpio. QA manual
+(2026-08-24) contra `testing` con el usuario `liquidador@test.local`: se confirmó
+end-to-end que un plus individual cargado impacta la columna Total de la tabla de
+liquidación y aparece en el detalle expandido de la fila ("Plus individual: $X (motivo)"),
+solo cuando hay uno cargado — no hay columna propia en la tabla, queda absorbido en Total.
+
+**Ajuste de UX post-QA (2026-08-24, pedido del usuario)**: en las 4 secciones de precios,
+el modo edición dejó de autocompletar los campos sin resolver con el último precio
+conocido — ahora arrancan vacíos y hay un botón "Usar últimos precios" por sección que los
+completa de una sola vez (no sobreescribe lo ya tipeado). La leyenda de lectura para un
+campo sin resolver se acortó de "sin resolver — sugerido $X (Mes Año)" a "Último precio:
+$X". En Categorías, el incremento por % ("Aplicar a todas") pasa a calcularse siempre
+sobre el último precio de cada categoría (no sobre lo tipeado en el input), para que dé el
+mismo resultado se haya usado o no "Usar últimos precios" antes. Verificación: frontend
+458/458 (2 tests nuevos + 2 actualizados en `tarifas-page.test.tsx`) + tsc limpio.
