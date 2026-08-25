@@ -43,8 +43,15 @@ export class LiquidacionService {
   // valor conocido de un período ANTERIOR) se expone solo para prellenar el
   // formulario — nunca se aplica sola al cálculo de liquidación.
 
+  // UTC, no hora local: `vigenteDesde` se guarda como medianoche UTC exacta
+  // (columna @db.Date). Con `new Date(anio, mes-1, 1)` (hora local) el server
+  // corriendo en America/Buenos_Aires (UTC-3) arma un instante 3h después de
+  // esa medianoche — las queries de Prisma lo toleran (truncan a la fecha),
+  // pero cualquier comparación en JS (`.getTime()`, `.getFullYear()`) contra
+  // un valor leído de la base queda desfasada y rompe silenciosamente el
+  // "resuelto" de ADR-018 (bug encontrado 2026-08-24, ver contexto).
   private fechaDePeriodo(anio: number, mes: number): Date {
-    return new Date(anio, mes - 1, 1);
+    return new Date(Date.UTC(anio, mes - 1, 1));
   }
 
   /** La fila con vigenteDesde más reciente ESTRICTAMENTE ANTERIOR al período — para sugerir, nunca para calcular. */
@@ -57,7 +64,7 @@ export class LiquidacionService {
   }
 
   private periodoDeFecha(fecha: Date): { anio: number; mes: number } {
-    return { anio: fecha.getFullYear(), mes: fecha.getMonth() + 1 };
+    return { anio: fecha.getUTCFullYear(), mes: fecha.getUTCMonth() + 1 };
   }
 
   private async auditarCambio(

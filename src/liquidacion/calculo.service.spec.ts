@@ -54,32 +54,47 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     ]);
   }
 
-  it('km × precio del rango ÷ tarifa de categoría = horas totales, y separa CCT/extra con tope 88', async () => {
-    setupKmYTarifa({ kmTotal: 1000, tarifaHora: 1000 }); // monto = 100.000; horas = 100
+  it('km × precio del rango ÷ (tarifa × 0.978, presentismo y cargas sociales) = horas totales, y separa CCT/extra con tope 88', async () => {
+    setupKmYTarifa({ kmTotal: 1000, tarifaHora: 1000 }); // monto = 100.000; divisor = 1000 × 0,978 = 978
     const [fila] = await service.calcularQuincena(2026, 8, 1);
 
-    expect(fila.montoKmBruto).toBe(100_000); // km × precio del rango, antes de convertir a horas
-    expect(fila.horasTotal).toBe(100);
-    expect(fila.horasCct).toBe(88);
-    expect(fila.horasExtra).toBe(12);
-    expect(fila.totalBruto).toBe(88_000); // básico = tarifa × horasCct
+    expect(fila.montoKmBruto).toBe(100_000); // km × precio del rango, sin el ajuste (es previo a convertir a horas)
+    expect(fila.horasTotal).toBeCloseTo(102.2495, 4); // 100.000 / 978
+    expect(fila.horasCct).toBe(88); // tope
+    expect(fila.horasExtra).toBeCloseTo(14.2495, 4);
+    expect(fila.totalBruto).toBe(88_000); // básico = tarifa COMPLETA (sin ajuste) × horasCct
   });
 
-  it('el extra de "por tantos" NO lleva el multiplicador ×1.5 (a diferencia de jornalizado)', async () => {
-    setupKmYTarifa({ kmTotal: 1000, tarifaHora: 1000 }); // horasExtra = 12
+  it('el monto en B NO es horasExtra × tarifa — es el residual del monto de km sobre el básico "grossed up"', async () => {
+    setupKmYTarifa({ kmTotal: 1000, tarifaHora: 1000 }); // ver test anterior: montoKm=100.000, básico=88.000
     const [fila] = await service.calcularQuincena(2026, 8, 1);
 
-    // Sin multiplicador: 12 × 1000 = 12.000 (no 12 × 1000 × 1.5 = 18.000)
-    expect(fila.montoHorasExtra).toBe(12_000);
+    // montoExtra = montoKm − básico × 0,978 = 100.000 − 88.000 × 0,978 = 13.936
+    expect(fila.montoHorasExtra).toBeCloseTo(13_936, 2);
+    // Ni horasExtra × tarifa (14.249,5) ni con el ×1,5 de jornalizado (21.374,25) — confirma que no es un simple horas×precio.
+    expect(fila.montoHorasExtra).not.toBeCloseTo(14_249.5, 0);
+    expect(fila.montoHorasExtra).not.toBeCloseTo(21_374.25, 0);
   });
 
-  it('sin horas extra (total ≤ 88), el extra da 0', async () => {
-    setupKmYTarifa({ kmTotal: 500, tarifaHora: 1000 }); // monto=50.000; horas=50 (< 88)
+  it('sin horas extra (total ≤ 88), el extra da 0 — cálculo común de horas × tarifa para el básico', async () => {
+    setupKmYTarifa({ kmTotal: 500, tarifaHora: 1000 }); // monto=50.000; horas = 50.000/978 ≈ 51.13 (< 88)
     const [fila] = await service.calcularQuincena(2026, 8, 1);
 
-    expect(fila.horasTotal).toBe(50);
+    expect(fila.horasTotal).toBeCloseTo(51.1247, 4);
     expect(fila.horasExtra).toBe(0);
     expect(fila.montoHorasExtra).toBe(0);
+    expect(fila.totalBruto).toBeCloseTo(51_124.74, 2); // básico = horasTotal × tarifa completa
+  });
+
+  it('el bono no remunerativo NO entra en el residual del monto en B — es una línea totalmente separada', async () => {
+    setupKmYTarifa({ kmTotal: 1000, tarifaHora: 1000 }); // montoExtra = 13.936 (ver test de arriba), con o sin bono
+    prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
+      { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), tipo: 'monto_fijo', valor: 33550 },
+    ]);
+    const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+    expect(fila.noRemunerativo).toBe(33550);
+    expect(fila.montoHorasExtra).toBeCloseTo(13_936, 2); // sin cambios respecto al caso sin bono
   });
 
   it('falta km cargado: datoFaltante, sin calcular nada', async () => {

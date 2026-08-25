@@ -2360,3 +2360,43 @@ lectura/escritura puntuales se hacen copiando un script node temporal a
 `PrismaMariaDb` adapter, lee `.env` de la VPS) y corriéndolo con `sudo node`, borrándolo
 después. El clasificador de auto mode bloquea estas acciones por tocar la base de
 producción — piden confirmación explícita cada vez, incluso las de solo lectura.
+
+---
+
+## 66. Fórmula real de "por tantos": presentismo/cargas sociales + rediseño de columnas (ADR-019, 2026-08-25)
+
+**Origen**: al testear el ajuste del 18.5% de cargas sociales (pedido inicial del
+usuario), el número no cerraba contra los recibos reales de los relevadores. Se
+descartaron dos fórmulas intermedias (`tarifa × 0,815` y `tarifa ÷ 1,0185`) antes de
+llegar, con la explicación completa del dueño de producto, a la fórmula correcta — ver
+`docs/adr/2026-08-25-adr-019-formula-real-por-tantos-presentismo-cargas-sociales.md`
+para el detalle completo y la validación al centavo contra 2 casos reales (OSCAR
+junio 1Q sin bono, CORBALAN julio 2Q con bono).
+
+**Fórmula final**: `horasTotal = montoKm ÷ (tarifa × 1,2 × 0,815)` (presentismo +20%,
+cargas sociales −18,5%, combinados en una constante `PRESENTISMO_Y_CARGAS_SOCIALES_
+FACTOR = 0,978`). El monto en B **ya no es `horasExtra × tarifa`** — es el residual
+`montoKm − (básico_88hs × 0,978)` cuando hay extra; si no hay extra, es el "cálculo
+común" de siempre (horasTotal × tarifa completa). El bono no remunerativo queda
+totalmente afuera de esta cuenta en los dos casos, sigue siendo una columna aparte.
+
+**De paso, bug no relacionado corregido**: el "resuelto" de Tarifas (`liquidacion.
+service.ts`) comparaba fechas con `new Date(anio, mes-1, 1)` en hora local — el server
+corre en `America/Buenos_Aires` (UTC-3), así que la comparación contra `vigenteDesde`
+(medianoche UTC exacta) fallaba silenciosamente. Un período ya cargado se mostraba como
+"sin resolver" (y la sugerencia mostraba el mes equivocado) aunque el motor de cálculo
+sí lo usaba bien (ese compara a nivel SQL, no en JS). Corregido a `Date.UTC(...)` /
+`getUTCFullYear()`/`getUTCMonth()` en `fechaDePeriodo`/`periodoDeFecha` (y de paso en
+`calculo.service.ts` por consistencia, aunque ahí no causaba el bug).
+
+**Frontend — rediseño de columnas de la tabla de relevadores** (pedido explícito del
+usuario, tras validar la fórmula): "Monto bruto" → **"Monto neto"**; se saca la columna
+TOTAL y la columna "$$ Hs Extras (en B)" del medio de la tabla, y se agregan al final
+**"Monto A"** (Total bruto + Presentismo + Bono) y **"Monto B"** (el residual de
+arriba).
+
+Verificación: backend 235/235 + build (reescribí los tests de la fórmula 3 veces en la
+misma sesión, siguiendo cada corrección); frontend 456-459/459 + tsc + build (las 3
+fallas puntuales de una corrida fueron timeout flaky de `reporte-page.test.tsx`, no
+relacionado, confirmado aislado 7/7). Verificado en vivo contra los 2 casos reales, en
+el navegador y por API.
