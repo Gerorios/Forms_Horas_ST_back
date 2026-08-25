@@ -24,7 +24,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
   };
   let service: LiquidacionService;
 
-  const fecha = new Date(2026, 7, 1); // 1/8/2026
+  const fecha = new Date(Date.UTC(2026, 7, 1)); // 1/8/2026
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -39,7 +39,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     it('sin fila propia del período: resuelto=false, con sugerencia del último anterior', async () => {
       prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
       prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 6, 1), importeHora: 5817 }, // julio
+        { categoriaUocraId: 1, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), importeHora: 5817 }, // julio
       ]);
 
       const r = await service.getCategoriasPeriodo(2026, 8);
@@ -57,7 +57,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     it('con fila propia del período: resuelto=true, sin sugerencia (no hereda de meses futuros ni pasados)', async () => {
       prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
       prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 6, 1), importeHora: 5817 },
+        { categoriaUocraId: 1, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), importeHora: 5817 },
         { categoriaUocraId: 1, vigenteDesde: fecha, importeHora: 6348 },
       ]);
 
@@ -110,7 +110,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     it('sin fila propia: resuelto=false (no se infiere "sin bono" de la ausencia)', async () => {
       prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
       prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 6, 1), tipo: 'monto_fijo', valor: 33550 },
+        { categoriaUocraId: 1, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), tipo: 'monto_fijo', valor: 33550 },
       ]);
 
       const r = await service.getBonosPeriodo(2026, 8);
@@ -146,7 +146,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     it('sin fila propia: resuelto=false, con sugerencia', async () => {
       prismaMock.tipoNovedad.findMany.mockResolvedValue([{ id: 5, nombre: 'Guardia Pasiva' }]);
       prismaMock.montoNovedadPlus.findMany.mockResolvedValue([
-        { tipoNovedadId: 5, vigenteDesde: new Date(2026, 6, 1), montoPorDia: 8000 },
+        { tipoNovedadId: 5, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), montoPorDia: 8000 },
       ]);
 
       const r = await service.getNovedadesPlusPeriodo(2026, 8);
@@ -165,7 +165,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
   describe('rangos de km (obligatorio, reemplazo completo del período)', () => {
     it('sin filas propias: resuelto=false, sugiere el set completo del último período anterior', async () => {
       prismaMock.rangoKmPorTantos.findMany.mockResolvedValueOnce([]); // propios del período
-      prismaMock.rangoKmPorTantos.findFirst.mockResolvedValue({ vigenteDesde: new Date(2026, 6, 1) });
+      prismaMock.rangoKmPorTantos.findFirst.mockResolvedValue({ vigenteDesde: new Date(Date.UTC(2026, 6, 1)) });
       prismaMock.rangoKmPorTantos.findMany.mockResolvedValueOnce([
         { kmDesde: 0, kmHasta: 60, precioPorKm: 100 },
       ]);
@@ -274,7 +274,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
         { cuil: '20111111111', empleado: { apellido_nombre: 'PEREZ JUAN' }, categoria: { nombre: 'Oficial' } },
       ]);
       prismaMock.sueldoMensualizado.findMany.mockResolvedValue([
-        { cuil: '20111111111', vigenteDesde: new Date(2026, 6, 1), monto: 500000 },
+        { cuil: '20111111111', vigenteDesde: new Date(Date.UTC(2026, 6, 1)), monto: 500000 },
       ]);
 
       const r = await service.getSueldosMensualizados(2026, 8);

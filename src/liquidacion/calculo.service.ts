@@ -13,6 +13,15 @@ import { rangoQuincena } from '../common/quincena';
  */
 @Injectable()
 export class CalculoService {
+  // Régimen "por tantos" (relevador de fugas): el monto neto de km (km ×
+  // precio del rango) equivale a horas × tarifa × este factor — presentismo
+  // (+20%, ×1,2) y cargas sociales (−18,5%, ×0,815) combinados. Se usa para
+  // despejar horasTotal, y también para el monto en B (ver más abajo).
+  // Constante fija (no editable por período) — decisión 2026-08-25,
+  // corrige dos versiones previas (÷1,0185 el 24/8, y antes ×0,815 solo)
+  // que no cerraban contra un recibo real.
+  private static readonly PRESENTISMO_Y_CARGAS_SOCIALES_FACTOR = 1.2 * 0.815; // 0.978
+
   constructor(private prisma: PrismaService) {}
 
   private rangoQuincena(anio: number, mes: number, quincena: number): { desde: Date; hasta: Date } {
@@ -56,7 +65,9 @@ export class CalculoService {
 
   async calcularQuincena(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = this.rangoQuincena(anio, mes, quincena);
-    const fechaVigencia = new Date(anio, mes - 1, 1);
+    // UTC, no hora local — mismo criterio que liquidacion.service.ts
+    // (fechaDePeriodo): `vigenteDesde` se guarda como medianoche UTC exacta.
+    const fechaVigencia = new Date(Date.UTC(anio, mes - 1, 1));
 
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: { not: 'administrativo' } },
@@ -194,14 +205,24 @@ export class CalculoService {
           const rango = this.buscarRangoKm(rangosKmVigentes, kmTotal);
           const montoKm = rango ? kmTotal * Number(rango.precioPorKm) : 0;
           montoKmBruto = montoKm;
-          horasTotal = tarifaHoraNum > 0 ? montoKm / tarifaHoraNum : 0;
+          const divisorHoras = tarifaHoraNum * CalculoService.PRESENTISMO_Y_CARGAS_SOCIALES_FACTOR;
+          horasTotal = divisorHoras > 0 ? montoKm / divisorHoras : 0;
           horasCct = Math.min(horasTotal, 88);
           horasExtra = Math.max(horasTotal - 88, 0);
+          // básico usa la tarifa COMPLETA de categoría (sin el ajuste de
+          // presentismo/cargas sociales, que solo se usa para despejar
+          // horasTotal arriba y, más abajo, el residual del monto en B).
           basico = tarifaHoraNum * horasCct;
-          // A diferencia de jornalizado, el extra de "por tantos" NO lleva
-          // el multiplicador ×1.5 (se paga al mismo precio de categoría) y
-          // siempre se paga en B, sin relación con modalidadPago — ver ADR-015.
-          montoExtra = horasExtra * tarifaHoraNum;
+          // El monto en B NO es horasExtra × tarifa — pese al nombre de la
+          // variable (se reusa el mismo campo que jornalizado/mensualizado
+          // para no duplicar el shape del panel). Es lo que sobra del monto
+          // neto de km una vez descontado el básico de 88hs llevado a su
+          // equivalente "grossed up" (básico × presentismo × cargas
+          // sociales) — el bono no remunerativo queda totalmente afuera de
+          // esta cuenta, es una línea separada. Sin extra (horasTotal <=
+          // 88), no hay residual que calcular. Ver explicación del usuario,
+          // 2026-08-25, validada al centavo contra un recibo real.
+          montoExtra = horasExtra > 0 ? montoKm - basico * CalculoService.PRESENTISMO_Y_CARGAS_SOCIALES_FACTOR : 0;
         }
       }
 
