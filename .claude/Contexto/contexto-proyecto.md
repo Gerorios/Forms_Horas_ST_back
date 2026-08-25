@@ -2497,3 +2497,9 @@ re-renders innecesarios y bundle size.
 **Sin cambios**: pool de conexiones (ya conservador a propósito, ver incidente de
 agosto), paginación de `/liquidacion/quincena/detalle` (volumen actual no lo justifica),
 virtualización de tablas (~100 filas no llega al umbral típico de 500+).
+
+**Deploy a producción (2026-08-25)**: PR backend #48 y frontend #51 mergeados a `main`
+con `gh pr merge --admin --delete-branch`. Sin DDL (no toca schema). Pull main + build
+en ambos repos en la VPS + `sudo pm2 restart` de los dos procesos. Verificado: front 200
+en `/`, `/control-general` y `/liquidacion/quincena/detalle`, API 401 sin token, logs de
+pm2 sin errores post-restart.
