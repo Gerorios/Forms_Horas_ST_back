@@ -2503,3 +2503,20 @@ con `gh pr merge --admin --delete-branch`. Sin DDL (no toca schema). Pull main +
 en ambos repos en la VPS + `sudo pm2 restart` de los dos procesos. Verificado: front 200
 en `/`, `/control-general` y `/liquidacion/quincena/detalle`, API 401 sin token, logs de
 pm2 sin errores post-restart.
+
+---
+
+## 69. Merge de rama externa: cargadoPor.nombre en vez de email (2026-08-25)
+
+**Origen**: rama `feat/novedades-cargado-por-nombre` (back y front), pusheada sin PR
+(no de esta sesión — probablemente Rodrigo). `cargadoPor` de una novedad pasa de
+exponer `email` (tipo `10801@st.local`, no identifica a nadie) a exponer el `nombre`
+real, resuelto vía `snuempleados` con el mismo patrón `mapaNombresPorCuil` que ya usa
+`registros-horas.service.ts` (fallback a `nombreFueraNomina`). Cambia el shape de la
+API: `cargadoPor: { cuil, email }` → `{ cuil, nombre }`.
+
+Revisada antes de mergear: sin conflictos contra `main`, backend 237/237 + build,
+frontend tsc limpio + 458/459 (única falla en `reporte-page.test.tsx`, no relacionado,
+confirmado flaky). PR back #49 y front #52, mergeados con `--admin --delete-branch` y
+deployados (pull + build + `pm2 restart`, sin DDL). Verificado: front 200 en `/novedades`,
+API responde bien, logs sin errores.
