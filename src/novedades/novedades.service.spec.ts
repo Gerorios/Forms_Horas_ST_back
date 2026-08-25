@@ -8,12 +8,14 @@ import { NOVEDAD_ADJUNTO_STORAGE } from './storage/novedad-adjunto-storage.inter
 describe('NovedadesService#findAll', () => {
   const prismaMock: any = {
     novedad: { findMany: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
   };
   let service: NovedadesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     prismaMock.novedad.findMany.mockResolvedValue([]);
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -90,6 +92,7 @@ describe('NovedadesService#update', () => {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
     tipoNovedad: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   const adjuntoStorageMock = {
@@ -113,10 +116,12 @@ describe('NovedadesService#update', () => {
     descargoHys: 'no corresponde',
     estado: 'activa',
     tipoNovedad: { id: 5, nombre: 'Ausencia' },
+    cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -312,6 +317,7 @@ describe('NovedadesService#anular', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
     auditoria: { create: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   let service: NovedadesService;
@@ -322,10 +328,12 @@ describe('NovedadesService#anular', () => {
     tipoNovedadId: 5,
     estado: 'activa',
     tipoNovedad: { id: 5, nombre: 'Ausencia' },
+    cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         NovedadesService,
@@ -420,11 +428,13 @@ describe('NovedadesService#anular', () => {
 describe('NovedadesService#resolverHys', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
   };
   let service: NovedadesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         NovedadesService,
@@ -452,7 +462,11 @@ describe('NovedadesService#resolverHys', () => {
 
   it('resuelve una novedad activa sin problemas', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa' });
-    prismaMock.novedad.update.mockResolvedValue({ id: 1, estadoHys: 'aprobada' });
+    prismaMock.novedad.update.mockResolvedValue({
+      id: 1,
+      estadoHys: 'aprobada',
+      cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
+    });
 
     await expect(
       service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000'),
@@ -464,12 +478,14 @@ describe('NovedadesService#reabrir', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
     auditoria: { create: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   let service: NovedadesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         NovedadesService,
@@ -497,7 +513,11 @@ describe('NovedadesService#reabrir', () => {
 
   it('resetea estadoHys a pendiente y limpia aprobadoHysPorCuil/aprobadoHysEn/descargoHys', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue({ id: 2, estadoHys: 'aprobada' });
-    prismaMock.novedad.update.mockResolvedValue({ id: 2, estadoHys: 'pendiente' });
+    prismaMock.novedad.update.mockResolvedValue({
+      id: 2,
+      estadoHys: 'pendiente',
+      cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
+    });
 
     await service.reabrir(2, { cuil: '20000000000', rol: 'HyS' });
 
@@ -512,7 +532,11 @@ describe('NovedadesService#reabrir', () => {
 
   it('escribe una fila de Auditoria con accion=reabrir y el estadoHys previo', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue({ id: 2, estadoHys: 'desaprobada' });
-    prismaMock.novedad.update.mockResolvedValue({ id: 2, estadoHys: 'pendiente' });
+    prismaMock.novedad.update.mockResolvedValue({
+      id: 2,
+      estadoHys: 'pendiente',
+      cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
+    });
 
     await service.reabrir(2, { cuil: '20777777777', rol: 'Admin' });
 
