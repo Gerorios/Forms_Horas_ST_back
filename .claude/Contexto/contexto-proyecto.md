@@ -2408,3 +2408,34 @@ front 200 en `/` y `/liquidacion/quincena/detalle`, API 401 sin token, logs de p
 errores post-restart. Recalcula en vivo TODAS las quincenas de relevadores existentes
 la próxima vez que se abran (es una corrección de fórmula, sin corte por fecha — ver
 ADR-019).
+
+---
+
+## 67. Nuevo régimen "fijo_105" (88hs básico + 17,5hs extra siempre fijas, ADR-020, 2026-08-25)
+
+**Pedido**: un grupo de empleados cobra un fijo de 105hs por quincena — 88 de básico
+(igual que el régimen `fijo` existente) más 17,5hs extra que **siempre** se pagan,
+sin depender de lo reportado en el Reporte diario (a diferencia de `jornalizado`, y a
+diferencia del flag `permiteHorasExtra` de `mensualizado` de ADR-017, que sí depende de
+lo declarado).
+
+**Decisión** (detalle completo en
+`docs/adr/2026-08-25-adr-020-regimen-fijo-105.md`): nuevo valor de enum `fijo_105`.
+`básico = tarifa × 88` (igual que `fijo`), `horasExtra = 17,5` fijo,
+`montoExtra = 17,5 × tarifa × 1,5` (mismo ×1,5 que jornalizado, a diferencia de
+`por_tantos` que no lo lleva). Presentismo (20%) se calcula sobre el básico de 88hs
+solamente, igual que el resto del sistema — sin código nuevo, ya era genérico. Bono y
+plus de novedades: sin cambios, también genéricos. Requiere `categoriaUocraId` (como
+`fijo`) y entra en `REGIMENES_CON_IMPUTACION` del Análisis (como `fijo`, no depende de
+horas reportadas).
+
+**Requiere DDL** (amplía el ENUM de `regimen`, no crea tablas):
+`docs/sql/2026-08-25-regimen-fijo-105.sql`, a mano en las dos bases — ya aplicado en
+`testing`.
+
+**QA manual (2026-08-25)** contra `testing`: se cambió temporalmente el perfil de
+TORRES RAMON FERNANDO a `fijo_105` (tarifa de prueba $1/hora) y se verificó el cálculo
+end-to-end vía API — básico $88, extra $26,25, horasTotal 105, presentismo $17,60 (20%
+de 88) — todo correcto; se revirtió el perfil a `jornalizado` como estaba.
+
+Verificación: backend 237/237 + build; frontend 459/459 + tsc + build.

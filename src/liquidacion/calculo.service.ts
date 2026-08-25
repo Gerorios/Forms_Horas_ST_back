@@ -168,6 +168,18 @@ export class CalculoService {
         } else {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
+      } else if (perfil.regimen === 'fijo_105') {
+        // Igual que "fijo", pero con 17,5hs extra SIEMPRE fijas (nunca
+        // dependen de horas reportadas) — 105hs totales. Ver ADR-020.
+        horasTotal = 105;
+        horasCct = 88;
+        horasExtra = 17.5;
+        if (tarifaHoraNum != null) {
+          basico = tarifaHoraNum * 88;
+          montoExtra = 17.5 * tarifaHoraNum * 1.5;
+        } else {
+          datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
+        }
       } else if (perfil.regimen === 'mensualizado') {
         const sueldo = sueldosMensualizados.find((s) => s.cuil === perfil.cuil) ?? null;
         horasCct = 1;
@@ -354,7 +366,7 @@ export class CalculoService {
         horasPendientes: horasPorCuil.get(e.cuil)!.pendientes,
       }));
 
-    const necesitaCategoria = ['jornalizado', 'fijo', 'por_tantos'];
+    const necesitaCategoria = ['jornalizado', 'fijo', 'fijo_105', 'por_tantos'];
     const perfilIncompleto = perfiles
       .filter((p) => p.regimen !== 'administrativo')
       .filter((p) => (necesitaCategoria.includes(p.regimen) && !p.categoriaUocraId) || !p.modalidadPago)

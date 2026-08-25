@@ -25,8 +25,8 @@ export class UpdateCategoriaUocraDto {
 }
 
 export class UpsertPerfilLiquidacionDto {
-  @IsIn(['jornalizado', 'fijo', 'mensualizado', 'por_tantos', 'administrativo'])
-  regimen: 'jornalizado' | 'fijo' | 'mensualizado' | 'por_tantos' | 'administrativo';
+  @IsIn(['jornalizado', 'fijo', 'fijo_105', 'mensualizado', 'por_tantos', 'administrativo'])
+  regimen: 'jornalizado' | 'fijo' | 'fijo_105' | 'mensualizado' | 'por_tantos' | 'administrativo';
 
   @IsOptional()
   @IsInt()

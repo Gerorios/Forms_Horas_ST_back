@@ -58,7 +58,7 @@ const redondear1 = (x: number) => Math.round(x * 10) / 10;
 
 // Regímenes que pueden usar contratos de imputación en el corte por contrato
 // (addendum plan 2026-08-12): si tienen asignación, la asignación manda.
-const REGIMENES_CON_IMPUTACION = new Set(['mensualizado', 'fijo', 'por_tantos']);
+const REGIMENES_CON_IMPUTACION = new Set(['mensualizado', 'fijo', 'fijo_105', 'por_tantos']);
 
 @Injectable()
 export class AnalisisService {
