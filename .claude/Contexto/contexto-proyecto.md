@@ -2439,3 +2439,11 @@ end-to-end vía API — básico $88, extra $26,25, horasTotal 105, presentismo $
 de 88) — todo correcto; se revirtió el perfil a `jornalizado` como estaba.
 
 Verificación: backend 237/237 + build; frontend 459/459 + tsc + build.
+
+**Deploy a producción (2026-08-25)**: PR backend #47 y frontend #50 mergeados a `main`
+con `gh pr merge --admin --delete-branch`. DDL `docs/sql/2026-08-25-regimen-fijo-105.sql`
+aplicado a mano en `Horas_Sertec` vía `sudo npx prisma db execute` (ampliación aditiva
+del ENUM, sin downtime) → `sudo npx prisma generate` (cliente nuevo con el enum) → pull
+main + build en ambos repos → `sudo pm2 restart` de los dos procesos. Verificado: front
+200 en `/` y `/liquidacion/perfiles`, API 401 sin token, logs de pm2 sin errores
+post-restart.
