@@ -2400,3 +2400,11 @@ misma sesión, siguiendo cada corrección); frontend 456-459/459 + tsc + build (
 fallas puntuales de una corrida fueron timeout flaky de `reporte-page.test.tsx`, no
 relacionado, confirmado aislado 7/7). Verificado en vivo contra los 2 casos reales, en
 el navegador y por API.
+
+**Deploy a producción (2026-08-25)**: PR backend #46 y frontend #49 mergeados a `main`
+con `gh pr merge --admin --delete-branch`. Sin DDL (no toca `schema.prisma`). Pull main
++ build en ambos repos en la VPS + `sudo pm2 restart` de los dos procesos. Verificado:
+front 200 en `/` y `/liquidacion/quincena/detalle`, API 401 sin token, logs de pm2 sin
+errores post-restart. Recalcula en vivo TODAS las quincenas de relevadores existentes
+la próxima vez que se abran (es una corrección de fórmula, sin corte por fecha — ver
+ADR-019).
