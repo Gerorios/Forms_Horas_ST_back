@@ -153,27 +153,45 @@ export class PanelService {
     const calculo = await this.calculo.calcularQuincena(anio, mes, quincena);
     const cuils = calculo.map((r) => r.cuil);
 
-    // Pendientes por cuil (chip "N sin aprobar")
-    const pendientesAgg = await this.prisma.registroHoras.groupBy({
-      by: ['operarioCuil'],
-      where: { estado: 'pendiente', operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta } },
-      _count: { _all: true },
-    });
+    // Las 3 queries de abajo solo dependen de `cuils` (ya calculado arriba) —
+    // corren en paralelo en vez de en serie para no pagar 3 roundtrips
+    // secuenciales contra el MySQL remoto en el endpoint más usado de la app.
+    const [pendientesAgg, registrosRango, novedades] = await Promise.all([
+      // Pendientes por cuil (chip "N sin aprobar")
+      this.prisma.registroHoras.groupBy({
+        by: ['operarioCuil'],
+        where: { estado: 'pendiente', operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta } },
+        _count: { _all: true },
+      }),
+      // Registros no desaprobados del rango: sirven tanto para detectar
+      // duplicados EXACTOS (regla 2026-08-14 en src/common/duplicados.ts) como
+      // para armar los días del expand (subset 'aprobado').
+      this.prisma.registroHoras.findMany({
+        where: { operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
+        include: {
+          contrato: { select: { codigo: true } },
+          tareas: { include: { tarea: { select: { nombre: true } } } },
+          moviles: { select: { movilId: true } },
+          cargadoPor: { select: { cuil: true, email: true, nombreFueraNomina: true } },
+        },
+        orderBy: { fecha: 'asc' },
+      }),
+      // Novedades del período con su efecto sobre la liquidación.
+      this.prisma.novedad.findMany({
+        where: {
+          operarioCuil: { in: cuils },
+          // Una novedad anulada no debe aparecer en el drill-down de detalle ni
+          // contarse en su efecto — feature editar/anular ausencias 2026-08-19.
+          estado: 'activa',
+          fechaInicio: { lte: hasta },
+          // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
+          // quincena solo si su unico dia (fechaInicio) cae dentro del rango.
+          OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
+        },
+        include: { tipoNovedad: true },
+      }),
+    ]);
     const pendientesPorCuil = new Map(pendientesAgg.map((p) => [p.operarioCuil, p._count._all]));
-
-    // Registros no desaprobados del rango: sirven tanto para detectar
-    // duplicados EXACTOS (regla 2026-08-14 en src/common/duplicados.ts) como
-    // para armar los días del expand (subset 'aprobado').
-    const registrosRango = await this.prisma.registroHoras.findMany({
-      where: { operarioCuil: { in: cuils }, fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
-      include: {
-        contrato: { select: { codigo: true } },
-        tareas: { include: { tarea: { select: { nombre: true } } } },
-        moviles: { select: { movilId: true } },
-        cargadoPor: { select: { cuil: true, email: true, nombreFueraNomina: true } },
-      },
-      orderBy: { fecha: 'asc' },
-    });
 
     const { cuilesConDuplicado } = duplicadosExactos(registrosRango);
 
@@ -204,20 +222,6 @@ export class PanelService {
       diasPorCuil.get(r.operarioCuil)!.push(item);
     }
 
-    // Novedades del período con su efecto sobre la liquidación.
-    const novedades = await this.prisma.novedad.findMany({
-      where: {
-        operarioCuil: { in: cuils },
-        // Una novedad anulada no debe aparecer en el drill-down de detalle ni
-        // contarse en su efecto — feature editar/anular ausencias 2026-08-19.
-        estado: 'activa',
-        fechaInicio: { lte: hasta },
-        // Novedad sin fechaFin = de un solo dia (decision 2026-08-05): solapa la
-        // quincena solo si su unico dia (fechaInicio) cae dentro del rango.
-        OR: [{ fechaFin: { gte: desde } }, { fechaFin: null, fechaInicio: { gte: desde } }],
-      },
-      include: { tipoNovedad: true },
-    });
     const novedadesPorCuil = new Map<string, unknown[]>();
     for (const n of novedades) {
       const fila = calculo.find((c) => c.cuil === n.operarioCuil);

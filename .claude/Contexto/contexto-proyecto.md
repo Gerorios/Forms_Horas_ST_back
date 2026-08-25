@@ -2447,3 +2447,53 @@ del ENUM, sin downtime) → `sudo npx prisma generate` (cliente nuevo con el enu
 main + build en ambos repos → `sudo pm2 restart` de los dos procesos. Verificado: front
 200 en `/` y `/liquidacion/perfiles`, API 401 sin token, logs de pm2 sin errores
 post-restart.
+
+---
+
+## 68. Auditoría de latencia + optimizaciones (2026-08-25)
+
+**Pedido**: "utilizando el code review" para analizar todo el proyecto (front y back) por
+latencia. El skill local de `code-review` compara un diff contra un punto fijo (no sirve
+para auditar todo el proyecto) — en su lugar se lanzaron 2 agentes en paralelo (fork),
+uno por repo, con foco específico en N+1, over-fetching, índices faltantes, waterfalls,
+re-renders innecesarios y bundle size.
+
+**Implementado** (2 tandas: primero los de mayor impacto/menor riesgo, después el resto):
+
+**Backend** (`src/liquidacion/panel.service.ts`, `registros-horas.service.ts`,
+`admin.service.ts`) — 239/239 tests, build limpio:
+- `getDetalleQuincena` (endpoint más usado, arma la tabla principal de liquidación): 3
+  queries independientes (pendientes, registros, novedades) pasan de secuenciales a
+  `Promise.all`.
+- `crearBatch` de horas: N+1 real — cada `create` traía 5 joins innecesarios
+  (`INCLUDE_BASICO`); ahora los inserts van sin `include` y se trae todo junto en 1
+  `findMany({ where: { loteId } })` al final del lote.
+- `createUsuariosMasivo` (alta masiva): 2 `findUnique` + `bcrypt.hash` secuenciales por
+  cada cuil → prefetch de usuarios/empleados existentes (`findMany` con `in`, 2 queries
+  en vez de 2×N) + `bcrypt.hash` en paralelo. Sin tests previos, se sumaron nuevos
+  (`admin-usuarios-masivo.spec.ts`).
+- **Descartado**: el agente reportó que `Novedad` no tenía ningún índice — falso, ya
+  tenía `@@index([operarioCuil, fechaInicio])` desde el commit inicial. No se tocó nada.
+  Sirve de recordatorio: verificar los hallazgos de los agentes contra el código actual
+  antes de actuar, no asumirlos.
+
+**Frontend** (`quincena/detalle/page.tsx`, `fila-empleado.tsx`, `tabla-por-tantos.tsx`,
+6 componentes de gráficos) — 459/459 tests, tsc y build limpios:
+- `filasVisibles`/`sinPerfilVisibles`/`filasPorTantosVisibles` (pantalla de detalle de
+  quincena, ~100-120 filas) pasan a `useMemo` — antes se recalculaban en cada render.
+- `FilaEmpleado`/`FilaPorTantos` envueltos en `React.memo`.
+- Recharts (~100kb+) con `next/dynamic({ ssr: false })` en los 6 componentes de
+  gráficos, para no bloquear el pintado del resto de `/control-general` y
+  `/liquidacion/analisis`. Requirió sacar `COLOR_SERIE_1`/`COLOR_SERIE_2` y `claseDelta`
+  a archivos chicos sin `import 'recharts'` (`chart-colors.ts`, sumado a `colores.ts`
+  existente) — otro código los importaba directo, lo que hubiera arrastrado igual la
+  librería al bundle pese al `dynamic()`.
+- Efecto colateral en tests: `next/dynamic` con `ssr:false` carga de forma asíncrona,
+  así que 2 tests que asumían el gráfico presente en el primer render pasaron a
+  `findBy*` con timeout de 15s (el import dinámico + transform de Recharts bajo Vite
+  puede tardar más de los 5s default, sobre todo con el sistema bajo carga — no es una
+  regresión real, es el costo esperado de diferir la carga).
+
+**Sin cambios**: pool de conexiones (ya conservador a propósito, ver incidente de
+agosto), paginación de `/liquidacion/quincena/detalle` (volumen actual no lo justifica),
+virtualización de tablas (~100 filas no llega al umbral típico de 500+).
