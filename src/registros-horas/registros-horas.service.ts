@@ -155,11 +155,15 @@ export class RegistrosHorasService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const registros = [];
+        let creados = 0;
         for (const operarioCuil of dto.operarioCuils) {
           const alertaHoras = alertaPorOperario.get(operarioCuil) ?? false;
           for (const linea of dto.lineas) {
-            const registro = await tx.registroHoras.create({
+            // Sin `include` acá: cada create no necesita las relaciones de
+            // vuelta, solo insertar. Se traen todas juntas al final, en una
+            // sola query — evita N inserts con 5 joins c/u cuando solo hace
+            // falta 1 query con joins al terminar el lote.
+            await tx.registroHoras.create({
               data: {
                 loteId,
                 fecha,
@@ -177,12 +181,12 @@ export class RegistrosHorasService {
                   ? { create: dto.movilIds.map((movilId) => ({ movilId })) }
                   : undefined,
               },
-              include: INCLUDE_BASICO,
             });
-            registros.push(registro);
+            creados++;
           }
         }
-        return { creados: registros.length, registros };
+        const registros = await tx.registroHoras.findMany({ where: { loteId }, include: INCLUDE_BASICO });
+        return { creados, registros };
       },
       { timeout: 30000, maxWait: 10000 },
     );

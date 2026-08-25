@@ -60,6 +60,7 @@ describe('RegistrosHorasService', () => {
       const txMock = {
         registroHoras: {
           create: jest.fn().mockResolvedValue({ id: 1 }),
+          findMany: jest.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]),
         },
       };
       prismaMock.$transaction = jest.fn((cb: any) => cb(txMock));
@@ -80,6 +81,13 @@ describe('RegistrosHorasService', () => {
       // 20-1-1 tenía 10hs previas + 4 del batch = 14 → sin alerta; 20-2-2: 0+4
       const creadas = txMock.registroHoras.create.mock.calls.map((c: any) => c[0].data);
       expect(creadas.find((d: any) => d.operarioCuil === '20-1-1').alertaHoras).toBe(false);
+      // Perf: cada create NO trae los joins (INCLUDE_BASICO) — se traen todos
+      // juntos en un solo findMany al final del lote.
+      for (const call of txMock.registroHoras.create.mock.calls) {
+        expect((call[0] as any).include).toBeUndefined();
+      }
+      expect(txMock.registroHoras.findMany).toHaveBeenCalledTimes(1);
+      expect(r.registros).toEqual([{ id: 1 }, { id: 2 }]);
     });
   });
 

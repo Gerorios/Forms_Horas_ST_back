@@ -256,31 +256,47 @@ export class AdminService {
     const rolOperario = await this.prisma.rol.findUnique({ where: { nombre: 'Operario' } });
     if (!rolOperario) throw new NotFoundException('No existe el rol Operario');
 
-    const creados: { cuil: string; apellido_nombre: string; email: string; password: string }[] = [];
-    const omitidos: { cuil: string; motivo: string }[] = [];
+    // Prefetch de existencia (usuario/empleado) en 2 queries en vez de 2×N —
+    // antes se consultaba uno por uno, en serie, dentro del loop.
+    const [usuariosExistentes, empleados] = await Promise.all([
+      this.prisma.usuario.findMany({ where: { cuil: { in: cuils } }, select: { cuil: true } }),
+      this.prisma.snuempleados.findMany({
+        where: { cuil: { in: cuils } },
+        select: { cuil: true, legajo: true, apellido_nombre: true, activo: true, borrado: true },
+      }),
+    ]);
+    const cuilsConUsuario = new Set(usuariosExistentes.map((u) => u.cuil));
+    const empleadoPorCuil = new Map(empleados.map((e) => [e.cuil, e]));
 
+    const omitidos: { cuil: string; motivo: string }[] = [];
+    const aCrear: { cuil: string; legajo: number; apellido_nombre: string }[] = [];
     for (const cuil of cuils) {
-      const yaExiste = await this.prisma.usuario.findUnique({ where: { cuil } });
-      if (yaExiste) {
+      if (cuilsConUsuario.has(cuil)) {
         omitidos.push({ cuil, motivo: 'ya tiene usuario' });
         continue;
       }
-      const emp = await this.prisma.snuempleados.findUnique({
-        where: { cuil },
-        select: { legajo: true, apellido_nombre: true, activo: true, borrado: true },
-      });
+      const emp = empleadoPorCuil.get(cuil);
       if (!emp || emp.activo !== 'S' || emp.borrado === 'S') {
         omitidos.push({ cuil, motivo: 'empleado inexistente o inactivo' });
         continue;
       }
-      const email = await this.generarEmail(emp.legajo, cuil);
-      const password = cuil;
-      const passwordHash = await bcrypt.hash(password, 10);
-      await this.prisma.usuario.create({
-        data: { cuil, email, passwordHash, rolId: rolOperario.id },
-      });
-      creados.push({ cuil, apellido_nombre: emp.apellido_nombre, email, password });
+      aCrear.push({ cuil, legajo: emp.legajo, apellido_nombre: emp.apellido_nombre });
     }
+
+    // bcrypt.hash es CPU-bound (~50-100ms c/u) — corre en paralelo para los
+    // que sí hay que crear, en vez de uno detrás de otro. Seguro porque
+    // `generarEmail` arranca de un identificador único por empleado (su
+    // legajo o, si no tiene, su propio cuil) — dos altas del mismo lote
+    // nunca compiten por el mismo email base.
+    const creados = await Promise.all(
+      aCrear.map(async (e) => {
+        const email = await this.generarEmail(e.legajo, e.cuil);
+        const password = e.cuil;
+        const passwordHash = await bcrypt.hash(password, 10);
+        await this.prisma.usuario.create({ data: { cuil: e.cuil, email, passwordHash, rolId: rolOperario.id } });
+        return { cuil: e.cuil, apellido_nombre: e.apellido_nombre, email, password };
+      }),
+    );
     return { creados, omitidos };
   }
 
