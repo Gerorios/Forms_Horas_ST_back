@@ -204,6 +204,9 @@ model TipoNovedad {
 enum RegimenLiquidacion {
   jornalizado
   fijo
+  // Igual que "fijo" (88hs básico), pero con 17,5hs extra SIEMPRE fijas
+  // (nunca dependen de horas reportadas) — 105hs totales. Ver ADR-020.
+  fijo_105
   // Sueldo bruto fijo cargado a mano por el Liquidador cada quincena (no
   // depende de categoría UOCRA ni de horas). Ver ADR-011.
   mensualizado

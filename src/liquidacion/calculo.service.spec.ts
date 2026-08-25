@@ -210,6 +210,62 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
   });
 
+  describe('régimen "fijo_105" (básico = tarifa × 88 + 17,5hs extra SIEMPRE fijas, ver ADR-020)', () => {
+    it('105hs totales sin importar lo declarado: 88 de básico + 17,5 de extra con ×1.5', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          cuil: '20888888888',
+          regimen: 'fijo_105',
+          categoriaUocraId: 1,
+          modalidadPago: 'con_descuentos',
+          permiteHorasExtra: false,
+          empleado: { apellido_nombre: 'FIJO 105 TEST', legajo: 6, cargo: 'Oficial', provincia: 'Córdoba' },
+          categoria: { id: 1, nombre: 'Oficial' },
+        },
+      ]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
+      ]);
+      // 0 horas declaradas — no debe cambiar nada, "fijo_105" no depende de lo reportado.
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.horasTotal).toBe(105);
+      expect(fila.horasCct).toBe(88);
+      expect(fila.horasExtra).toBe(17.5);
+      expect(fila.totalBruto).toBe(88_000); // básico = tarifa × 88
+      expect(fila.montoHorasExtra).toBe(26_250); // 17,5 × 1.000 × 1.5
+      expect(fila.montoPresentismo).toBe(17_600); // 20% del básico (88.000), no de las 105hs
+    });
+
+    it('sin categoría/tarifa asignada: datoFaltante, sin calcular nada', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          cuil: '20888888888',
+          regimen: 'fijo_105',
+          categoriaUocraId: null,
+          modalidadPago: 'con_descuentos',
+          permiteHorasExtra: false,
+          empleado: { apellido_nombre: 'FIJO 105 SIN CATEGORIA', legajo: 6, cargo: null, provincia: 'Córdoba' },
+          categoria: null,
+        },
+      ]);
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.datoFaltante).toBe('Sin categoría UOCRA / tarifa asignada');
+      expect(fila.totalBruto).toBe(0);
+      expect(fila.montoHorasExtra).toBe(0);
+    });
+  });
+
   describe('presentismo y Ausencia (regla 2026-08-18: cualquier estadoHys hace perder presentismo)', () => {
     const PERFIL_JORNALIZADO = {
       cuil: '20444444444',

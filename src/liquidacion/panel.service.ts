@@ -13,7 +13,7 @@ export interface QuincenaResumen {
   alertas: number;
 }
 
-const REGIMENES_CON_CATEGORIA = new Set(['jornalizado', 'fijo', 'por_tantos']);
+const REGIMENES_CON_CATEGORIA = new Set(['jornalizado', 'fijo', 'fijo_105', 'por_tantos']);
 
 /**
  * Panel del Liquidador: lista de quincenas con estado derivado (sin marca
