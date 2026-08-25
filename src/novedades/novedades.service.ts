@@ -10,7 +10,7 @@ import { NOVEDAD_ADJUNTO_STORAGE, NovedadAdjuntoStorage } from './storage/noveda
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true, legajo: true } },
   tipoNovedad: { select: { id: true, nombre: true, requiereAprobacionHys: true } },
-  cargadoPor: { select: { cuil: true, email: true } },
+  cargadoPor: { select: { cuil: true, nombreFueraNomina: true } },
 };
 
 // Snapshot de los campos editables de una novedad, para el before/after de Auditoría.
@@ -51,6 +51,50 @@ export class NovedadesService {
     @Inject(NOVEDAD_ADJUNTO_STORAGE) private adjuntoStorage: NovedadAdjuntoStorage,
   ) {}
 
+  /** Mapa cuil→apellido_nombre para el conjunto de CUILs pedido (empleados en
+   * snuempleados). No hay FK física a snuempleados (ADR-008): quien llama
+   * decide el fallback (típicamente `nombreFueraNomina`) para los que no
+   * aparezcan acá — mismo criterio que registros-horas.service.ts. */
+  private async mapaNombresPorCuil(cuils: Iterable<string>): Promise<Map<string, string>> {
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: [...new Set(cuils)] } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    return new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+  }
+
+  /** Reemplaza `cargadoPor` (cuil + nombreFueraNomina "crudos") por el nombre
+   * para mostrar. Un email (ej. "10801@st.local") no identifica a nadie en
+   * el tiempo — un JefeCuadrilla no tiene otro identificador visible salvo
+   * su nombre real (revisión 2026-08-25). */
+  private async conNombreCargador<T extends { cargadoPor: { cuil: string; nombreFueraNomina: string | null } }>(
+    novedad: T,
+  ): Promise<Omit<T, 'cargadoPor'> & { cargadoPor: { cuil: string; nombre: string } }> {
+    const mapa = await this.mapaNombresPorCuil([novedad.cargadoPor.cuil]);
+    return {
+      ...novedad,
+      cargadoPor: {
+        cuil: novedad.cargadoPor.cuil,
+        nombre: mapa.get(novedad.cargadoPor.cuil) ?? novedad.cargadoPor.nombreFueraNomina ?? '',
+      },
+    };
+  }
+
+  /** Misma resolución que `conNombreCargador`, en lote (una sola consulta a
+   * snuempleados para toda la lista) — usada por `findAll`. */
+  private async conNombresCargador<T extends { cargadoPor: { cuil: string; nombreFueraNomina: string | null } }>(
+    novedades: T[],
+  ): Promise<(Omit<T, 'cargadoPor'> & { cargadoPor: { cuil: string; nombre: string } })[]> {
+    const mapa = await this.mapaNombresPorCuil(novedades.map((n) => n.cargadoPor.cuil));
+    return novedades.map((n) => ({
+      ...n,
+      cargadoPor: {
+        cuil: n.cargadoPor.cuil,
+        nombre: mapa.get(n.cargadoPor.cuil) ?? n.cargadoPor.nombreFueraNomina ?? '',
+      },
+    }));
+  }
+
   async create(
     dto: CreateNovedadDto,
     adjunto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' | 'application/pdf' } | undefined,
@@ -84,7 +128,7 @@ export class NovedadesService {
     // para no dejar archivos huérfanos si la carga termina rechazada.
     const adjuntoUrl = adjunto ? await this.adjuntoStorage.guardar(adjunto.buffer, adjunto.mimetype) : undefined;
 
-    return this.prisma.novedad.create({
+    const novedad = await this.prisma.novedad.create({
       data: {
         operarioCuil: dto.operarioCuil,
         tipoNovedadId: dto.tipoNovedadId,
@@ -97,9 +141,10 @@ export class NovedadesService {
       },
       include: INCLUDE_BASICO,
     });
+    return this.conNombreCargador(novedad);
   }
 
-  findAll(
+  async findAll(
     filtros: {
       operarioCuil?: string;
       estadoHys?: string;
@@ -115,7 +160,7 @@ export class NovedadesService {
       ? rangoQuincena(filtros.periodo.anio, filtros.periodo.mes, filtros.periodo.quincena)
       : null;
 
-    return this.prisma.novedad.findMany({
+    const novedades = await this.prisma.novedad.findMany({
       where: {
         ...(filtros.operarioCuil ? { operarioCuil: filtros.operarioCuil } : {}),
         ...(filtros.estadoHys ? { estadoHys: filtros.estadoHys as any } : {}),
@@ -137,6 +182,7 @@ export class NovedadesService {
       include: INCLUDE_BASICO,
       orderBy: { fechaInicio: 'desc' },
     });
+    return this.conNombresCargador(novedades);
   }
 
   /**
@@ -190,7 +236,7 @@ export class NovedadesService {
 
     const yaResuelta = novedad.estadoHys === 'aprobada' || novedad.estadoHys === 'desaprobada';
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
         where: { id },
         data: {
@@ -221,6 +267,7 @@ export class NovedadesService {
 
       return updated;
     });
+    return this.conNombreCargador(updated);
   }
 
   /**
@@ -234,7 +281,7 @@ export class NovedadesService {
     this.verificarAlcanceTipo(novedad.tipoNovedad.nombre, usuario);
     if (novedad.estado === 'anulada') throw new BadRequestException('Ya está anulada');
 
-    return this.prisma.$transaction(async (tx) => {
+    const anulada = await this.prisma.$transaction(async (tx) => {
       const anulada = await tx.novedad.update({
         where: { id },
         data: {
@@ -258,6 +305,7 @@ export class NovedadesService {
       });
       return anulada;
     });
+    return this.conNombreCargador(anulada);
   }
 
   async resolverHys(id: number, dto: ResolverNovedadDto, aprobadoPorCuil: string) {
@@ -265,7 +313,7 @@ export class NovedadesService {
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    return this.prisma.novedad.update({
+    const updated = await this.prisma.novedad.update({
       where: { id },
       data: {
         estadoHys: dto.estadoHys,
@@ -275,6 +323,7 @@ export class NovedadesService {
       },
       include: INCLUDE_BASICO,
     });
+    return this.conNombreCargador(updated);
   }
 
   /** Reabre una novedad ya resuelta por HyS: vuelve a `pendiente` y limpia la
@@ -284,7 +333,7 @@ export class NovedadesService {
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
         where: { id },
         data: { estadoHys: 'pendiente', aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null },
@@ -305,6 +354,7 @@ export class NovedadesService {
 
       return updated;
     });
+    return this.conNombreCargador(updated);
   }
 
   async obtenerAdjunto(
