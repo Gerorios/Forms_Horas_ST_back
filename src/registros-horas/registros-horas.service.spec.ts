@@ -8,9 +8,11 @@ const usuario = { cuil: '20-1-1', rol: 'Admin' };
 describe('RegistrosHorasService', () => {
   const prismaMock: any = {
     contrato: { findMany: jest.fn() },
-    registroHoras: { findMany: jest.fn() },
+    registroHoras: { findMany: jest.fn(), groupBy: jest.fn() },
     snuempleados: { findMany: jest.fn() },
+    perfilLiquidacion: { findMany: jest.fn() },
   };
+  const empleadosMock = { findActivos: jest.fn() };
   let service: RegistrosHorasService;
 
   beforeEach(async () => {
@@ -18,11 +20,14 @@ describe('RegistrosHorasService', () => {
     // Default: sin empleados en snuempleados — los tests de auditoría
     // (cargadoPor/aprobadoPor) que necesiten un nombre real lo sobreescriben.
     prismaMock.snuempleados.findMany.mockResolvedValue([]);
+    empleadosMock.findActivos.mockResolvedValue([]);
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]);
+    prismaMock.registroHoras.groupBy.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         RegistrosHorasService,
         { provide: PrismaService, useValue: prismaMock },
-        { provide: EmpleadosService, useValue: {} },
+        { provide: EmpleadosService, useValue: empleadosMock },
       ],
     }).compile();
     service = mod.get(RegistrosHorasService);
@@ -286,6 +291,29 @@ describe('RegistrosHorasService', () => {
       });
       const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
       expect(where.operarioCuil).toEqual({ in: ['20-2-2', '20-3-3'] });
+    });
+  });
+
+  describe('sinCarga — solo régimen jornalizado', () => {
+    it('excluye a los que no son jornalizado aunque no hayan cargado nada', async () => {
+      empleadosMock.findActivos.mockResolvedValue([
+        { cuil: '20-1-1', apellido_nombre: 'JORNALIZADO SIN CARGA', legajo: 1, cargo: 'Op' },
+        { cuil: '20-2-2', apellido_nombre: 'MENSUALIZADO SIN CARGA', legajo: 2, cargo: 'Op' },
+      ]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]); // nadie cargó nada en la quincena
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]); // solo el primero es jornalizado
+      const r = await service.sinCarga(2026, 8, 1);
+      expect(r.map((e) => e.cuil)).toEqual(['20-1-1']);
+    });
+
+    it('a un jornalizado que sí cargó no lo lista', async () => {
+      empleadosMock.findActivos.mockResolvedValue([
+        { cuil: '20-1-1', apellido_nombre: 'JORNALIZADO CON CARGA', legajo: 1, cargo: 'Op' },
+      ]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([{ operarioCuil: '20-1-1' }]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+      const r = await service.sinCarga(2026, 8, 1);
+      expect(r).toEqual([]);
     });
   });
 

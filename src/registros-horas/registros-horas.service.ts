@@ -888,26 +888,37 @@ export class RegistrosHorasService {
   }
 
   /**
-   * Empleados activos (snuempleados) sin ningún RegistroHoras en la quincena
-   * — sin importar contrato ni estado (un rechazo también cuenta como "algo
-   * se cargó"; acá interesa la ausencia total). No se scopea a "mis
-   * contratos": la ausencia de carga no le pertenece a ningún contrato en
-   * particular, y como los operarios son multidisciplinarios no hay un
-   * padrón fijo por contrato — se comparte entre todos los Jefes de
-   * Contrato y Admin para que cualquiera pueda notarlo y coordinar.
+   * Empleados activos (snuempleados) con régimen "jornalizado" sin ningún
+   * RegistroHoras en la quincena — sin importar contrato ni estado (un
+   * rechazo también cuenta como "algo se cargó"; acá interesa la ausencia
+   * total). No se scopea a "mis contratos": la ausencia de carga no le
+   * pertenece a ningún contrato en particular, y como los operarios son
+   * multidisciplinarios no hay un padrón fijo por contrato — se comparte
+   * entre todos los Jefes de Contrato y Admin para que cualquiera pueda
+   * notarlo y coordinar.
+   *
+   * Solo jornalizados: el resto de los regímenes (fijo, fijo_105,
+   * mensualizado, por_tantos) cobra un monto fijo o por otro criterio que no
+   * depende de las horas cargadas — que no carguen es, a lo sumo,
+   * estadístico, no algo que alguien tenga que salir a corregir.
    */
   async sinCarga(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
-    const [activos, conCarga] = await Promise.all([
+    const [activos, conCarga, jornalizados] = await Promise.all([
       this.empleados.findActivos(),
       this.prisma.registroHoras.findMany({
         where: { fecha: { gte: desde, lte: hasta } },
         select: { operarioCuil: true },
         distinct: ['operarioCuil'],
       }),
+      this.prisma.perfilLiquidacion.findMany({
+        where: { regimen: 'jornalizado' },
+        select: { cuil: true },
+      }),
     ]);
+    const cuilsJornalizados = new Set(jornalizados.map((p) => p.cuil));
     const cuilsConCarga = new Set(conCarga.map((c) => c.operarioCuil));
-    const sinCarga = activos.filter((e) => !cuilsConCarga.has(e.cuil));
+    const sinCarga = activos.filter((e) => cuilsJornalizados.has(e.cuil) && !cuilsConCarga.has(e.cuil));
 
     // Última carga histórica (fuera de esta quincena, en cualquier contrato)
     // de cada uno — distingue "nunca cargó nada" (recién ingresado, sin
