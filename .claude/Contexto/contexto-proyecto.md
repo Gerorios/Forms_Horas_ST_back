@@ -2520,3 +2520,35 @@ frontend tsc limpio + 458/459 (única falla en `reporte-page.test.tsx`, no relac
 confirmado flaky). PR back #49 y front #52, mergeados con `--admin --delete-branch` y
 deployados (pull + build + `pm2 restart`, sin DDL). Verificado: front 200 en `/novedades`,
 API responde bien, logs sin errores.
+
+---
+
+## 70. Fix "sin carga" (solo jornalizados) + reversión del modo oscuro (2026-08-28)
+
+**Sin carga (Control general)**: pedido explícito de Rodrigo — "los sin carga deberían
+aparecer los jornalizados únicamente, ya que el resto si no cargan es más estadístico,
+pero su liquidación sale como fijo". `RegistrosHorasService.sinCarga()` listaba a
+**todos** los empleados activos sin `RegistroHoras` en la quincena, sin mirar el
+régimen: mensualizados, fijos, fijo_105 y por_tantos cobran un monto o criterio que no
+depende de las horas cargadas, así que aparecer ahí era ruido, no una alerta real.
+Ahora se cruza contra `PerfilLiquidacion.regimen === 'jornalizado'` antes de armar la
+lista. 2 tests nuevos en `registros-horas.service.spec.ts` (jornalizado sin carga sí
+aparece; mensualizado sin carga no). Probado en localhost con los dos servers
+levantados, contra el flujo real de Control general.
+
+**Reversión del modo oscuro**: el modo oscuro agregado en la tanda de mejoras visuales
+(PR back — / front #53) se saca por completo a pedido de Rodrigo, sin motivo técnico
+puntual registrado. Se quita el toggle (`ThemeToggle`), el script bloqueante que
+aplicaba la clase `dark` antes del primer paint (`layout.tsx`) y las variables de marca
+del bloque `.dark` en `globals.css` (vuelve a quedar como placeholder inerte, solo para
+que las utilidades `dark:` de shadcn no rompan el build — igual que antes de
+agregarlo). El resto de esa tanda queda intacto (indicadores del Home, skeletons,
+componente `Button`, contadores por pestaña en Aprobaciones/Ausencias, link del logo a
+Home). Diff acotado a 4 archivos, sin lógica nueva.
+
+Backend: 241/241 tests + `tsc` limpio. Frontend: 459/459 tests (verificados también en
+aislado — la corrida completa tuvo timeouts puntuales por contención de recursos con
+los dos dev servers activos en paralelo, no por estos cambios) + `tsc` limpio.
+
+PR back #50 y front #54, abiertos — pendientes de revisión y merge (sin deploy
+todavía).
