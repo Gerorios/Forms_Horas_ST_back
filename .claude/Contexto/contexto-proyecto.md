@@ -2654,3 +2654,8 @@ adapter). Verificado: índice viejo de bonos coincidía, backfill 8+8 filas
 LOCALIDAD/PROVINCIA (consulta al liquidador), validar GUARDIAS/
 PRODUCTIVIDAD contra una quincena real, alcance de DIAS TRABAJADOS con
 feriados, usuario MySQL de solo lectura para el analista (IT).
+
+**Adenda misma fecha (PR front #57, deployado)**: la tabla del detalle de
+quincena entraba con scroll horizontal — alertas apiladas en columna, hint
+de expandir = chevron con tooltip, padding px-2 y min-width 1250/1100 →
+960px (tabla principal y por tantos).
