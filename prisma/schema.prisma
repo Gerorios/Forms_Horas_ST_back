@@ -84,6 +84,10 @@ model Usuario {
   plusIndividualCargado PlusIndividual[]
   cierresLiquidacion    CierreLiquidacion[]
 
+  // Módulo Certificaciones (unificación de sistemas, etapa 1 — ver ADR pendiente)
+  certificacionAcceso    CertificacionAcceso?
+  certificacionContratos CertificacionContratoHabilitado[]
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -133,6 +137,28 @@ model TipoNovedadHabilitado {
 }
 
 // ------------------------------------------------------------
+// CERTIFICACIONES (acceso al módulo — etapa 1 de la unificación)
+// ------------------------------------------------------------
+model CertificacionAcceso {
+  cuil          String  @id @db.Char(13)
+  nivel         String  // admin | carga | lectura
+  verIncidencia Boolean @default(false)
+  usuario       Usuario @relation(fields: [cuil], references: [cuil])
+
+  @@map("sth_certificaciones_accesos")
+}
+
+model CertificacionContratoHabilitado {
+  cuil       String   @db.Char(13)
+  contratoId Int
+  usuario    Usuario  @relation(fields: [cuil], references: [cuil])
+  contrato   Contrato @relation(fields: [contratoId], references: [id])
+
+  @@id([cuil, contratoId])
+  @@map("sth_certificaciones_contratos")
+}
+
+// ------------------------------------------------------------
 // CATÁLOGOS / ADMINISTRACIÓN
 // ------------------------------------------------------------
 model Contrato {
@@ -146,6 +172,9 @@ model Contrato {
   usuariosHabilitados ContratoHabilitado[]
   registrosHoras       RegistroHoras[]
   perfilesImputacion   PerfilContratoImputacion[]
+
+  // Módulo Certificaciones (unificación de sistemas, etapa 1)
+  certificacionUsuarios CertificacionContratoHabilitado[]
 
   @@map("sth_contratos")
 }
