@@ -12,7 +12,7 @@
 
 -- CreateTable
 CREATE TABLE `sth_certificaciones_accesos` (
-    `cuil` CHAR(13) NOT NULL,
+    `cuil` CHAR(13) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL,
     `nivel` VARCHAR(191) NOT NULL,
     `verIncidencia` BOOLEAN NOT NULL DEFAULT false,
 
@@ -21,7 +21,7 @@ CREATE TABLE `sth_certificaciones_accesos` (
 
 -- CreateTable
 CREATE TABLE `sth_certificaciones_contratos` (
-    `cuil` CHAR(13) NOT NULL,
+    `cuil` CHAR(13) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL,
     `contratoId` INTEGER NOT NULL,
 
     PRIMARY KEY (`cuil`, `contratoId`)
