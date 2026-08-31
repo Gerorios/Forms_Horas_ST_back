@@ -11,7 +11,7 @@ async function bootstrap() {
   // Traduce los errores de subida (archivo muy grande, etc.) a mensajes que el
   // usuario entiende, en vez del 500 pelado que devuelve multer por defecto.
   app.useGlobalFilters(new MulterExceptionFilter());
-  app.enableCors();
+  app.enableCors({ exposedHeaders: ['Content-Disposition'] });
   // Sin esto, cada reinicio (pm2 / nest --watch) abandona su pool de MySQL sin
   // cerrar y el servidor compartido retiene las conexiones muertas por horas
   // (incidente 2026-08-13).

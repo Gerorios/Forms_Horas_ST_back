@@ -106,14 +106,14 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     });
   });
 
-  describe('bono no remunerativo (único campo opcional)', () => {
+  describe('bono no remunerativo por quincena (único campo opcional, ADR-021 §6)', () => {
     it('sin fila propia: resuelto=false (no se infiere "sin bono" de la ausencia)', async () => {
       prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
       prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), tipo: 'monto_fijo', valor: 33550 },
+        { categoriaUocraId: 1, vigenteDesde: new Date(Date.UTC(2026, 6, 1)), quincena: 1, tipo: 'monto_fijo', valor: 33550 },
       ]);
 
-      const r = await service.getBonosPeriodo(2026, 8);
+      const r = await service.getBonosPeriodo(2026, 8, 1);
       expect(r).toEqual([
         {
           categoriaUocraId: 1,
@@ -125,20 +125,62 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
       ]);
     });
 
-    it('guardar con valor 0: crea una fila real (decisión explícita "sin bono este mes")', async () => {
+    it('con fila propia de la quincena exacta: resuelto=true', async () => {
+      prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
+      prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 1, tipo: 'monto_fijo', valor: 15000 },
+        { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 2, tipo: 'monto_fijo', valor: 20000 },
+      ]);
+
+      const r = await service.getBonosPeriodo(2026, 8, 1);
+      expect(r).toEqual([
+        {
+          categoriaUocraId: 1,
+          nombre: 'Oficial',
+          resuelto: true,
+          bono: { tipo: 'monto_fijo', valor: '15000' },
+          sugerencia: null,
+        },
+      ]);
+    });
+
+    it('2Q sin fila propia sugiere la 1Q del mismo mes (previa dentro del período)', async () => {
+      prismaMock.categoriaUocra.findMany.mockResolvedValue([{ id: 1, nombre: 'Oficial' }]);
+      prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([
+        { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 1, tipo: 'monto_fijo', valor: 15000 },
+      ]);
+
+      const r = await service.getBonosPeriodo(2026, 8, 2);
+      expect(r).toEqual([
+        {
+          categoriaUocraId: 1,
+          nombre: 'Oficial',
+          resuelto: false,
+          bono: null,
+          sugerencia: { tipo: 'monto_fijo', valor: '15000', periodo: { anio: 2026, mes: 8 } },
+        },
+      ]);
+    });
+
+    it('guardar con valor 0: crea una fila real (decisión explícita "sin bono esta quincena")', async () => {
       prismaMock.bonoNoRemunerativo.findUnique.mockResolvedValue(null);
       prismaMock.bonoNoRemunerativo.create.mockResolvedValue({ id: 5 });
       prismaMock.categoriaUocra.findMany.mockResolvedValue([]);
       prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([]);
 
-      await service.guardarBonosPeriodo(2026, 8, { bonos: [{ categoriaUocraId: 1, tipo: 'monto_fijo', valor: 0 }] }, '20-1-1');
+      await service.guardarBonosPeriodo(2026, 8, 1, { bonos: [{ categoriaUocraId: 1, tipo: 'monto_fijo', valor: 0 }] }, '20-1-1');
 
-      expect(prismaMock.bonoNoRemunerativo.create).toHaveBeenCalledWith({
-        data: { categoriaUocraId: 1, vigenteDesde: fecha, tipo: 'monto_fijo', valor: 0 },
+      expect(prismaMock.bonoNoRemunerativo.findUnique).toHaveBeenCalledWith({
+        where: { categoriaUocraId_vigenteDesde_quincena: { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 1 } },
       });
+      expect(prismaMock.bonoNoRemunerativo.create).toHaveBeenCalledWith({
+        data: { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 1, tipo: 'monto_fijo', valor: 0 },
+      });
+      expect(prismaMock.bonoNoRemunerativo.create).toHaveBeenCalledTimes(1);
       expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ tabla: 'sth_bonos_no_remunerativos', accion: 'crear', valorNuevo: '0' }),
       });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledTimes(1);
     });
   });
 

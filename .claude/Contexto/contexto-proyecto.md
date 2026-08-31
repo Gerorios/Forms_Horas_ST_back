@@ -2552,3 +2552,67 @@ los dos dev servers activos en paralelo, no por estos cambios) + `tsc` limpio.
 
 PR back #50 y front #54, abiertos — pendientes de revisión y merge (sin deploy
 todavía).
+
+---
+
+## 71. Cierre de liquidación versionado + export Excel + bono quincenal (ADR-021) — IMPLEMENTADO, pendiente QA/PR (2026-08-30)
+
+Sesión de `/grill-with-docs` completa (snapshot vs bloqueo, versionado, zona,
+Excel real analizado, bono quincenal) + ejecución con subagent-driven
+development en DOS cadenas paralelas (Backend Tasks 1-6, Frontend Tasks 7-10),
+review por task + review final de rama (Opus) + fix wave. Rama
+`feature/cierre-liquidacion` en ambos repos, SIN PR todavía (esperando OK y QA
+manual del usuario).
+
+**Qué se construyó** (detalle en ADR-021, spec y plan del 2026-08-30):
+- **Cierre = snapshot versionado puro** (sin bloqueo): tablas
+  `sth_cierres_liquidacion` (cabecera, version=MAX+1 derivada, nota
+  obligatoria en recierres, salvedades JSON), `sth_cierre_liquidacion_detalle`
+  (una fila congelada por empleado, TODO desnormalizado, cuil sin FK) y
+  `sth_cierre_dias_trabajados`. DDL `docs/sql/2026-08-30-cierres-liquidacion.sql`
+  — aplicado en `testing`, ⚠️ FALTA `Horas_Sertec` (al deploy).
+- **Bono no remunerativo por QUINCENA** (era mensual): columna `quincena` +
+  unique triple + backfill (fila mensual duplicada en 1Q/2Q, fiel a lo
+  pagado). DDL `docs/sql/2026-08-30-bono-quincenal.sql` — ⚠️ el archivo fue
+  CORREGIDO en orden (swap de índice ANTES del INSERT; el orden original del
+  plan fallaba con P2002); en `testing` ya está; en `Horas_Sertec` verificar
+  antes el nombre del índice viejo con SHOW INDEX. Rutas
+  `tarifas/bonos/:anio/:mes/:quincena`; tarjeta Bono con selector de quincena
+  propio (default quincena actual, patrón Plus individual).
+- **Zona NORTE/SUR**: derivada de `snuempleados.provincia`
+  (SALTA/JUJUY→norte, TUCUMAN→sur, otro→null "sin zona" con chip + salvedad),
+  helper `src/common/zona.ts`, congelada por fila del cierre.
+- **Endpoints**: POST/GET `/liquidacion/cierres`, GET `/cierres/:id`,
+  GET `/cierres/:id/excel` y `/excel-por-tantos` (Admin+Liquidador). P2002
+  concurrente → ConflictException.
+- **Excel (exceljs, dependencia nueva)**: SOLO desde un cierre. Principal 5
+  hojas (TOTAL / NORTE / TUCUMAN / RESUMEN / DIAS TRABAJADOS) con las 18
+  columnas del archivo real del preliquidador; por tantos en B como archivo
+  aparte. Filenames `{anio}_{mes}_{q}q_Sueldo SERTEC_v{N}.xlsx`. Bug de TZ
+  (local vs UTC en la matriz de días) detectado por review y corregido con
+  test RED-confirmado. CORS ahora expone Content-Disposition (sin eso el
+  nombre del archivo se perdía).
+- **Frontend**: botón "Cerrar quincena" en el detalle (diálogo con versión,
+  totales, salvedades, nota obligatoria en recierre) → pantalla nueva
+  `/liquidacion/cierres` (agrupada por quincena, vigente al frente, versiones
+  expandibles, descargas, "Ver detalle" congelado). Helpers de formato
+  unificados en `src/features/liquidacion/formato.ts`.
+- **Consumo del analista**: decidido usuario MySQL de SOLO LECTURA sobre las
+  tablas de hechos (coordinar con IT — pendiente operativo, sin código).
+
+**Verificación**: backend 278/278 + build; frontend tsc + build + tests por
+archivo. QA manual del usuario PENDIENTE (checklist: cerrar quincena en
+local contra testing, recerrar exigiendo nota, descargar ambos Excels y
+verificar nombre de archivo + hojas + columnas contra el archivo real,
+bono 1Q≠2Q impactando el cálculo, chip "sin zona").
+
+**Pendientes abiertos del spec (§7)**: (1) nombre de columna
+LOCALIDAD/PROVINCIA — el usuario consulta al liquidador; (2) validar mapeo
+GUARDIAS/PRODUCTIVIDAD contra una quincena real cerrada por ambos métodos;
+(3) alcance de DIAS TRABAJADOS (¿alcanza la quincena o feriados mira meses
+previos?); (4) usuario MySQL de solo lectura para el analista (IT).
+
+**⚠️ Checklist de deploy (cuando se autorice)**: SHOW INDEX en `Horas_Sertec`
+→ aplicar los DOS SQL en `Horas_Sertec` → merge PRs → en la VPS: pull +
+`npm install` (exceljs es dependencia nueva — sin esto el backend no bootea)
++ `npx prisma generate` + build ambos + `pm2 restart` (avisar antes).

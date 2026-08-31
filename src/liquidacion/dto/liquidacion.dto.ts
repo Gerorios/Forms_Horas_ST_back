@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -198,4 +199,13 @@ export class CargarPlusIndividualDto extends QuincenaParamsDto {
 
   @IsString()
   motivo: string;
+}
+
+// ---- Cierre de liquidación (ver ADR-021) ----
+
+export class CrearCierreDto extends QuincenaParamsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  nota?: string;
 }

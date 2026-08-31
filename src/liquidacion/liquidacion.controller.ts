@@ -1,8 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Request, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
 import { PanelService } from './panel.service';
 import { AnalisisService } from './analisis.service';
+import { CierresService } from './cierres.service';
+import { ExportCierreService } from './export-cierre.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
@@ -15,6 +18,7 @@ import {
   GuardarSueldosMensualizadosDto,
   CargarKmPorTantosDto,
   CargarPlusIndividualDto,
+  CrearCierreDto,
 } from './dto/liquidacion.dto';
 import { ToggleActivoDto } from '../admin/dto/catalogo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -30,6 +34,8 @@ export class LiquidacionController {
     private calculo: CalculoService,
     private panel: PanelService,
     private analisis: AnalisisService,
+    private cierres: CierresService,
+    private exportCierre: ExportCierreService,
   ) {}
 
   // El LISTADO lo necesita el Liquidador (Perfiles asigna categoría, Tarifas
@@ -77,19 +83,24 @@ export class LiquidacionController {
     return this.service.guardarCategoriasPeriodo(anio, mes, dto, req.user.cuil);
   }
 
-  @Get('tarifas/bonos/:anio/:mes')
-  getBonosPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
-    return this.service.getBonosPeriodo(anio, mes);
+  @Get('tarifas/bonos/:anio/:mes/:quincena')
+  getBonosPeriodo(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Param('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.getBonosPeriodo(anio, mes, quincena);
   }
 
-  @Put('tarifas/bonos/:anio/:mes')
+  @Put('tarifas/bonos/:anio/:mes/:quincena')
   guardarBonosPeriodo(
     @Param('anio', ParseIntPipe) anio: number,
     @Param('mes', ParseIntPipe) mes: number,
+    @Param('quincena', ParseIntPipe) quincena: number,
     @Body() dto: BonosPeriodoDto,
     @Request() req,
   ) {
-    return this.service.guardarBonosPeriodo(anio, mes, dto, req.user.cuil);
+    return this.service.guardarBonosPeriodo(anio, mes, quincena, dto, req.user.cuil);
   }
 
   @Get('tarifas/novedades-plus/:anio/:mes')
@@ -254,5 +265,42 @@ export class LiquidacionController {
     @Query('quincena', ParseIntPipe) quincena: number,
   ) {
     return this.panel.getDetalleQuincena(anio, mes, quincena);
+  }
+
+  // ---- Cierres de liquidación: snapshot versionado por período (ver ADR-021) ----
+
+  @Post('cierres')
+  crearCierre(@Body() dto: CrearCierreDto, @Request() req) {
+    return this.cierres.crearCierre(dto.anio, dto.mes, dto.quincena, dto.nota, req.user.cuil);
+  }
+
+  @Get('cierres')
+  listarCierres() {
+    return this.cierres.listar();
+  }
+
+  @Get('cierres/:id')
+  detalleCierre(@Param('id', ParseIntPipe) id: number) {
+    return this.cierres.detalle(id);
+  }
+
+  @Get('cierres/:id/excel')
+  async excelCierre(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.exportCierre.generarExcelPrincipal(id);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('cierres/:id/excel-por-tantos')
+  async excelPorTantosCierre(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.exportCierre.generarExcelPorTantos(id);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(buffer);
   }
 }

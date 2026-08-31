@@ -547,6 +547,16 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.noRemunerativo).toBe(33550);
     });
 
+    it('el bono se busca por quincena exacta: bono de 1Q no aplica en 2Q', async () => {
+      prismaMock.bonoNoRemunerativo.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.quincena === 1
+          ? [{ categoriaUocraId: 1, tipo: 'monto_fijo', valor: 15000, quincena: 1 }]
+          : []),
+      );
+      const [q2] = await service.calcularQuincena(2026, 9, 2);
+      expect(q2.noRemunerativo).toBe(0); // 2Q sin bono resuelto: no arrastra la 1Q
+    });
+
     it('novedad con plus pero sin monto vigente del período: datoFaltante, monto en 0', async () => {
       prismaMock.tipoNovedad.findMany.mockResolvedValue([{ id: 5, nombre: 'Guardia Pasiva', generaPlus: true }]);
       prismaMock.novedad.findMany.mockResolvedValue([

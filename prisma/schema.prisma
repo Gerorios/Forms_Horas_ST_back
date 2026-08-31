@@ -82,6 +82,7 @@ model Usuario {
   novedadesAprobadasHys Novedad[]       @relation("NovedadAprobadoHys")
   auditorias            Auditoria[]
   plusIndividualCargado PlusIndividual[]
+  cierresLiquidacion    CierreLiquidacion[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -350,12 +351,13 @@ model BonoNoRemunerativo {
   id               Int                    @id @default(autoincrement())
   categoriaUocraId Int                    @map("categoria_uocra_id")
   vigenteDesde     DateTime               @map("vigente_desde") @db.Date
+  quincena         Int
   tipo             TipoBonoNoRemunerativo
   valor            Decimal                @db.Decimal(12, 2)
 
   categoria CategoriaUocra @relation(fields: [categoriaUocraId], references: [id])
 
-  @@unique([categoriaUocraId, vigenteDesde])
+  @@unique([categoriaUocraId, vigenteDesde, quincena])
   @@map("sth_bonos_no_remunerativos")
 }
 
@@ -416,6 +418,91 @@ model PlusIndividual {
 
   @@index([cuil, anio, mes, quincena])
   @@map("sth_plus_individual")
+}
+
+enum ZonaLiquidacion {
+  norte
+  sur
+}
+
+// ADR-021: cabecera del cierre de liquidación. Snapshot versionado puro —
+// NO bloquea nada. "Vigente" = MAX(version) del período, derivado.
+model CierreLiquidacion {
+  id             Int      @id @default(autoincrement())
+  anio           Int
+  mes            Int
+  quincena       Int
+  version        Int
+  cerradoPorCuil String   @map("cerrado_por_cuil") @db.Char(13)
+  nota           String?  @db.VarChar(300)
+  salvedades     String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  cerradoPor     Usuario                    @relation(fields: [cerradoPorCuil], references: [cuil])
+  detalle        CierreLiquidacionDetalle[]
+  diasTrabajados CierreDiaTrabajado[]
+
+  @@unique([anio, mes, quincena, version])
+  @@map("sth_cierres_liquidacion")
+}
+
+// ADR-021: hechos del cierre — TODO congelado (números/texto copiados al
+// cerrar). `cuil` NO es FK navegable a propósito: la foto sobrevive a
+// cualquier cambio en los datos vivos.
+model CierreLiquidacionDetalle {
+  id                 Int              @id @default(autoincrement())
+  cierreId           Int              @map("cierre_id")
+  cuil               String           @db.Char(13)
+  apellidoNombre     String           @map("apellido_nombre") @db.VarChar(70)
+  legajo             Int?
+  provincia          String?          @db.VarChar(35)
+  localidad          String?          @db.VarChar(35)
+  zona               ZonaLiquidacion?
+  regimen            String           @db.VarChar(20)
+  categoria          String?          @db.VarChar(30)
+  modalidadPago      String?          @map("modalidad_pago") @db.VarChar(20)
+  tienePresentismo   Boolean          @map("tiene_presentismo")
+  precioBruto        Decimal?         @map("precio_bruto") @db.Decimal(14, 2)
+  horasTotal         Decimal?         @map("horas_total") @db.Decimal(14, 2)
+  horasCct           Decimal?         @map("horas_cct") @db.Decimal(14, 2)
+  horasExtra         Decimal?         @map("horas_extra") @db.Decimal(14, 2)
+  totalBruto         Decimal          @map("total_bruto") @db.Decimal(14, 2)
+  montoHorasExtra    Decimal          @map("monto_horas_extra") @db.Decimal(14, 2)
+  montoPresentismo   Decimal          @map("monto_presentismo") @db.Decimal(14, 2)
+  noRemunerativo     Decimal          @map("no_remunerativo") @db.Decimal(14, 2)
+  montoGuardias      Decimal          @map("monto_guardias") @db.Decimal(14, 2)
+  montoProductividad Decimal          @map("monto_productividad") @db.Decimal(14, 2)
+  plusIndividual     Decimal          @map("plus_individual") @db.Decimal(14, 2)
+  kmTotal            Decimal?         @map("km_total") @db.Decimal(14, 2)
+  montoKmBruto       Decimal?         @map("monto_km_bruto") @db.Decimal(14, 2)
+  montoA             Decimal?         @map("monto_a") @db.Decimal(14, 2)
+  montoB             Decimal?         @map("monto_b") @db.Decimal(14, 2)
+  novedadesTexto     String?          @map("novedades_texto") @db.VarChar(500)
+  salvedad           String?          @db.VarChar(300)
+  total              Decimal          @db.Decimal(14, 2)
+
+  cierre CierreLiquidacion @relation(fields: [cierreId], references: [id])
+
+  @@unique([cierreId, cuil])
+  @@index([cuil])
+  @@map("sth_cierre_liquidacion_detalle")
+}
+
+// ADR-021: días trabajados congelados del período del cierre (un día cuenta
+// si el empleado tiene ≥1 registro NO desaprobado esa fecha). Alimenta la
+// hoja DIAS TRABAJADOS del Excel (transitoria, para feriados).
+model CierreDiaTrabajado {
+  id             Int      @id @default(autoincrement())
+  cierreId       Int      @map("cierre_id")
+  cuil           String   @db.Char(13)
+  apellidoNombre String   @map("apellido_nombre") @db.VarChar(70)
+  legajo         Int?
+  fecha          DateTime @db.Date
+
+  cierre CierreLiquidacion @relation(fields: [cierreId], references: [id])
+
+  @@unique([cierreId, cuil, fecha])
+  @@map("sth_cierre_dias_trabajados")
 }
 
 // ------------------------------------------------------------

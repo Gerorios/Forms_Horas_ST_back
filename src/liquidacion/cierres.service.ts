@@ -1,0 +1,343 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CalculoService } from './calculo.service';
+import { rangoQuincena } from '../common/quincena';
+import { zonaDeProvincia } from '../common/zona';
+
+type FilaCalculo = Awaited<ReturnType<CalculoService['calcularQuincena']>>[number];
+type Alertas = Awaited<ReturnType<CalculoService['getAlertasQuincena']>>;
+
+/**
+ * ADR-021: cierre de liquidación = snapshot puro y versionado de una
+ * quincena. `crearCierre` congela en una transacción el resultado de
+ * `CalculoService.calcularQuincena` (una fila por perfil, con
+ * `datoFaltante`/zona derivados como en el panel en vivo), las alertas del
+ * período (como salvedades de cabecera) y los días trabajados del rango.
+ * Nunca bloquea nada: "vigente" es MAX(version) por período, derivado en
+ * las queries de lectura (Task 5/6), no acá.
+ *
+ * Decisión de transacción: el `create` anidado de Prisma (detalle +
+ * diasTrabajados en un solo `create`) ya es atómico por sí solo, pero se
+ * envuelve igual en `$transaction(..., { timeout, maxWait })` — mismo
+ * patrón que el resto del módulo (ver liquidacion.service.ts) — para
+ * quedar consistente si más adelante se agrega otra escritura (p.ej.
+ * auditoría) dentro del mismo cierre.
+ */
+@Injectable()
+export class CierresService {
+  constructor(
+    private prisma: PrismaService,
+    private calculo: CalculoService,
+  ) {}
+
+  private pluralizar(cantidad: number, singular: string, plural: string): string {
+    return `${cantidad} ${cantidad === 1 ? singular : plural}`;
+  }
+
+  /** Salvedades de cabecera (JSON de strings): solo las categorías con count > 0. */
+  private armarSalvedades(filas: FilaCalculo[], alertas: Alertas, empleadosConPendientes: number): string[] {
+    const salvedades: string[] = [];
+
+    if (alertas.sinPerfil.length > 0) {
+      salvedades.push(
+        this.pluralizar(
+          alertas.sinPerfil.length,
+          'empleado con horas sin perfil de liquidación',
+          'empleados con horas sin perfil de liquidación',
+        ),
+      );
+    }
+    if (alertas.perfilIncompleto.length > 0) {
+      salvedades.push(
+        this.pluralizar(
+          alertas.perfilIncompleto.length,
+          'perfil de liquidación incompleto',
+          'perfiles de liquidación incompletos',
+        ),
+      );
+    }
+    const sinDeclarar = alertas.sinHorasAprobadas.filter((a) => a.motivo === 'sin_declarar').length;
+    if (sinDeclarar > 0) {
+      salvedades.push(
+        this.pluralizar(
+          sinDeclarar,
+          'jornalizado sin horas aprobadas (sin declarar)',
+          'jornalizados sin horas aprobadas (sin declarar)',
+        ),
+      );
+    }
+    // Definición alineada con el diálogo del frontend (filas con
+    // pendientesAprobacion > 0): cualquier empleado con ≥1 registro
+    // `pendiente` en el rango, sin importar régimen ni si ya tiene horas
+    // aprobadas — más amplia que "jornalizado con CERO horas aprobadas".
+    if (empleadosConPendientes > 0) {
+      salvedades.push(
+        this.pluralizar(
+          empleadosConPendientes,
+          'empleado con horas pendientes de aprobar',
+          'empleados con horas pendientes de aprobar',
+        ),
+      );
+    }
+    const conDatoFaltante = filas.filter((f) => f.datoFaltante != null).length;
+    if (conDatoFaltante > 0) {
+      salvedades.push(this.pluralizar(conDatoFaltante, 'fila con datos faltantes', 'filas con datos faltantes'));
+    }
+    const sinZona = filas.filter((f) => zonaDeProvincia(f.provincia) == null).length;
+    if (sinZona > 0) {
+      salvedades.push(this.pluralizar(sinZona, 'empleado sin zona', 'empleados sin zona'));
+    }
+    return salvedades;
+  }
+
+  /** Partición de fila.plus (novedades con plus) por nombre: "guardia" → montoGuardias, el resto → montoProductividad. Montos ausentes cuentan como 0. */
+  private partirPlus(plus: { nombre: string; monto?: number | null }[]): {
+    guardias: number;
+    productividad: number;
+  } {
+    let guardias = 0;
+    let productividad = 0;
+    for (const p of plus) {
+      const monto = p.monto ?? 0;
+      if (p.nombre.toLowerCase().includes('guardia')) guardias += monto;
+      else productividad += monto;
+    }
+    return { guardias, productividad };
+  }
+
+  /** Mapeo del detalle congelado (spec §2.2) a partir de una fila viva del cálculo. */
+  private aFilaCongelada(fila: FilaCalculo, localidadPorCuil: Map<string, string | null>, kmPorCuil: Map<string, number>) {
+    const zona = zonaDeProvincia(fila.provincia);
+    const { guardias, productividad } = this.partirPlus(fila.plus);
+    const esPorTantos = fila.regimen === 'por_tantos';
+
+    let salvedad = fila.datoFaltante;
+    if (zona == null) {
+      salvedad = salvedad ? `${salvedad} · sin zona` : 'Sin zona (provincia no mapeada)';
+    }
+    // Defensivo contra VARCHAR(300): un datoFaltante largo no debe abortar
+    // la transacción de cierre.
+    if (salvedad != null) salvedad = salvedad.slice(0, 300);
+
+    return {
+      cuil: fila.cuil,
+      apellidoNombre: fila.apellidoNombre,
+      legajo: fila.legajo,
+      provincia: fila.provincia,
+      localidad: localidadPorCuil.get(fila.cuil) ?? null,
+      zona,
+      regimen: fila.regimen,
+      categoria: fila.categoria,
+      modalidadPago: fila.modalidadPago,
+      tienePresentismo: fila.tienePresentismo,
+      // Mensualizado: el "precio bruto" congelado es el sueldo quincenal
+      // (= totalBruto, básico = monto × 1) — como en el Excel real. El resto
+      // de regímenes congela la tarifa hora.
+      precioBruto: fila.regimen === 'mensualizado' ? fila.totalBruto : fila.precioBruto,
+      horasTotal: fila.horasTotal,
+      horasCct: fila.horasCct,
+      horasExtra: fila.horasExtra,
+      totalBruto: fila.totalBruto,
+      montoHorasExtra: fila.montoHorasExtra,
+      montoPresentismo: fila.montoPresentismo,
+      noRemunerativo: fila.noRemunerativo,
+      montoGuardias: guardias,
+      montoProductividad: productividad,
+      plusIndividual: fila.plusIndividual ?? 0,
+      kmTotal: esPorTantos ? kmPorCuil.get(fila.cuil) ?? null : null,
+      montoKmBruto: esPorTantos ? fila.montoKmBruto : null,
+      montoA: esPorTantos ? fila.totalBruto + fila.montoPresentismo + fila.noRemunerativo : null,
+      montoB: esPorTantos ? fila.montoHorasExtra : null,
+      novedadesTexto: fila.novedadesTexto,
+      salvedad,
+      total: fila.total,
+    };
+  }
+
+  async crearCierre(anio: number, mes: number, quincena: number, nota: string | undefined, usuarioCuil: string) {
+    const { _max } = await this.prisma.cierreLiquidacion.aggregate({
+      where: { anio, mes, quincena },
+      _max: { version: true },
+    });
+    const version = (_max.version ?? 0) + 1;
+    if (version > 1 && !nota?.trim()) {
+      throw new BadRequestException('Un recierre necesita una nota que explique el motivo.');
+    }
+
+    const [filas, alertas] = await Promise.all([
+      this.calculo.calcularQuincena(anio, mes, quincena),
+      this.calculo.getAlertasQuincena(anio, mes, quincena),
+    ]);
+
+    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    // Un día cuenta si el empleado tiene ≥1 registro NO desaprobado esa
+    // fecha (spec §2.3). Incluye a empleados sin perfil: no generan fila de
+    // detalle, pero sus días sí quedan congelados.
+    const [dias, kmsPorTantos, pendientesPorOperario] = await Promise.all([
+      this.prisma.registroHoras.groupBy({
+        by: ['operarioCuil', 'fecha'],
+        where: { fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
+      }),
+      this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } }),
+      // Empleados con ≥1 registro pendiente en el rango (cualquier régimen) —
+      // definición de la salvedad alineada con el diálogo del frontend.
+      this.prisma.registroHoras.groupBy({
+        by: ['operarioCuil'],
+        where: { fecha: { gte: desde, lte: hasta }, estado: 'pendiente' },
+      }),
+    ]);
+    const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
+    const empleadosConPendientes = pendientesPorOperario.length;
+
+    // Localidad (se congela junto a provincia, spec §2.2) para todo cuil que
+    // vaya a aparecer en detalle o en días trabajados.
+    const cuils = [...new Set([...filas.map((f) => f.cuil), ...dias.map((d) => d.operarioCuil)])];
+    const empleados = cuils.length
+      ? await this.prisma.snuempleados.findMany({
+          where: { cuil: { in: cuils } },
+          select: { cuil: true, localidad: true, apellido_nombre: true, legajo: true },
+        })
+      : [];
+    const empleadoPorCuil = new Map(empleados.map((e) => [e.cuil, e]));
+    const localidadPorCuil = new Map(empleados.map((e) => [e.cuil, e.localidad]));
+    const filaPorCuil = new Map(filas.map((f) => [f.cuil, f]));
+
+    const salvedades = this.armarSalvedades(filas, alertas, empleadosConPendientes);
+
+    try {
+      return await this.prisma.$transaction(
+        (tx) =>
+          tx.cierreLiquidacion.create({
+            data: {
+              anio,
+              mes,
+              quincena,
+              version,
+              cerradoPorCuil: usuarioCuil,
+              nota: nota?.trim() || null,
+              salvedades: salvedades.length ? JSON.stringify(salvedades) : null,
+              detalle: { create: filas.map((f) => this.aFilaCongelada(f, localidadPorCuil, kmPorCuil)) },
+              diasTrabajados: {
+                create: dias.map((d) => {
+                  const fila = filaPorCuil.get(d.operarioCuil);
+                  const empleado = empleadoPorCuil.get(d.operarioCuil);
+                  return {
+                    cuil: d.operarioCuil,
+                    apellidoNombre: fila?.apellidoNombre ?? empleado?.apellido_nombre ?? d.operarioCuil,
+                    legajo: fila?.legajo ?? empleado?.legajo ?? null,
+                    fecha: d.fecha,
+                  };
+                }),
+              },
+            },
+          }),
+        { timeout: 30000, maxWait: 10000 },
+      );
+    } catch (e) {
+      // Carrera teórica: dos cierres simultáneos del mismo período compiten
+      // por el mismo version=MAX+1 calculado arriba y chocan contra el
+      // @@unique([anio, mes, quincena, version]) — el segundo en llegar
+      // recibe un P2002 pelado de Prisma; lo traducimos a un mensaje
+      // entendible (review Task 4).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Otro cierre de esta quincena se estaba creando al mismo tiempo — reintentá.');
+      }
+      throw e;
+    }
+  }
+
+  /** Mapa cuil→apellido_nombre para el conjunto de CUILs pedido (empleados en
+   * snuempleados). No hay FK física a snuempleados (ADR-008): quien llama
+   * decide el fallback (típicamente `nombreFueraNomina`) para los que no
+   * aparezcan acá — mismo criterio que registros-horas.service.ts/panel.service.ts. */
+  private async mapaNombresPorCuil(cuils: Iterable<string>): Promise<Map<string, string>> {
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: [...new Set(cuils)] } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    return new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+  }
+
+  /** Deserializa la columna `salvedades` (JSON de strings); `[]` si null. */
+  private parsearSalvedades(salvedades: string | null): string[] {
+    return salvedades ? JSON.parse(salvedades) : [];
+  }
+
+  /** Totales de cabecera: suma general + por zona a partir del detalle congelado. */
+  private totalesDeDetalle(detalle: { zona: string | null; total: Prisma.Decimal | number }[]) {
+    return detalle.reduce(
+      (acc, d) => {
+        const total = Number(d.total);
+        acc.total += total;
+        if (d.zona === 'norte') acc.norte += total;
+        else if (d.zona === 'sur') acc.sur += total;
+        else acc.sinZona += total;
+        acc.empleados += 1;
+        return acc;
+      },
+      { total: 0, norte: 0, sur: 0, sinZona: 0, empleados: 0 },
+    );
+  }
+
+  private readonly includeCabecera = {
+    cerradoPor: { select: { cuil: true, nombreFueraNomina: true } },
+    detalle: { select: { zona: true, total: true } },
+  } as const;
+
+  /** Cabecera (id, período, version, cerradoPor con nombre, nota, salvedades, totales) a
+   * partir de una fila de cierreLiquidacion.findMany/findUnique con `includeCabecera`. */
+  private async aCabecera<
+    T extends {
+      id: number;
+      anio: number;
+      mes: number;
+      quincena: number;
+      version: number;
+      nota: string | null;
+      salvedades: string | null;
+      createdAt: Date;
+      cerradoPor: { cuil: string; nombreFueraNomina: string | null };
+      detalle: { zona: string | null; total: Prisma.Decimal | number }[];
+    },
+  >(cierres: T[]) {
+    const nombrePorCuil = await this.mapaNombresPorCuil(cierres.map((c) => c.cerradoPor.cuil));
+    return cierres.map((c) => ({
+      id: c.id,
+      anio: c.anio,
+      mes: c.mes,
+      quincena: c.quincena,
+      version: c.version,
+      cerradoPor: {
+        cuil: c.cerradoPor.cuil,
+        nombre: nombrePorCuil.get(c.cerradoPor.cuil) ?? c.cerradoPor.nombreFueraNomina ?? '',
+      },
+      nota: c.nota,
+      salvedades: this.parsearSalvedades(c.salvedades),
+      createdAt: c.createdAt,
+      totales: this.totalesDeDetalle(c.detalle),
+    }));
+  }
+
+  /** Listado de cierres (cabecera + totales por zona), período desc / version desc. */
+  async listar() {
+    const cierres = await this.prisma.cierreLiquidacion.findMany({
+      include: this.includeCabecera,
+      orderBy: [{ anio: 'desc' }, { mes: 'desc' }, { quincena: 'desc' }, { version: 'desc' }],
+    });
+    return this.aCabecera(cierres);
+  }
+
+  /** Cabecera + detalle completo (todas las columnas congeladas) de un cierre. 404 si no existe. */
+  async detalle(id: number) {
+    const cierre = await this.prisma.cierreLiquidacion.findUnique({
+      where: { id },
+      include: { ...this.includeCabecera, detalle: { orderBy: { apellidoNombre: 'asc' } } },
+    });
+    if (!cierre) {
+      throw new NotFoundException(`No existe el cierre ${id}.`);
+    }
+    const [cabecera] = await this.aCabecera([cierre]);
+    return { ...cabecera, detalle: cierre.detalle };
+  }
+}
