@@ -67,6 +67,30 @@ export class LiquidacionService {
     return { anio: fecha.getUTCFullYear(), mes: fecha.getUTCMonth() + 1 };
   }
 
+  /**
+   * Igual que `ultimoAnterior`, pero para el bono no remunerativo, que es
+   * por quincena (ADR-021 §6): la "anterior" a (fecha, quincena) también
+   * puede ser la 1Q del MISMO mes cuando se está resolviendo la 2Q — se
+   * ordena por (vigenteDesde, quincena) y se compara como par.
+   */
+  private ultimoAnteriorBono<T extends { vigenteDesde: Date; quincena: number }>(
+    rows: T[],
+    fecha: Date,
+    quincena: number,
+  ): T | null {
+    let best: T | null = null;
+    for (const r of rows) {
+      const esAnterior = r.vigenteDesde.getTime() < fecha.getTime() ||
+        (r.vigenteDesde.getTime() === fecha.getTime() && r.quincena < quincena);
+      if (!esAnterior) continue;
+      if (!best || r.vigenteDesde.getTime() > best.vigenteDesde.getTime() ||
+        (r.vigenteDesde.getTime() === best.vigenteDesde.getTime() && r.quincena > best.quincena)) {
+        best = r;
+      }
+    }
+    return best;
+  }
+
   private async auditarCambio(
     tx: any,
     tabla: string,
@@ -138,13 +162,15 @@ export class LiquidacionService {
     return this.getCategoriasPeriodo(anio, mes);
   }
 
-  // ---- Sección: bono no remunerativo por categoría (único campo OPCIONAL) ----
+  // ---- Sección: bono no remunerativo por categoría y por quincena (único campo OPCIONAL, ADR-021 §6) ----
   //
-  // "Sin bono este mes" es una decisión explícita: se graba una fila con
+  // "Sin bono esta quincena" es una decisión explícita: se graba una fila con
   // valor 0 (o el tipo/valor que sea), NUNCA se infiere de la ausencia de
-  // fila. Una categoría ausente del período = todavía no revisada.
+  // fila. Una categoría ausente del período = todavía no revisada. El bono
+  // es por (categoriaUocraId, vigenteDesde, quincena) — la 1Q y la 2Q de un
+  // mismo mes se cargan y se resuelven de forma independiente.
 
-  async getBonosPeriodo(anio: number, mes: number) {
+  async getBonosPeriodo(anio: number, mes: number, quincena: number) {
     const fecha = this.fechaDePeriodo(anio, mes);
     const categoriasActivas = await this.prisma.categoriaUocra.findMany({
       where: { activo: true },
@@ -155,8 +181,8 @@ export class LiquidacionService {
     });
     return categoriasActivas.map((c) => {
       const propias = todas.filter((b) => b.categoriaUocraId === c.id);
-      const resuelto = propias.find((b) => b.vigenteDesde.getTime() === fecha.getTime()) ?? null;
-      const anterior = this.ultimoAnterior(propias, fecha);
+      const resuelto = propias.find((b) => b.vigenteDesde.getTime() === fecha.getTime() && b.quincena === quincena) ?? null;
+      const anterior = this.ultimoAnteriorBono(propias, fecha, quincena);
       return {
         categoriaUocraId: c.id,
         nombre: c.nombre,
@@ -167,32 +193,27 @@ export class LiquidacionService {
     });
   }
 
-  async guardarBonosPeriodo(anio: number, mes: number, dto: BonosPeriodoDto, usuarioCuil: string) {
+  async guardarBonosPeriodo(anio: number, mes: number, quincena: number, dto: BonosPeriodoDto, usuarioCuil: string) {
     const fecha = this.fechaDePeriodo(anio, mes);
     await this.prisma.$transaction(async (tx) => {
-      // ADR-021 §6: el bono es por quincena en la BD, pero esta pantalla (por
-      // período mensual) todavía lo carga igual para ambas — 1Q y 2Q quedan
-      // en sincronía hasta que una task posterior separe la UI por quincena.
       for (const b of dto.bonos) {
-        for (const quincena of [1, 2]) {
-          const existente = await tx.bonoNoRemunerativo.findUnique({
-            where: { categoriaUocraId_vigenteDesde_quincena: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena } },
-          });
-          if (existente) {
-            if (Number(existente.valor) !== b.valor || existente.tipo !== b.tipo) {
-              await tx.bonoNoRemunerativo.update({ where: { id: existente.id }, data: { tipo: b.tipo, valor: b.valor } });
-              await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', existente.id, usuarioCuil, 'valor', existente.valor.toString(), b.valor.toString());
-            }
-          } else {
-            const creado = await tx.bonoNoRemunerativo.create({
-              data: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena, tipo: b.tipo, valor: b.valor },
-            });
-            await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', creado.id, usuarioCuil, 'valor', null, b.valor.toString());
+        const existente = await tx.bonoNoRemunerativo.findUnique({
+          where: { categoriaUocraId_vigenteDesde_quincena: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena } },
+        });
+        if (existente) {
+          if (Number(existente.valor) !== b.valor || existente.tipo !== b.tipo) {
+            await tx.bonoNoRemunerativo.update({ where: { id: existente.id }, data: { tipo: b.tipo, valor: b.valor } });
+            await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', existente.id, usuarioCuil, 'valor', existente.valor.toString(), b.valor.toString());
           }
+        } else {
+          const creado = await tx.bonoNoRemunerativo.create({
+            data: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena, tipo: b.tipo, valor: b.valor },
+          });
+          await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', creado.id, usuarioCuil, 'valor', null, b.valor.toString());
         }
       }
     }, { timeout: 30000, maxWait: 10000 });
-    return this.getBonosPeriodo(anio, mes);
+    return this.getBonosPeriodo(anio, mes, quincena);
   }
 
   // ---- Sección: monto por novedad con plus — Guardia Pasiva, Viáticos, etc. (obligatorio) ----

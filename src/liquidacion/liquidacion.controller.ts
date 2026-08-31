@@ -77,19 +77,24 @@ export class LiquidacionController {
     return this.service.guardarCategoriasPeriodo(anio, mes, dto, req.user.cuil);
   }
 
-  @Get('tarifas/bonos/:anio/:mes')
-  getBonosPeriodo(@Param('anio', ParseIntPipe) anio: number, @Param('mes', ParseIntPipe) mes: number) {
-    return this.service.getBonosPeriodo(anio, mes);
+  @Get('tarifas/bonos/:anio/:mes/:quincena')
+  getBonosPeriodo(
+    @Param('anio', ParseIntPipe) anio: number,
+    @Param('mes', ParseIntPipe) mes: number,
+    @Param('quincena', ParseIntPipe) quincena: number,
+  ) {
+    return this.service.getBonosPeriodo(anio, mes, quincena);
   }
 
-  @Put('tarifas/bonos/:anio/:mes')
+  @Put('tarifas/bonos/:anio/:mes/:quincena')
   guardarBonosPeriodo(
     @Param('anio', ParseIntPipe) anio: number,
     @Param('mes', ParseIntPipe) mes: number,
+    @Param('quincena', ParseIntPipe) quincena: number,
     @Body() dto: BonosPeriodoDto,
     @Request() req,
   ) {
-    return this.service.guardarBonosPeriodo(anio, mes, dto, req.user.cuil);
+    return this.service.guardarBonosPeriodo(anio, mes, quincena, dto, req.user.cuil);
   }
 
   @Get('tarifas/novedades-plus/:anio/:mes')

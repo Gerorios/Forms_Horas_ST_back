@@ -89,7 +89,7 @@ export class CalculoService {
       this.prisma.sueldoMensualizado.findMany({ where: { cuil: { in: cuils }, vigenteDesde: fechaVigencia } }),
       this.prisma.tarifaCategoriaUocra.findMany({ where: { vigenteDesde: fechaVigencia } }),
       this.prisma.montoNovedadPlus.findMany({ where: { vigenteDesde: fechaVigencia } }),
-      this.prisma.bonoNoRemunerativo.findMany({ where: { vigenteDesde: fechaVigencia } }),
+      this.prisma.bonoNoRemunerativo.findMany({ where: { vigenteDesde: fechaVigencia, quincena } }),
       this.prisma.rangoKmPorTantos.findMany({ where: { vigenteDesde: fechaVigencia } }),
       this.prisma.plusIndividual.findMany({ where: { cuil: { in: cuils }, anio, mes, quincena } }),
     ]);
