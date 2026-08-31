@@ -106,6 +106,42 @@ describe('ExportCierreService', () => {
       expect(filename).toBe('2026_09_1q_Sueldo SERTEC_v2.xlsx');
     });
 
+    it('por_tantos muestra solo la parte A: horas topeadas en CCT, sin extras y TOTAL = montoA', async () => {
+      const filaPorTantos = filaCongelada({
+        cuil: '20-9-9',
+        regimen: 'por_tantos',
+        horasTotal: 110,
+        horasCct: 88,
+        horasExtra: 22,
+        montoHorasExtra: 5000, // esto es lo B: no debe aparecer en el principal
+        totalBruto: 8800,
+        montoPresentismo: 1760,
+        noRemunerativo: 500,
+        montoA: 11060,
+        montoB: 5000,
+        total: 16060,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaPorTantos]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      const fila = wb.getWorksheet('TOTAL')!.getRow(2).values as unknown[];
+      expect(fila[6]).toBe(88); // HORAS TOTAL topeada en las CCT
+      expect(fila[7]).toBe(88); // HORAS CCT
+      expect(fila[14] ?? null).toBeNull(); // Hs EXTRAS vacío
+      expect(fila[15] ?? 0).toBe(0); // $$ Hs EXTRAS sin lo B
+      expect(fila[18]).toBe(11060); // TOTAL = montoA, no el total con extras
+
+      // RESUMEN consistente con la hoja: suma lo A, no el total con extras.
+      const resumen = wb.getWorksheet('RESUMEN')!;
+      const filasResumen: unknown[][] = [];
+      resumen.eachRow((r) => filasResumen.push(r.values as unknown[]));
+      const totalGeneral = filasResumen.find((v) => v[1] === 'TOTAL GENERAL')!;
+      expect(totalGeneral[2]).toBe(11060);
+    });
+
     it('el sin-zona sale en TOTAL pero en ninguna hoja de zona', async () => {
       const filaNorte = filaCongelada({ cuil: '20-1-1', zona: 'norte' });
       const filaSur = filaCongelada({ cuil: '20-2-2', zona: 'sur' });
@@ -189,7 +225,7 @@ describe('ExportCierreService', () => {
   });
 
   describe('generarExcelPorTantos', () => {
-    it('hoja única POR TANTOS B con MONTO A/MONTO B solo de regimen por_tantos', async () => {
+    it('hoja única POR TANTOS B sin datos de A: KM, PRECIO KM derivado y MONTO B', async () => {
       const filaJornalizado = filaCongelada({ cuil: '1', regimen: 'jornalizado' });
       const filaPorTantos = filaCongelada({
         cuil: '2',
@@ -208,13 +244,32 @@ describe('ExportCierreService', () => {
       expect(wb.worksheets.map((w) => w.name)).toEqual(['POR TANTOS B']);
       const ws = wb.getWorksheet('POR TANTOS B')!;
       expect(ws.rowCount).toBe(2); // header + solo el por_tantos
-      const headerRow = ws.getRow(1).values as unknown[];
-      expect(headerRow).toContain('MONTO A');
-      expect(headerRow).toContain('MONTO B');
-      const fila = ws.getRow(2).values as unknown[];
-      expect(fila).toContain(9000);
-      expect(fila).toContain(1500);
+      const headerRow = (ws.getRow(1).values as unknown[]).slice(1);
+      // Sin MONTO A ni horas: no debe verse cuánto cobra en A (pedido QA 2026-08-31)
+      expect(headerRow).toEqual(['Legajo', 'NOMBRE Y APELLIDO', 'KM', 'PRECIO KM', 'MONTO B']);
+      const fila = (ws.getRow(2).values as unknown[]).slice(1);
+      expect(fila[2]).toBe(120);
+      expect(fila[3]).toBeCloseTo(41.67, 2); // 5000 / 120 redondeado a 2 decimales
+      expect(fila[4]).toBe(1500);
+      expect(fila).not.toContain(9000);
       expect(filename).toBe('2026_09_1q_PorTantos B_v2.xlsx');
+    });
+
+    it('PRECIO KM queda null si no hay km (evita división por cero)', async () => {
+      const fila = filaCongelada({
+        cuil: '2',
+        regimen: 'por_tantos',
+        kmTotal: 0,
+        montoKmBruto: 0,
+        montoB: 1500,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([fila]));
+
+      const { buffer } = await service.generarExcelPorTantos(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      const valores = (wb.getWorksheet('POR TANTOS B')!.getRow(2).values as unknown[]).slice(1);
+      expect(valores[3] ?? null).toBeNull();
     });
   });
 });

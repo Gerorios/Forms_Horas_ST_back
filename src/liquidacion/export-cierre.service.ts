@@ -39,17 +39,11 @@ const COLUMNAS_PRINCIPAL = [
   'TOTAL',
 ] as const;
 
-const COLUMNAS_POR_TANTOS = [
-  'Legajo',
-  'NOMBRE Y APELLIDO',
-  'KM',
-  'MONTO KM',
-  'Hs TOTALES',
-  'Hs CCT',
-  'Hs EXTRA',
-  'MONTO A',
-  'MONTO B',
-] as const;
+// Sin MONTO A ni horas: este archivo lo ve gente que solo debe conocer la
+// parte en B (pedido QA 2026-08-31). PRECIO KM se deriva del cierre
+// congelado (montoKmBruto / kmTotal) porque la tarifa del rango no se
+// persiste por fila.
+const COLUMNAS_POR_TANTOS = ['Legajo', 'NOMBRE Y APELLIDO', 'KM', 'PRECIO KM', 'MONTO B'] as const;
 
 function num(valor: Prisma.Decimal | number | null | undefined): number {
   return valor == null ? 0 : Number(valor);
@@ -101,14 +95,28 @@ export class ExportCierreService {
     return `${cabecera.anio}_${pad2(cabecera.mes)}_${cabecera.quincena}q`;
   }
 
+  /** En el archivo principal, un "por tantos" muestra SOLO su parte A
+   * (pedido QA 2026-08-31): horas topeadas en las CCT, sin extras (el
+   * excedente es lo B, va en el archivo aparte) y TOTAL = montoA. */
+  private esSoloParteA(f: FilaDetalle): boolean {
+    return f.regimen === 'por_tantos';
+  }
+
+  /** Total que muestra el archivo principal: montoA para "por tantos"
+   * (su extra es lo B), el total completo para el resto. */
+  private totalPrincipal(f: FilaDetalle): number {
+    return this.esSoloParteA(f) ? num(f.montoA) : num(f.total);
+  }
+
   private filaPrincipal(f: FilaDetalle): unknown[] {
+    const soloA = this.esSoloParteA(f);
     return [
       f.legajo,
       f.apellidoNombre,
       f.localidad,
       f.categoria,
       TIPO_POR_REGIMEN[f.regimen] ?? f.regimen,
-      numOrNull(f.horasTotal),
+      soloA ? numOrNull(f.horasCct) : numOrNull(f.horasTotal),
       numOrNull(f.horasCct),
       f.tienePresentismo ? 'SI' : 'NO',
       numOrNull(f.precioBruto),
@@ -116,11 +124,11 @@ export class ExportCierreService {
       num(f.totalBruto),
       num(f.montoProductividad) + num(f.plusIndividual),
       num(f.montoGuardias),
-      numOrNull(f.horasExtra),
-      num(f.montoHorasExtra),
+      soloA ? null : numOrNull(f.horasExtra),
+      soloA ? 0 : num(f.montoHorasExtra),
       num(f.montoPresentismo),
       f.novedadesTexto,
-      num(f.total),
+      this.totalPrincipal(f),
     ];
   }
 
@@ -131,14 +139,16 @@ export class ExportCierreService {
     return ws;
   }
 
-  /** RESUMEN: total $ por localidad + por zona (solo las presentes) + total general (spec §5.1.4). */
+  /** RESUMEN: total $ por localidad + por zona (solo las presentes) + total
+   * general (spec §5.1.4). Suma `totalPrincipal` (montoA para "por tantos")
+   * para que el resumen cierre contra la columna TOTAL de las hojas. */
   private agregarHojaResumen(wb: ExcelJS.Workbook, detalle: FilaDetalle[]) {
     const ws = wb.addWorksheet('RESUMEN');
 
     const totalPorLocalidad = new Map<string, number>();
     for (const f of detalle) {
       const clave = f.localidad ?? '(sin localidad)';
-      totalPorLocalidad.set(clave, (totalPorLocalidad.get(clave) ?? 0) + num(f.total));
+      totalPorLocalidad.set(clave, (totalPorLocalidad.get(clave) ?? 0) + this.totalPrincipal(f));
     }
 
     ws.addRow(['LOCALIDAD', 'TOTAL $']);
@@ -146,15 +156,15 @@ export class ExportCierreService {
 
     ws.addRow([]);
     ws.addRow(['ZONA', 'TOTAL $']);
-    const totalNorte = detalle.filter((f) => f.zona === 'norte').reduce((acc, f) => acc + num(f.total), 0);
-    const totalSur = detalle.filter((f) => f.zona === 'sur').reduce((acc, f) => acc + num(f.total), 0);
-    const totalSinZona = detalle.filter((f) => f.zona == null).reduce((acc, f) => acc + num(f.total), 0);
+    const totalNorte = detalle.filter((f) => f.zona === 'norte').reduce((acc, f) => acc + this.totalPrincipal(f), 0);
+    const totalSur = detalle.filter((f) => f.zona === 'sur').reduce((acc, f) => acc + this.totalPrincipal(f), 0);
+    const totalSinZona = detalle.filter((f) => f.zona == null).reduce((acc, f) => acc + this.totalPrincipal(f), 0);
     if (detalle.some((f) => f.zona === 'norte')) ws.addRow(['NORTE', totalNorte]);
     if (detalle.some((f) => f.zona === 'sur')) ws.addRow(['TUCUMAN', totalSur]);
     if (detalle.some((f) => f.zona == null)) ws.addRow(['SIN ZONA', totalSinZona]);
 
     ws.addRow([]);
-    const totalGeneral = detalle.reduce((acc, f) => acc + num(f.total), 0);
+    const totalGeneral = detalle.reduce((acc, f) => acc + this.totalPrincipal(f), 0);
     ws.addRow(['TOTAL GENERAL', totalGeneral]);
 
     return ws;
@@ -226,17 +236,11 @@ export class ExportCierreService {
     const ws = wb.addWorksheet('POR TANTOS B');
     ws.addRow([...COLUMNAS_POR_TANTOS]);
     for (const f of porTantos) {
-      ws.addRow([
-        f.legajo,
-        f.apellidoNombre,
-        numOrNull(f.kmTotal),
-        numOrNull(f.montoKmBruto),
-        numOrNull(f.horasTotal),
-        numOrNull(f.horasCct),
-        numOrNull(f.horasExtra),
-        numOrNull(f.montoA),
-        numOrNull(f.montoB),
-      ]);
+      const km = numOrNull(f.kmTotal);
+      const montoKm = numOrNull(f.montoKmBruto);
+      const precioKm =
+        km != null && km > 0 && montoKm != null ? Math.round((montoKm / km) * 100) / 100 : null;
+      ws.addRow([f.legajo, f.apellidoNombre, km, precioKm, numOrNull(f.montoB)]);
     }
 
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
