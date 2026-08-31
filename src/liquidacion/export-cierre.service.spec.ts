@@ -1,0 +1,197 @@
+import * as ExcelJS from 'exceljs';
+import { Test } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
+import { ExportCierreService } from './export-cierre.service';
+import { CierresService } from './cierres.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+function filaCongelada(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    cierreId: 1,
+    cuil: '20-22222222-2',
+    apellidoNombre: 'Perez, Juan',
+    legajo: 10,
+    provincia: 'SALTA',
+    localidad: 'Salta Capital',
+    zona: 'norte',
+    regimen: 'jornalizado',
+    categoria: 'Oficial',
+    modalidadPago: 'en_b',
+    tienePresentismo: true,
+    precioBruto: 100,
+    horasTotal: 88,
+    horasCct: 88,
+    horasExtra: 0,
+    totalBruto: 8800,
+    montoHorasExtra: 0,
+    montoPresentismo: 1760,
+    noRemunerativo: 0,
+    montoGuardias: 0,
+    montoProductividad: 0,
+    plusIndividual: 0,
+    kmTotal: null,
+    montoKmBruto: null,
+    montoA: null,
+    montoB: null,
+    novedadesTexto: '',
+    salvedad: null,
+    total: 10560,
+    ...overrides,
+  };
+}
+
+function cabeceraBase(detalle: ReturnType<typeof filaCongelada>[]) {
+  return {
+    id: 1,
+    anio: 2026,
+    mes: 9,
+    quincena: 1,
+    version: 2,
+    cerradoPor: { cuil: '20-11111111-1', nombre: 'Gomez, Ana' },
+    nota: null,
+    salvedades: [],
+    createdAt: new Date('2026-09-01T00:00:00.000Z'),
+    totales: { total: 0, norte: 0, sur: 0, sinZona: 0, empleados: detalle.length },
+    detalle,
+  };
+}
+
+describe('ExportCierreService', () => {
+  const cierresMock: any = { detalle: jest.fn() };
+  const prismaMock: any = { cierreDiaTrabajado: { findMany: jest.fn() } };
+  let service: ExportCierreService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([]);
+
+    const mod = await Test.createTestingModule({
+      providers: [
+        ExportCierreService,
+        { provide: CierresService, useValue: cierresMock },
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+    service = mod.get(ExportCierreService);
+  });
+
+  describe('generarExcelPrincipal', () => {
+    it('arma TOTAL/NORTE/TUCUMAN/RESUMEN/DIAS TRABAJADOS con las 18 columnas', async () => {
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
+
+      const { buffer, filename } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      expect(wb.worksheets.map((w) => w.name)).toEqual(['TOTAL', 'NORTE', 'TUCUMAN', 'RESUMEN', 'DIAS TRABAJADOS']);
+      const headerRow = wb.getWorksheet('TOTAL')!.getRow(1).values as unknown[];
+      expect(headerRow).toContain('HORAS CCT');
+      expect(headerRow).toContain('LOCALIDAD');
+      expect((headerRow as unknown[]).length - 1).toBe(18); // values[0] es undefined (1-based)
+      expect(filename).toBe('2026_09_1q_Sueldo SERTEC_v2.xlsx');
+    });
+
+    it('el sin-zona sale en TOTAL pero en ninguna hoja de zona', async () => {
+      const filaNorte = filaCongelada({ cuil: '20-1-1', zona: 'norte' });
+      const filaSur = filaCongelada({ cuil: '20-2-2', zona: 'sur' });
+      const filaSinZona = filaCongelada({ cuil: '20-3-3', zona: null, provincia: 'CORDOBA' });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaNorte, filaSur, filaSinZona]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      expect(wb.getWorksheet('TOTAL')!.rowCount).toBe(4); // header + 3 filas
+      expect(wb.getWorksheet('NORTE')!.rowCount).toBe(2); // header + 1
+      expect(wb.getWorksheet('TUCUMAN')!.rowCount).toBe(2); // header + 1
+    });
+
+    it('TIPO mapea fijo/fijo_105 → "Jornalizado/Mensualizado" y por_tantos → "Jornalizado/X Tanto"', async () => {
+      const filas = [
+        filaCongelada({ cuil: '1', regimen: 'jornalizado' }),
+        filaCongelada({ cuil: '2', regimen: 'mensualizado' }),
+        filaCongelada({ cuil: '3', regimen: 'fijo' }),
+        filaCongelada({ cuil: '4', regimen: 'fijo_105' }),
+        filaCongelada({ cuil: '5', regimen: 'por_tantos' }),
+      ];
+      cierresMock.detalle.mockResolvedValue(cabeceraBase(filas));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      const ws = wb.getWorksheet('TOTAL')!;
+      const tipos = [2, 3, 4, 5, 6].map((r) => ws.getRow(r).getCell(5).value);
+      expect(tipos).toEqual([
+        'Jornalizado',
+        'Mensualizado',
+        'Jornalizado/Mensualizado',
+        'Jornalizado/Mensualizado',
+        'Jornalizado/X Tanto',
+      ]);
+    });
+
+    it('RESUMEN suma total por localidad, por zona y el total general', async () => {
+      const filaNorte = filaCongelada({ cuil: '1', zona: 'norte', localidad: 'Salta Capital', total: 100 });
+      const filaSur = filaCongelada({ cuil: '2', zona: 'sur', localidad: 'San Miguel', total: 200 });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaNorte, filaSur]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      const ws = wb.getWorksheet('RESUMEN')!;
+      const valores = ws.getSheetValues().flat().filter((v) => v != null);
+      expect(valores).toContain(300);
+    });
+
+    it('DIAS TRABAJADOS: matriz legajo/nombre x día con 1 si hay fila para (cuil, fecha)', async () => {
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
+      prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
+        { cuil: '20-22222222-2', legajo: 10, apellidoNombre: 'Perez, Juan', fecha: new Date(2026, 8, 3) },
+      ]);
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      const ws = wb.getWorksheet('DIAS TRABAJADOS')!;
+      expect(ws.rowCount).toBe(2); // header + 1 empleado
+      const fila = ws.getRow(2).values as unknown[];
+      expect(fila).toContain(1);
+    });
+
+    it('propaga NotFoundException si el cierre no existe', async () => {
+      cierresMock.detalle.mockRejectedValue(new NotFoundException('No existe el cierre 99.'));
+      await expect(service.generarExcelPrincipal(99)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('generarExcelPorTantos', () => {
+    it('hoja única POR TANTOS B con MONTO A/MONTO B solo de regimen por_tantos', async () => {
+      const filaJornalizado = filaCongelada({ cuil: '1', regimen: 'jornalizado' });
+      const filaPorTantos = filaCongelada({
+        cuil: '2',
+        regimen: 'por_tantos',
+        kmTotal: 120,
+        montoKmBruto: 5000,
+        montoA: 9000,
+        montoB: 1500,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaJornalizado, filaPorTantos]));
+
+      const { buffer, filename } = await service.generarExcelPorTantos(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      expect(wb.worksheets.map((w) => w.name)).toEqual(['POR TANTOS B']);
+      const ws = wb.getWorksheet('POR TANTOS B')!;
+      expect(ws.rowCount).toBe(2); // header + solo el por_tantos
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow).toContain('MONTO A');
+      expect(headerRow).toContain('MONTO B');
+      const fila = ws.getRow(2).values as unknown[];
+      expect(fila).toContain(9000);
+      expect(fila).toContain(1500);
+      expect(filename).toBe('2026_09_1q_PorTantos B_v2.xlsx');
+    });
+  });
+});

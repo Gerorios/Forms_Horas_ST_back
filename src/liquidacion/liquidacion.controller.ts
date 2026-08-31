@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Request, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
 import { PanelService } from './panel.service';
 import { AnalisisService } from './analisis.service';
 import { CierresService } from './cierres.service';
+import { ExportCierreService } from './export-cierre.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
@@ -33,6 +35,7 @@ export class LiquidacionController {
     private panel: PanelService,
     private analisis: AnalisisService,
     private cierres: CierresService,
+    private exportCierre: ExportCierreService,
   ) {}
 
   // El LISTADO lo necesita el Liquidador (Perfiles asigna categoría, Tarifas
@@ -279,5 +282,25 @@ export class LiquidacionController {
   @Get('cierres/:id')
   detalleCierre(@Param('id', ParseIntPipe) id: number) {
     return this.cierres.detalle(id);
+  }
+
+  @Get('cierres/:id/excel')
+  async excelCierre(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.exportCierre.generarExcelPrincipal(id);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('cierres/:id/excel-por-tantos')
+  async excelPorTantosCierre(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.exportCierre.generarExcelPorTantos(id);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(buffer);
   }
 }
