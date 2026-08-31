@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AccesosService } from './accesos.service';
+import { IncidenciaService } from './incidencia.service';
 import { CertificacionesController } from './certificaciones.controller';
+import { LiquidacionModule } from '../liquidacion/liquidacion.module';
 
 @Module({
-  providers: [AccesosService],
+  imports: [LiquidacionModule],
+  providers: [AccesosService, IncidenciaService],
   controllers: [CertificacionesController],
   exports: [AccesosService],
 })
