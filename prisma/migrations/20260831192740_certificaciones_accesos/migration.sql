@@ -4,6 +4,11 @@
 -- verificado localmente con `prisma migrate diff --from-empty --to-schema` (que
 -- no requiere conexión a BD) y luego recortado a mano a las dos tablas nuevas.
 -- Se aplicará en el deploy con `prisma migrate deploy`.
+--
+-- ⚠️ NUNCA correr `prisma migrate dev` contra la BD compartida hasta baselinear
+-- (las tablas preexistentes no están en el historial de migraciones y Prisma
+-- propondrá RESETEAR la base). Aplicar SOLO con `prisma migrate deploy`.
+-- Ver prisma/migrations/README.md para el detalle y el camino de baseline.
 
 -- CreateTable
 CREATE TABLE `sth_certificaciones_accesos` (
