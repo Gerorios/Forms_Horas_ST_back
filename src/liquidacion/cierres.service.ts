@@ -36,7 +36,7 @@ export class CierresService {
   }
 
   /** Salvedades de cabecera (JSON de strings): solo las categorías con count > 0. */
-  private armarSalvedades(filas: FilaCalculo[], alertas: Alertas): string[] {
+  private armarSalvedades(filas: FilaCalculo[], alertas: Alertas, empleadosConPendientes: number): string[] {
     const salvedades: string[] = [];
 
     if (alertas.sinPerfil.length > 0) {
@@ -57,13 +57,26 @@ export class CierresService {
         ),
       );
     }
-    const jornalizadosConPendientes = alertas.sinHorasAprobadas.filter((a) => a.motivo === 'pendientes').length;
-    if (jornalizadosConPendientes > 0) {
+    const sinDeclarar = alertas.sinHorasAprobadas.filter((a) => a.motivo === 'sin_declarar').length;
+    if (sinDeclarar > 0) {
       salvedades.push(
         this.pluralizar(
-          jornalizadosConPendientes,
-          'jornalizado sin horas aprobadas (con pendientes)',
-          'jornalizados sin horas aprobadas (con pendientes)',
+          sinDeclarar,
+          'jornalizado sin horas aprobadas (sin declarar)',
+          'jornalizados sin horas aprobadas (sin declarar)',
+        ),
+      );
+    }
+    // Definición alineada con el diálogo del frontend (filas con
+    // pendientesAprobacion > 0): cualquier empleado con ≥1 registro
+    // `pendiente` en el rango, sin importar régimen ni si ya tiene horas
+    // aprobadas — más amplia que "jornalizado con CERO horas aprobadas".
+    if (empleadosConPendientes > 0) {
+      salvedades.push(
+        this.pluralizar(
+          empleadosConPendientes,
+          'empleado con horas pendientes de aprobar',
+          'empleados con horas pendientes de aprobar',
         ),
       );
     }
@@ -103,6 +116,9 @@ export class CierresService {
     if (zona == null) {
       salvedad = salvedad ? `${salvedad} · sin zona` : 'Sin zona (provincia no mapeada)';
     }
+    // Defensivo contra VARCHAR(300): un datoFaltante largo no debe abortar
+    // la transacción de cierre.
+    if (salvedad != null) salvedad = salvedad.slice(0, 300);
 
     return {
       cuil: fila.cuil,
@@ -158,14 +174,21 @@ export class CierresService {
     // Un día cuenta si el empleado tiene ≥1 registro NO desaprobado esa
     // fecha (spec §2.3). Incluye a empleados sin perfil: no generan fila de
     // detalle, pero sus días sí quedan congelados.
-    const [dias, kmsPorTantos] = await Promise.all([
+    const [dias, kmsPorTantos, pendientesPorOperario] = await Promise.all([
       this.prisma.registroHoras.groupBy({
         by: ['operarioCuil', 'fecha'],
         where: { fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
       }),
       this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } }),
+      // Empleados con ≥1 registro pendiente en el rango (cualquier régimen) —
+      // definición de la salvedad alineada con el diálogo del frontend.
+      this.prisma.registroHoras.groupBy({
+        by: ['operarioCuil'],
+        where: { fecha: { gte: desde, lte: hasta }, estado: 'pendiente' },
+      }),
     ]);
     const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
+    const empleadosConPendientes = pendientesPorOperario.length;
 
     // Localidad (se congela junto a provincia, spec §2.2) para todo cuil que
     // vaya a aparecer en detalle o en días trabajados.
@@ -180,7 +203,7 @@ export class CierresService {
     const localidadPorCuil = new Map(empleados.map((e) => [e.cuil, e.localidad]));
     const filaPorCuil = new Map(filas.map((f) => [f.cuil, f]));
 
-    const salvedades = this.armarSalvedades(filas, alertas);
+    const salvedades = this.armarSalvedades(filas, alertas, empleadosConPendientes);
 
     try {
       return await this.prisma.$transaction(
@@ -309,7 +332,7 @@ export class CierresService {
   async detalle(id: number) {
     const cierre = await this.prisma.cierreLiquidacion.findUnique({
       where: { id },
-      include: { ...this.includeCabecera, detalle: true },
+      include: { ...this.includeCabecera, detalle: { orderBy: { apellidoNombre: 'asc' } } },
     });
     if (!cierre) {
       throw new NotFoundException(`No existe el cierre ${id}.`);

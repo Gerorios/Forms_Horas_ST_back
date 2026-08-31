@@ -191,6 +191,38 @@ describe('CierresService', () => {
     expect(detalle[1].precioBruto).toBe(120);
   });
 
+  it('empleado con horas aprobadas y pendientes en el rango aparece en la salvedad (definición alineada al diálogo del frontend)', async () => {
+    calculoMock.calcularQuincena.mockResolvedValue([filaBase()]); // ya tiene 80hs aprobadas
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias); // sinHorasAprobadas vacío: NO es "0 aprobadas"
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+    prismaMock.registroHoras.groupBy.mockImplementation((args: any) => {
+      if (args.where?.estado === 'pendiente') {
+        return Promise.resolve([{ operarioCuil: '20-22222222-2' }]); // 8hs pendientes
+      }
+      return Promise.resolve([]); // dias
+    });
+
+    await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
+
+    const data = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data;
+    const salvedades = JSON.parse(data.salvedades);
+    expect(salvedades).toContain('1 empleado con horas pendientes de aprobar');
+  });
+
+  it('salvedad se trunca a 300 caracteres (defensivo contra el VARCHAR(300))', async () => {
+    const datoFaltanteLargo = 'x'.repeat(400);
+    calculoMock.calcularQuincena.mockResolvedValue([
+      filaBase({ datoFaltante: datoFaltanteLargo, provincia: 'BUENOS AIRES' }),
+    ]);
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+
+    await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
+
+    const detalle = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data.detalle.create[0];
+    expect(detalle.salvedad.length).toBeLessThanOrEqual(300);
+  });
+
   it('empleado con horas pero sin perfil no genera fila de detalle, pero sus días sí aparecen', async () => {
     calculoMock.calcularQuincena.mockResolvedValue([]); // sin perfil = no entra al cálculo
     calculoMock.getAlertasQuincena.mockResolvedValue({
@@ -353,6 +385,11 @@ describe('CierresService', () => {
       expect(resultado.cerradoPor).toEqual({ cuil: CUIL_LIQUIDADOR, nombre: 'Liquidador Uno' });
       expect(resultado.totales).toEqual({ total: 1000, norte: 1000, sur: 0, sinZona: 0, empleados: 1 });
       expect(resultado.detalle).toEqual([filaDetalle]);
+      expect(prismaMock.cierreLiquidacion.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({ detalle: { orderBy: { apellidoNombre: 'asc' } } }),
+        }),
+      );
     });
   });
 });

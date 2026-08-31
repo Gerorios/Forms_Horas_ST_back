@@ -154,6 +154,22 @@ describe('PanelService', () => {
       });
       expect(r.filas[0].pendientesAprobacion).toBe(1);
       expect(r.filas[0].duplicadoCruzado).toBe(false);
+      // spec §6.4: provincia 'BA' no está mapeada (NORTE=Salta/Jujuy,
+      // SUR=Tucumán) → zona null, para que el frontend pueda mostrar el chip.
+      expect(r.filas[0].zona).toBeNull();
+    });
+
+    it('spec §6.4: provincia mapeada (SALTA) expone zona norte en la fila del detalle en vivo', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([{ ...filaBase, provincia: 'SALTA' }]);
+      prismaMock.registroHoras.groupBy.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].zona).toBe('norte');
     });
 
     it('detecta duplicado EXACTO: dos registros idénticos en todo (aunque en lotes distintos)', async () => {
