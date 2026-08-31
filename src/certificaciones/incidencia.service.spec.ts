@@ -74,4 +74,29 @@ describe('IncidenciaService.obtenerIncidencia', () => {
     await expect(service.obtenerIncidencia(2026, 8, null)).rejects.toBeInstanceOf(ForbiddenException);
     expect(analisisMock.getAnalisis).not.toHaveBeenCalled();
   });
+
+  it('redondea la suma de floats a 2 decimales (evita restos de precisión binaria)', async () => {
+    analisisMock.getAnalisis.mockImplementation((_anio: number, _mes: number, quincena: number) => {
+      if (quincena === 1) {
+        return Promise.resolve({
+          contratos: contratos([
+            { contratoId: 1, codigo: 'K6', monto: 1.1 },
+            { contratoId: null, codigo: 'Sin contrato asignable', monto: 1.1 },
+          ]),
+        });
+      }
+      return Promise.resolve({
+        contratos: contratos([
+          { contratoId: 1, codigo: 'K6', monto: 2.2 },
+          { contratoId: null, codigo: 'Sin contrato asignable', monto: 2.2 },
+        ]),
+      });
+    });
+
+    const resultado = await service.obtenerIncidencia(2026, 8, { nivel: 'admin', ks: [], inc: false });
+
+    expect(1.1 + 2.2).not.toBe(3.3); // documenta el problema de precisión que motiva el redondeo
+    expect(resultado.contratos).toEqual([{ codigo: 'K6', montoMo: 3.3 }]);
+    expect(resultado.sinAsignar).toBe(3.3);
+  });
 });

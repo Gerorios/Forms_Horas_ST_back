@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AccesosService } from './accesos.service';
 import { IncidenciaService } from './incidencia.service';
 import { UpsertAccesoDto } from './dto/upsert-acceso.dto';
@@ -37,7 +37,11 @@ export class CertificacionesController {
   // Sin @Roles: la autorización por claim `cert` vive dentro del service.
   @UseGuards(JwtAuthGuard)
   @Get('incidencia-mo')
-  incidenciaMo(@Query('anio') anio: string, @Query('mes') mes: string, @Req() req: any) {
-    return this.incidenciaService.obtenerIncidencia(Number(anio), Number(mes), req.user?.cert ?? null);
+  incidenciaMo(
+    @Query('anio', ParseIntPipe) anio: number,
+    @Query('mes', ParseIntPipe) mes: number,
+    @Req() req: any,
+  ) {
+    return this.incidenciaService.obtenerIncidencia(anio, mes, req.user?.cert ?? null);
   }
 }

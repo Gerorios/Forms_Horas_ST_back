@@ -7,6 +7,11 @@ export interface IncidenciaMo {
   sinAsignar: number | null;
 }
 
+// Los montos de AnalisisService ya vienen redondeados a 2 decimales, pero
+// sumar floats (aunque estén redondeados) puede dar restos de precisión
+// binaria (ej. 10.1 + 5.2 = 15.299999999999999) — se redondea el acumulado.
+const redondear2 = (x: number) => Math.round(x * 100) / 100;
+
 /**
  * Incidencia de mano de obra por contrato (K), consumida por el módulo de
  * certificaciones. Suma quincena 1 + quincena 2 del corte por contrato que
@@ -39,13 +44,16 @@ export class IncidenciaService {
       }
     }
 
-    let contratos = [...acumuladoPorCodigo.entries()].map(([codigo, montoMo]) => ({ codigo, montoMo }));
+    let contratos = [...acumuladoPorCodigo.entries()].map(([codigo, monto]) => ({
+      codigo,
+      montoMo: redondear2(monto),
+    }));
 
     if (cert.nivel === 'carga') {
       contratos = contratos.filter((c) => cert.ks.includes(c.codigo));
       return { contratos, sinAsignar: null };
     }
 
-    return { contratos, sinAsignar };
+    return { contratos, sinAsignar: redondear2(sinAsignar) };
   }
 }
