@@ -3,6 +3,7 @@ import { LiquidacionService } from './liquidacion.service';
 import { CalculoService } from './calculo.service';
 import { PanelService } from './panel.service';
 import { AnalisisService } from './analisis.service';
+import { CierresService } from './cierres.service';
 import {
   CreateCategoriaUocraDto,
   UpdateCategoriaUocraDto,
@@ -15,6 +16,7 @@ import {
   GuardarSueldosMensualizadosDto,
   CargarKmPorTantosDto,
   CargarPlusIndividualDto,
+  CrearCierreDto,
 } from './dto/liquidacion.dto';
 import { ToggleActivoDto } from '../admin/dto/catalogo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -30,6 +32,7 @@ export class LiquidacionController {
     private calculo: CalculoService,
     private panel: PanelService,
     private analisis: AnalisisService,
+    private cierres: CierresService,
   ) {}
 
   // El LISTADO lo necesita el Liquidador (Perfiles asigna categoría, Tarifas
@@ -259,5 +262,22 @@ export class LiquidacionController {
     @Query('quincena', ParseIntPipe) quincena: number,
   ) {
     return this.panel.getDetalleQuincena(anio, mes, quincena);
+  }
+
+  // ---- Cierres de liquidación: snapshot versionado por período (ver ADR-021) ----
+
+  @Post('cierres')
+  crearCierre(@Body() dto: CrearCierreDto, @Request() req) {
+    return this.cierres.crearCierre(dto.anio, dto.mes, dto.quincena, dto.nota, req.user.cuil);
+  }
+
+  @Get('cierres')
+  listarCierres() {
+    return this.cierres.listar();
+  }
+
+  @Get('cierres/:id')
+  detalleCierre(@Param('id', ParseIntPipe) id: number) {
+    return this.cierres.detalle(id);
   }
 }

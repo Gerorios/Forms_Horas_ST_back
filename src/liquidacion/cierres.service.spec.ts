@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { CierresService } from './cierres.service';
 import { CalculoService } from './calculo.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,7 +38,7 @@ function filaBase(overrides: Record<string, unknown> = {}) {
 
 describe('CierresService', () => {
   const prismaMock: any = {
-    cierreLiquidacion: { aggregate: jest.fn(), create: jest.fn() },
+    cierreLiquidacion: { aggregate: jest.fn(), create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     registroHoras: { groupBy: jest.fn() },
     kmPorTantos: { findMany: jest.fn() },
     snuempleados: { findMany: jest.fn() },
@@ -227,5 +228,131 @@ describe('CierresService', () => {
     await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
 
     expect(prismaMock.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30000, maxWait: 10000 });
+  });
+
+  it('crearCierre: choque de version simultáneo (P2002) → ConflictException', async () => {
+    calculoMock.calcularQuincena.mockResolvedValue([]);
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+    const errorP2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    prismaMock.$transaction = jest.fn().mockRejectedValue(errorP2002);
+
+    await expect(service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR)).rejects.toThrow(ConflictException);
+  });
+
+  describe('listar', () => {
+    it('devuelve cabeceras con totales por zona, nombre de cerradoPor y orden período/version desc', async () => {
+      prismaMock.cierreLiquidacion.findMany.mockResolvedValue([
+        {
+          id: 2,
+          anio: 2026,
+          mes: 9,
+          quincena: 1,
+          version: 2,
+          nota: null,
+          salvedades: JSON.stringify(['1 empleado sin zona']),
+          createdAt: new Date('2026-09-16'),
+          cerradoPor: { cuil: CUIL_LIQUIDADOR, nombreFueraNomina: 'Liquidador Uno' },
+          detalle: [
+            { zona: 'norte', total: 1000 },
+            { zona: 'sur', total: 500 },
+            { zona: null, total: 200 },
+          ],
+        },
+      ]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]); // cerradoPor sin match en snuempleados
+
+      const resultado = await service.listar();
+
+      expect(prismaMock.cierreLiquidacion.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { detalle: { select: { zona: true, total: true } }, cerradoPor: expect.anything() },
+          orderBy: [{ anio: 'desc' }, { mes: 'desc' }, { quincena: 'desc' }, { version: 'desc' }],
+        }),
+      );
+      expect(resultado).toEqual([
+        {
+          id: 2,
+          anio: 2026,
+          mes: 9,
+          quincena: 1,
+          version: 2,
+          cerradoPor: { cuil: CUIL_LIQUIDADOR, nombre: 'Liquidador Uno' },
+          nota: null,
+          salvedades: ['1 empleado sin zona'],
+          createdAt: new Date('2026-09-16'),
+          totales: { total: 1700, norte: 1000, sur: 500, sinZona: 200, empleados: 3 },
+        },
+      ]);
+    });
+
+    it('salvedades null → []; cerradoPor resuelto por snuempleados tiene prioridad sobre nombreFueraNomina', async () => {
+      prismaMock.cierreLiquidacion.findMany.mockResolvedValue([
+        {
+          id: 1,
+          anio: 2026,
+          mes: 9,
+          quincena: 1,
+          version: 1,
+          nota: null,
+          salvedades: null,
+          createdAt: new Date('2026-09-01'),
+          cerradoPor: { cuil: CUIL_LIQUIDADOR, nombreFueraNomina: 'Fallback' },
+          detalle: [],
+        },
+      ]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([
+        { cuil: CUIL_LIQUIDADOR, apellido_nombre: 'Liquidador, De Nomina' },
+      ]);
+
+      const resultado = await service.listar();
+
+      expect(resultado[0].salvedades).toEqual([]);
+      expect(resultado[0].cerradoPor.nombre).toBe('Liquidador, De Nomina');
+      expect(resultado[0].totales).toEqual({ total: 0, norte: 0, sur: 0, sinZona: 0, empleados: 0 });
+    });
+  });
+
+  describe('detalle', () => {
+    it('404 con NotFoundException si no existe el cierre', async () => {
+      prismaMock.cierreLiquidacion.findUnique.mockResolvedValue(null);
+
+      await expect(service.detalle(999)).rejects.toThrow(NotFoundException);
+    });
+
+    it('devuelve cabecera + detalle completo cuando existe', async () => {
+      const filaDetalle = {
+        id: 10,
+        cierreId: 1,
+        cuil: '20-22222222-2',
+        apellidoNombre: 'Perez, Juan',
+        zona: 'norte',
+        total: 1000,
+      };
+      prismaMock.cierreLiquidacion.findUnique.mockResolvedValue({
+        id: 1,
+        anio: 2026,
+        mes: 9,
+        quincena: 1,
+        version: 1,
+        nota: 'algo',
+        salvedades: null,
+        createdAt: new Date('2026-09-01'),
+        cerradoPor: { cuil: CUIL_LIQUIDADOR, nombreFueraNomina: 'Liquidador Uno' },
+        detalle: [filaDetalle],
+      });
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+
+      const resultado = await service.detalle(1);
+
+      expect(resultado.id).toBe(1);
+      expect(resultado.salvedades).toEqual([]);
+      expect(resultado.cerradoPor).toEqual({ cuil: CUIL_LIQUIDADOR, nombre: 'Liquidador Uno' });
+      expect(resultado.totales).toEqual({ total: 1000, norte: 1000, sur: 0, sinZona: 0, empleados: 1 });
+      expect(resultado.detalle).toEqual([filaDetalle]);
+    });
   });
 });

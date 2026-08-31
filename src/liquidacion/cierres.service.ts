@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena } from '../common/quincena';
@@ -181,33 +182,139 @@ export class CierresService {
 
     const salvedades = this.armarSalvedades(filas, alertas);
 
-    return this.prisma.$transaction(
-      (tx) =>
-        tx.cierreLiquidacion.create({
-          data: {
-            anio,
-            mes,
-            quincena,
-            version,
-            cerradoPorCuil: usuarioCuil,
-            nota: nota?.trim() || null,
-            salvedades: salvedades.length ? JSON.stringify(salvedades) : null,
-            detalle: { create: filas.map((f) => this.aFilaCongelada(f, localidadPorCuil, kmPorCuil)) },
-            diasTrabajados: {
-              create: dias.map((d) => {
-                const fila = filaPorCuil.get(d.operarioCuil);
-                const empleado = empleadoPorCuil.get(d.operarioCuil);
-                return {
-                  cuil: d.operarioCuil,
-                  apellidoNombre: fila?.apellidoNombre ?? empleado?.apellido_nombre ?? d.operarioCuil,
-                  legajo: fila?.legajo ?? empleado?.legajo ?? null,
-                  fecha: d.fecha,
-                };
-              }),
+    try {
+      return await this.prisma.$transaction(
+        (tx) =>
+          tx.cierreLiquidacion.create({
+            data: {
+              anio,
+              mes,
+              quincena,
+              version,
+              cerradoPorCuil: usuarioCuil,
+              nota: nota?.trim() || null,
+              salvedades: salvedades.length ? JSON.stringify(salvedades) : null,
+              detalle: { create: filas.map((f) => this.aFilaCongelada(f, localidadPorCuil, kmPorCuil)) },
+              diasTrabajados: {
+                create: dias.map((d) => {
+                  const fila = filaPorCuil.get(d.operarioCuil);
+                  const empleado = empleadoPorCuil.get(d.operarioCuil);
+                  return {
+                    cuil: d.operarioCuil,
+                    apellidoNombre: fila?.apellidoNombre ?? empleado?.apellido_nombre ?? d.operarioCuil,
+                    legajo: fila?.legajo ?? empleado?.legajo ?? null,
+                    fecha: d.fecha,
+                  };
+                }),
+              },
             },
-          },
-        }),
-      { timeout: 30000, maxWait: 10000 },
+          }),
+        { timeout: 30000, maxWait: 10000 },
+      );
+    } catch (e) {
+      // Carrera teórica: dos cierres simultáneos del mismo período compiten
+      // por el mismo version=MAX+1 calculado arriba y chocan contra el
+      // @@unique([anio, mes, quincena, version]) — el segundo en llegar
+      // recibe un P2002 pelado de Prisma; lo traducimos a un mensaje
+      // entendible (review Task 4).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Otro cierre de esta quincena se estaba creando al mismo tiempo — reintentá.');
+      }
+      throw e;
+    }
+  }
+
+  /** Mapa cuil→apellido_nombre para el conjunto de CUILs pedido (empleados en
+   * snuempleados). No hay FK física a snuempleados (ADR-008): quien llama
+   * decide el fallback (típicamente `nombreFueraNomina`) para los que no
+   * aparezcan acá — mismo criterio que registros-horas.service.ts/panel.service.ts. */
+  private async mapaNombresPorCuil(cuils: Iterable<string>): Promise<Map<string, string>> {
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: [...new Set(cuils)] } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    return new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
+  }
+
+  /** Deserializa la columna `salvedades` (JSON de strings); `[]` si null. */
+  private parsearSalvedades(salvedades: string | null): string[] {
+    return salvedades ? JSON.parse(salvedades) : [];
+  }
+
+  /** Totales de cabecera: suma general + por zona a partir del detalle congelado. */
+  private totalesDeDetalle(detalle: { zona: string | null; total: Prisma.Decimal | number }[]) {
+    return detalle.reduce(
+      (acc, d) => {
+        const total = Number(d.total);
+        acc.total += total;
+        if (d.zona === 'norte') acc.norte += total;
+        else if (d.zona === 'sur') acc.sur += total;
+        else acc.sinZona += total;
+        acc.empleados += 1;
+        return acc;
+      },
+      { total: 0, norte: 0, sur: 0, sinZona: 0, empleados: 0 },
     );
+  }
+
+  private readonly includeCabecera = {
+    cerradoPor: { select: { cuil: true, nombreFueraNomina: true } },
+    detalle: { select: { zona: true, total: true } },
+  } as const;
+
+  /** Cabecera (id, período, version, cerradoPor con nombre, nota, salvedades, totales) a
+   * partir de una fila de cierreLiquidacion.findMany/findUnique con `includeCabecera`. */
+  private async aCabecera<
+    T extends {
+      id: number;
+      anio: number;
+      mes: number;
+      quincena: number;
+      version: number;
+      nota: string | null;
+      salvedades: string | null;
+      createdAt: Date;
+      cerradoPor: { cuil: string; nombreFueraNomina: string | null };
+      detalle: { zona: string | null; total: Prisma.Decimal | number }[];
+    },
+  >(cierres: T[]) {
+    const nombrePorCuil = await this.mapaNombresPorCuil(cierres.map((c) => c.cerradoPor.cuil));
+    return cierres.map((c) => ({
+      id: c.id,
+      anio: c.anio,
+      mes: c.mes,
+      quincena: c.quincena,
+      version: c.version,
+      cerradoPor: {
+        cuil: c.cerradoPor.cuil,
+        nombre: nombrePorCuil.get(c.cerradoPor.cuil) ?? c.cerradoPor.nombreFueraNomina ?? '',
+      },
+      nota: c.nota,
+      salvedades: this.parsearSalvedades(c.salvedades),
+      createdAt: c.createdAt,
+      totales: this.totalesDeDetalle(c.detalle),
+    }));
+  }
+
+  /** Listado de cierres (cabecera + totales por zona), período desc / version desc. */
+  async listar() {
+    const cierres = await this.prisma.cierreLiquidacion.findMany({
+      include: this.includeCabecera,
+      orderBy: [{ anio: 'desc' }, { mes: 'desc' }, { quincena: 'desc' }, { version: 'desc' }],
+    });
+    return this.aCabecera(cierres);
+  }
+
+  /** Cabecera + detalle completo (todas las columnas congeladas) de un cierre. 404 si no existe. */
+  async detalle(id: number) {
+    const cierre = await this.prisma.cierreLiquidacion.findUnique({
+      where: { id },
+      include: { ...this.includeCabecera, detalle: true },
+    });
+    if (!cierre) {
+      throw new NotFoundException(`No existe el cierre ${id}.`);
+    }
+    const [cabecera] = await this.aCabecera([cierre]);
+    return { ...cabecera, detalle: cierre.detalle };
   }
 }
