@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { AccesosService } from '../certificaciones/accesos.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private accesosService: AccesosService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -26,10 +28,12 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    const cert = await this.accesosService.obtenerAcceso(usuario.cuil);
     const payload = {
       cuil: usuario.cuil,
       email: usuario.email,
       rol: usuario.rol.nombre,
+      cert,
     };
 
     return { access_token: this.jwt.sign(payload) };
@@ -62,9 +66,12 @@ export class AuthService {
       select: { apellido_nombre: true, legajo: true, cargo: true },
     });
 
+    const cert = await this.accesosService.obtenerAcceso(cuil);
+
     const { nombreFueraNomina, ...resto } = usuario;
     return {
       ...resto,
+      cert,
       empleado: empleado ?? {
         apellido_nombre: nombreFueraNomina ?? '',
         legajo: null,
