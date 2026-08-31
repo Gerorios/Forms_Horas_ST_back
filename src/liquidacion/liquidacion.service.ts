@@ -170,20 +170,25 @@ export class LiquidacionService {
   async guardarBonosPeriodo(anio: number, mes: number, dto: BonosPeriodoDto, usuarioCuil: string) {
     const fecha = this.fechaDePeriodo(anio, mes);
     await this.prisma.$transaction(async (tx) => {
+      // ADR-021 §6: el bono es por quincena en la BD, pero esta pantalla (por
+      // período mensual) todavía lo carga igual para ambas — 1Q y 2Q quedan
+      // en sincronía hasta que una task posterior separe la UI por quincena.
       for (const b of dto.bonos) {
-        const existente = await tx.bonoNoRemunerativo.findUnique({
-          where: { categoriaUocraId_vigenteDesde: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha } },
-        });
-        if (existente) {
-          if (Number(existente.valor) !== b.valor || existente.tipo !== b.tipo) {
-            await tx.bonoNoRemunerativo.update({ where: { id: existente.id }, data: { tipo: b.tipo, valor: b.valor } });
-            await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', existente.id, usuarioCuil, 'valor', existente.valor.toString(), b.valor.toString());
-          }
-        } else {
-          const creado = await tx.bonoNoRemunerativo.create({
-            data: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, tipo: b.tipo, valor: b.valor },
+        for (const quincena of [1, 2]) {
+          const existente = await tx.bonoNoRemunerativo.findUnique({
+            where: { categoriaUocraId_vigenteDesde_quincena: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena } },
           });
-          await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', creado.id, usuarioCuil, 'valor', null, b.valor.toString());
+          if (existente) {
+            if (Number(existente.valor) !== b.valor || existente.tipo !== b.tipo) {
+              await tx.bonoNoRemunerativo.update({ where: { id: existente.id }, data: { tipo: b.tipo, valor: b.valor } });
+              await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', existente.id, usuarioCuil, 'valor', existente.valor.toString(), b.valor.toString());
+            }
+          } else {
+            const creado = await tx.bonoNoRemunerativo.create({
+              data: { categoriaUocraId: b.categoriaUocraId, vigenteDesde: fecha, quincena, tipo: b.tipo, valor: b.valor },
+            });
+            await this.auditarCambio(tx, 'sth_bonos_no_remunerativos', creado.id, usuarioCuil, 'valor', null, b.valor.toString());
+          }
         }
       }
     }, { timeout: 30000, maxWait: 10000 });

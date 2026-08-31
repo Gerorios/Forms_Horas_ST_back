@@ -134,7 +134,10 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
       await service.guardarBonosPeriodo(2026, 8, { bonos: [{ categoriaUocraId: 1, tipo: 'monto_fijo', valor: 0 }] }, '20-1-1');
 
       expect(prismaMock.bonoNoRemunerativo.create).toHaveBeenCalledWith({
-        data: { categoriaUocraId: 1, vigenteDesde: fecha, tipo: 'monto_fijo', valor: 0 },
+        data: { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 1, tipo: 'monto_fijo', valor: 0 },
+      });
+      expect(prismaMock.bonoNoRemunerativo.create).toHaveBeenCalledWith({
+        data: { categoriaUocraId: 1, vigenteDesde: fecha, quincena: 2, tipo: 'monto_fijo', valor: 0 },
       });
       expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ tabla: 'sth_bonos_no_remunerativos', accion: 'crear', valorNuevo: '0' }),
