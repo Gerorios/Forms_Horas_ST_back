@@ -7,6 +7,16 @@ export interface IncidenciaMo {
   sinAsignar: number | null;
 }
 
+export interface IncidenciaMesSerie extends IncidenciaMo {
+  anio: number;
+  mes: number;
+}
+
+interface IncidenciaMesBruto {
+  contratos: { codigo: string; montoMo: number }[];
+  sinAsignar: number;
+}
+
 // Los montos de AnalisisService ya vienen redondeados a 2 decimales, pero
 // sumar floats (aunque estén redondeados) puede dar restos de precisión
 // binaria (ej. 10.1 + 5.2 = 15.299999999999999) — se redondea el acumulado.
@@ -22,9 +32,22 @@ const redondear2 = (x: number) => Math.round(x * 100) / 100;
 export class IncidenciaService {
   constructor(private readonly analisis: AnalisisService) {}
 
-  async obtenerIncidencia(anio: number, mes: number, cert: CertClaim | null): Promise<IncidenciaMo> {
-    if (!cert || (cert.nivel === 'carga' && !cert.inc)) {
-      throw new ForbiddenException('No tenés acceso a la incidencia de mano de obra.');
+  // Cache de meses CERRADOS (inmutables): clave "anio-mes" → agregado SIN
+  // filtrar por claim. El mes corriente nunca se cachea. 1 solo proceso
+  // (PM2) — mismo criterio que el cache del portal.
+  private readonly cacheMes = new Map<string, IncidenciaMesBruto>();
+
+  private esMesCerrado(anio: number, mes: number): boolean {
+    const hoy = new Date();
+    return anio < hoy.getFullYear() || (anio === hoy.getFullYear() && mes < hoy.getMonth() + 1);
+  }
+
+  private async calcularMes(anio: number, mes: number): Promise<IncidenciaMesBruto> {
+    const clave = `${anio}-${mes}`;
+    const cerrado = this.esMesCerrado(anio, mes);
+    if (cerrado) {
+      const cacheado = this.cacheMes.get(clave);
+      if (cacheado) return cacheado;
     }
 
     const [q1, q2] = await Promise.all([
@@ -44,16 +67,53 @@ export class IncidenciaService {
       }
     }
 
-    let contratos = [...acumuladoPorCodigo.entries()].map(([codigo, monto]) => ({
-      codigo,
-      montoMo: redondear2(monto),
-    }));
+    const bruto: IncidenciaMesBruto = {
+      contratos: [...acumuladoPorCodigo.entries()].map(([codigo, monto]) => ({
+        codigo,
+        montoMo: redondear2(monto),
+      })),
+      sinAsignar: redondear2(sinAsignar),
+    };
 
+    if (cerrado) this.cacheMes.set(clave, bruto);
+    return bruto;
+  }
+
+  private aplicarVisibilidad(mes: IncidenciaMesBruto, cert: CertClaim): IncidenciaMo {
     if (cert.nivel === 'carga') {
-      contratos = contratos.filter((c) => cert.ks.includes(c.codigo));
-      return { contratos, sinAsignar: null };
+      return { contratos: mes.contratos.filter((c) => cert.ks.includes(c.codigo)), sinAsignar: null };
+    }
+    return { contratos: mes.contratos, sinAsignar: mes.sinAsignar };
+  }
+
+  async obtenerIncidencia(anio: number, mes: number, cert: CertClaim | null): Promise<IncidenciaMo> {
+    if (!cert || (cert.nivel === 'carga' && !cert.inc)) {
+      throw new ForbiddenException('No tenés acceso a la incidencia de mano de obra.');
     }
 
-    return { contratos, sinAsignar: redondear2(sinAsignar) };
+    const bruto = await this.calcularMes(anio, mes);
+    return this.aplicarVisibilidad(bruto, cert);
+  }
+
+  async obtenerSerie(
+    anio: number,
+    mes: number,
+    meses: number,
+    cert: CertClaim | null,
+  ): Promise<IncidenciaMesSerie[]> {
+    if (!cert || (cert.nivel === 'carga' && !cert.inc)) {
+      throw new ForbiddenException('No tenés acceso a la incidencia de mano de obra.');
+    }
+
+    const n = Math.min(Math.max(meses, 1), 24);
+    const out: IncidenciaMesSerie[] = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(anio, mes - 1 - i, 1); // JS normaliza el cruce de año
+      const a = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const bruto = await this.calcularMes(a, m);
+      out.push({ anio: a, mes: m, ...this.aplicarVisibilidad(bruto, cert) });
+    }
+    return out;
   }
 }
