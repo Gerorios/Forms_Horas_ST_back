@@ -61,6 +61,20 @@ describe('ExportCierreService', () => {
   const cierresMock: any = { detalle: jest.fn() };
   const prismaMock: any = { cierreDiaTrabajado: { findMany: jest.fn() } };
   let service: ExportCierreService;
+  let tzOriginal: string | undefined;
+
+  // Fuerza el timezone del server real (Argentina, UTC-3) para que el test
+  // de DIAS TRABAJADOS ejercite el bug de matching local/UTC descrito en el
+  // fix — con TZ=UTC el bug no se manifiesta (medianoche UTC == medianoche
+  // local, no hay shift de día).
+  beforeAll(() => {
+    tzOriginal = process.env.TZ;
+    process.env.TZ = 'America/Argentina/Buenos_Aires';
+  });
+
+  afterAll(() => {
+    process.env.TZ = tzOriginal;
+  });
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -144,10 +158,14 @@ describe('ExportCierreService', () => {
       expect(valores).toContain(300);
     });
 
-    it('DIAS TRABAJADOS: matriz legajo/nombre x día con 1 si hay fila para (cuil, fecha)', async () => {
+    it('DIAS TRABAJADOS: matriz legajo/nombre x día con 1 si hay fila para (cuil, fecha), keyeando UTC como Prisma', async () => {
+      // fecha de un `@db.Date` de Prisma: siempre medianoche UTC. Caso
+      // borde: el PRIMER día de la quincena (2026-09-01) — con el bug
+      // local/UTC (toDateString) este cae en la columna del 31/08 o
+      // desaparece de la matriz.
       cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
       prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
-        { cuil: '20-22222222-2', legajo: 10, apellidoNombre: 'Perez, Juan', fecha: new Date(2026, 8, 3) },
+        { cuil: '20-22222222-2', legajo: 10, apellidoNombre: 'Perez, Juan', fecha: new Date(Date.UTC(2026, 8, 1)) },
       ]);
 
       const { buffer } = await service.generarExcelPrincipal(1);
@@ -155,8 +173,13 @@ describe('ExportCierreService', () => {
       await wb.xlsx.load(buffer as any);
       const ws = wb.getWorksheet('DIAS TRABAJADOS')!;
       expect(ws.rowCount).toBe(2); // header + 1 empleado
+
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow[3]).toBe('01/09'); // primera columna de día = 1° de la quincena
+
       const fila = ws.getRow(2).values as unknown[];
-      expect(fila).toContain(1);
+      expect(fila[3]).toBe(1); // marca en la columna del 01/09, no en otra ni ausente
+      expect(fila.filter((v) => v === 1)).toHaveLength(1); // ningún otro día marcado
     });
 
     it('propaga NotFoundException si el cierre no existe', async () => {

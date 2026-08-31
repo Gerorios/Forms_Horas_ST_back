@@ -63,8 +63,24 @@ function pad2(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
+/** Clave calendario "YYYY-MM-DD" de un Date LOCAL (como los que arma
+ * `rangoQuincena` con `new Date(anio, mes-1, dia)`) — usa getters locales
+ * a propósito, para no shiftear el día al pasar por UTC. */
+function claveLocal(fecha: Date): string {
+  return `${fecha.getFullYear()}-${pad2(fecha.getMonth() + 1)}-${pad2(fecha.getDate())}`;
+}
+
+/** Clave calendario "YYYY-MM-DD" de un Date que viene de Prisma en una
+ * columna `@db.Date` (siempre medianoche UTC) — mismo patrón que
+ * `panel.service.ts#fmtFecha` / `registros-horas.service.ts`. Usar
+ * `toDateString()`/getters locales acá rompe en servers con offset negativo
+ * (Argentina, UTC-3): la medianoche UTC cae en el día calendario anterior. */
+function claveUtc(fecha: Date): string {
+  return fecha.toISOString().slice(0, 10);
+}
+
 function fechaDdMm(fecha: Date): string {
-  return `${pad2(fecha.getUTCDate())}/${pad2(fecha.getUTCMonth() + 1)}`;
+  return `${pad2(fecha.getDate())}/${pad2(fecha.getMonth() + 1)}`;
 }
 
 /**
@@ -155,14 +171,20 @@ export class ExportCierreService {
     const ws = wb.addWorksheet('DIAS TRABAJADOS');
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
+    // `desde`/`hasta` son Date LOCAL (rangoQuincena); se itera y se keyea en
+    // esa misma base local (claveLocal) — ver nota de las funciones de clave.
     const fechas: Date[] = [];
     for (let d = new Date(desde); d <= hasta; d.setDate(d.getDate() + 1)) fechas.push(new Date(d));
+    const clavesEncabezado = fechas.map((f) => claveLocal(f));
 
     ws.addRow(['Legajo', 'NOMBRE Y APELLIDO', ...fechas.map((f) => fechaDdMm(f))]);
 
+    // `d.fecha` viene de Prisma (`@db.Date` → medianoche UTC): se keyea en
+    // base UTC (claveUtc), NUNCA con toDateString()/getters locales — ese
+    // combo cae en el día anterior en servers con offset negativo (AR, UTC-3).
     const empleados = new Map<string, { legajo: number | null; apellidoNombre: string; fechas: Set<string> }>();
     for (const d of dias) {
-      const clave = new Date(d.fecha).toDateString();
+      const clave = claveUtc(new Date(d.fecha));
       if (!empleados.has(d.cuil)) {
         empleados.set(d.cuil, { legajo: d.legajo, apellidoNombre: d.apellidoNombre, fechas: new Set() });
       }
@@ -173,7 +195,7 @@ export class ExportCierreService {
       ws.addRow([
         emp.legajo,
         emp.apellidoNombre,
-        ...fechas.map((f) => (emp.fechas.has(f.toDateString()) ? 1 : '')),
+        ...clavesEncabezado.map((clave) => (emp.fechas.has(clave) ? 1 : '')),
       ]);
     }
 
