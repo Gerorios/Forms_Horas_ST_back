@@ -2616,3 +2616,41 @@ previos?); (4) usuario MySQL de solo lectura para el analista (IT).
 → aplicar los DOS SQL en `Horas_Sertec` → merge PRs → en la VPS: pull +
 `npm install` (exceljs es dependencia nueva — sin esto el backend no bootea)
 + `npx prisma generate` + build ambos + `pm2 restart` (avisar antes).
+
+---
+
+## 72. QA del cierre + DEPLOY a producción (2026-08-31)
+
+QA manual del usuario sobre la sección 71 → 3 fixes, PRs y deploy completo
+el mismo día. **El cierre de liquidación está EN PRODUCCIÓN.**
+
+**Fixes del QA** (rama `feature/cierre-liquidacion`, luego mergeada):
+1. **Detalle del cierre = página propia** `/liquidacion/cierres/[id]` (el
+   dialog de 19 columnas no entraba en pantalla): cabecera del snapshot
+   (versión, cerrado por, nota, salvedades, totales), botones de descarga,
+   y tabla `cierre-detalle-tabla.tsx` con el patrón de fila expandible del
+   detalle vivo. El dialog viejo se eliminó.
+2. **Excel Por tantos B sin datos de A**: columnas Legajo / NOMBRE / KM /
+   PRECIO KM / MONTO B (se quitaron MONTO A y las horas). PRECIO KM se
+   deriva del cierre congelado (montoKmBruto/kmTotal, 2 decimales) porque
+   la tarifa del rango no se persiste por fila.
+3. **Excel principal: por tantos solo parte A**: horas topeadas en CCT
+   (88), Hs EXTRAS vacío, $$ Hs EXTRAS 0 y TOTAL = montoA (el extra es lo
+   B); RESUMEN suma igual (`totalPrincipal`) para cerrar contra la columna
+   TOTAL. OJO: la PANTALLA sigue mostrando el total completo (con B) — el
+   usuario está avisado, si quiere separarlo en la UI es cambio futuro.
+
+**PRs**: back #51, front #56 — mergeados con `--admin`, ramas borradas.
+
+**Deploy (checklist §71 ejecutado)**: DDL aplicados en `Horas_Sertec` con
+un script one-off vía driver mariadb de la app (no hay mysql client en la
+VPS; `prisma db execute` no sirve — el datasource no tiene url, usa
+adapter). Verificado: índice viejo de bonos coincidía, backfill 8+8 filas
+(1Q/2Q), 3 tablas sth_cierre* creadas. Luego pull + npm install (exceljs)
++ prisma generate + build ambos + pm2 restart. Smoke: /liquidacion/cierres
+401 (guard OK), front 200, log de arranque limpio.
+
+**Pendientes que siguen abiertos** (del spec §7): nombre de columna
+LOCALIDAD/PROVINCIA (consulta al liquidador), validar GUARDIAS/
+PRODUCTIVIDAD contra una quincena real, alcance de DIAS TRABAJADOS con
+feriados, usuario MySQL de solo lectura para el analista (IT).
