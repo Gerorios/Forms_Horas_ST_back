@@ -2694,3 +2694,20 @@ API 401 sin token, preflight CORS 200, health portal 200, logs pm2 limpios.
 la pantalla nueva. **Siguiente**: spec de la unificación (diseño aprobado en
 chat 2026-09-01, ver memoria plan-unificacion-erp-certificaciones) y plan de
 etapa 2 (lectura servida por NestJS, muerte de apiCert).
+
+## 74. ERP Certificaciones etapa 2 — lectura en NestJS, MERGEADA (2026-09-01)
+
+Ejecutada con subagentes (plan docs/superpowers/plans/2026-09-01-erp-etapa2-lectura-nestjs.md,
+8 tasks con review por task + review final). PRs: back #53, front #59, mergeados.
+**NO deployada todavía** — el deploy tiene checklist propio
+(docs/2026-09-01-erp-etapa2-deploy.md): mudanza de tablas testing→Horas_Sertec con
+renombre sth_cert_* + vistas de compatibilidad, repunte del portal (DB_NAME), pm2,
+paridad numérica y limpieza de envs. Hacerlo COORDINADO (sin cargas del portal en curso).
+
+Lo construido: 10 endpoints de lectura en NestJS (analytics + resumen + estado de cargas
++ presupuesto) con shapes idénticos al FastAPI; frontend sin apiCert (11 hooks contra el
+api de Horas, páginas intactas). Mejoras deliberadas vs el portal: bind params (el
+original tenía inyección SQL), fail-closed en visibilidad, fechas por DATE_FORMAT,
+limite saneado. Cambio de comportamiento: estado-cargas para nivel carga ya no da 403,
+muestra sus Ks. Sección A de la mudanza YA aplicada en testing (snapshot dev verificado).
+Tests: back 334/334, front 540/540.
