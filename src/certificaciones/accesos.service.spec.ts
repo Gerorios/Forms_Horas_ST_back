@@ -97,16 +97,54 @@ describe('AccesosService.eliminar', () => {
 describe('AccesosService.listar', () => {
   const prisma = {
     certificacionAcceso: { findMany: jest.fn() },
+    certificacionContratoHabilitado: { findMany: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
   } as any;
   const service = new AccesosService(prisma);
 
-  it('lista los accesos incluyendo el email del usuario', () => {
-    prisma.certificacionAcceso.findMany.mockReturnValue([]);
+  it('lista cada acceso con nombre (snuempleados → nombreFueraNomina → email) y sus contratos K', async () => {
+    prisma.certificacionAcceso.findMany.mockResolvedValue([
+      {
+        cuil: '20-1', nivel: 'carga', verIncidencia: true,
+        usuario: { email: 'jefe@st.local', nombreFueraNomina: null },
+      },
+      {
+        cuil: '20-2', nivel: 'lectura', verIncidencia: false,
+        usuario: { email: 'gerente@st.local', nombreFueraNomina: 'Gerente Fuera Nomina' },
+      },
+    ]);
+    prisma.certificacionContratoHabilitado.findMany.mockResolvedValue([
+      { cuil: '20-1', contrato: { id: 6, codigo: 'K6' } },
+      { cuil: '20-1', contrato: { id: 11, codigo: 'K11' } },
+    ]);
+    prisma.snuempleados.findMany.mockResolvedValue([
+      { cuil: '20-1', apellido_nombre: 'PEREZ JUAN' },
+    ]);
 
-    service.listar();
+    expect(await service.listar()).toEqual([
+      {
+        cuil: '20-1', nivel: 'carga', verIncidencia: true, nombre: 'PEREZ JUAN',
+        contratos: [{ id: 6, codigo: 'K6' }, { id: 11, codigo: 'K11' }],
+      },
+      {
+        cuil: '20-2', nivel: 'lectura', verIncidencia: false, nombre: 'Gerente Fuera Nomina',
+        contratos: [],
+      },
+    ]);
+  });
 
-    expect(prisma.certificacionAcceso.findMany).toHaveBeenCalledWith({
-      include: { usuario: { select: { email: true } } },
-    });
+  it('sin fila en snuempleados ni nombreFueraNomina cae al email', async () => {
+    prisma.certificacionAcceso.findMany.mockResolvedValue([
+      {
+        cuil: '20-3', nivel: 'admin', verIncidencia: true,
+        usuario: { email: 'admin@st.local', nombreFueraNomina: null },
+      },
+    ]);
+    prisma.certificacionContratoHabilitado.findMany.mockResolvedValue([]);
+    prisma.snuempleados.findMany.mockResolvedValue([]);
+
+    expect(await service.listar()).toEqual([
+      { cuil: '20-3', nivel: 'admin', verIncidencia: true, nombre: 'admin@st.local', contratos: [] },
+    ]);
   });
 });
