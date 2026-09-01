@@ -8,6 +8,18 @@ describe('IncidenciaService.obtenerIncidencia', () => {
   const analisisMock = { getAnalisis: jest.fn() } as any;
   const service = new IncidenciaService(analisisMock);
 
+  // Fija "hoy" dentro de agosto 2026 para que (2026, 8) sea el mes corriente
+  // y nunca se cachee: los tests reutilizan ese mismo período con distintos
+  // mocks, y el cache de meses cerrados (ver obtenerSerie) rompería eso si
+  // la fecha real del sistema avanza más allá de agosto.
+  beforeAll(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-15'));
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   beforeEach(() => {
     analisisMock.getAnalisis.mockReset();
     analisisMock.getAnalisis.mockImplementation((_anio: number, _mes: number, quincena: number) => {
