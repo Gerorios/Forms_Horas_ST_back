@@ -43,3 +43,14 @@ export function condicionesFiltros(f: FiltrosAnalitica, cert: CertClaim): Prisma
 
   return conds.length ? Prisma.sql` AND ${Prisma.join(conds, ' AND ')}` : Prisma.empty;
 }
+
+/** Normaliza los query params crudos del controller a `FiltrosAnalitica`. */
+export function filtrosDesdeQuery(q: Record<string, unknown>): FiltrosAnalitica {
+  return {
+    desde: q.desde ? String(q.desde) : undefined,
+    hasta: q.hasta ? String(q.hasta) : undefined,
+    contratos: aLista(q.contratos),
+    provincias: aLista(q.provincias),
+    tipo: q.tipo ? String(q.tipo) : undefined,
+  };
+}

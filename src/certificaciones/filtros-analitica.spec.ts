@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { aLista, condicionesFiltros } from './filtros-analitica';
+import { aLista, condicionesFiltros, filtrosDesdeQuery } from './filtros-analitica';
 
 const lectura = { nivel: 'lectura', ks: [], inc: true };
 const carga = (ks: string[]) => ({ nivel: 'carga', ks, inc: false });
@@ -48,5 +48,17 @@ describe('aLista', () => {
     expect(aLista(undefined)).toEqual([]);
     expect(aLista('K6')).toEqual(['K6']);
     expect(aLista(['K6', 'K2'])).toEqual(['K6', 'K2']);
+  });
+});
+
+describe('filtrosDesdeQuery', () => {
+  it('normaliza query params a FiltrosAnalitica', () => {
+    expect(filtrosDesdeQuery({ contratos: 'K6', desde: '2026-01' })).toEqual({
+      desde: '2026-01',
+      hasta: undefined,
+      contratos: ['K6'],
+      provincias: [],
+      tipo: undefined,
+    });
   });
 });
