@@ -15,6 +15,7 @@ import { AccesosService } from './accesos.service';
 import { IncidenciaService } from './incidencia.service';
 import { AnaliticaService } from './analitica.service';
 import { ResumenService } from './resumen.service';
+import { ItemsService } from './items.service';
 import { UpsertAccesoDto } from './dto/upsert-acceso.dto';
 import { filtrosDesdeQuery } from './filtros-analitica';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,6 +29,7 @@ export class CertificacionesController {
     private readonly incidenciaService: IncidenciaService,
     private readonly analiticaService: AnaliticaService,
     private readonly resumenService: ResumenService,
+    private readonly itemsService: ItemsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -144,5 +146,18 @@ export class CertificacionesController {
   @Get('analytics/presupuesto')
   presupuesto(@Req() req: any) {
     return this.resumenService.presupuesto(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización (solo nivel admin) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('items')
+  listarItems(@Query() q: Record<string, unknown>, @Req() req: any) {
+    return this.itemsService.listar(
+      {
+        codigoK: q.codigo_k ? String(q.codigo_k) : undefined,
+        buscar: q.buscar ? String(q.buscar) : undefined,
+      },
+      req.user?.cert ?? null,
+    );
   }
 }
