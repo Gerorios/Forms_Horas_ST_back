@@ -6,6 +6,8 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
+  Post,
   Put,
   Query,
   Req,
@@ -17,6 +19,7 @@ import { AnaliticaService } from './analitica.service';
 import { ResumenService } from './resumen.service';
 import { ItemsService } from './items.service';
 import { UpsertAccesoDto } from './dto/upsert-acceso.dto';
+import { CrearItemDto, ActualizarItemDto } from './dto/item.dto';
 import { filtrosDesdeQuery } from './filtros-analitica';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -159,5 +162,26 @@ export class CertificacionesController {
       },
       req.user?.cert ?? null,
     );
+  }
+
+  // Sin @Roles: la autorización (solo nivel admin) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Post('items')
+  crearItem(@Body() dto: CrearItemDto, @Req() req: any) {
+    return this.itemsService.crear(dto, req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización (solo nivel admin) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Patch('items/:id')
+  actualizarItem(@Param('id', ParseIntPipe) id: number, @Body() dto: ActualizarItemDto, @Req() req: any) {
+    return this.itemsService.actualizar(id, dto, req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización (solo nivel admin) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Delete('items/:id')
+  eliminarItem(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.itemsService.eliminar(id, req.user?.cert ?? null);
   }
 }
