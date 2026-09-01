@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CertClaim } from './accesos.service';
 import { condicionesFiltros, FiltrosAnalitica } from './filtros-analitica';
 import { armarInteranual, InteranualResponse } from './interanual';
+import { construirEstadoCargas, CargaLogFila, EstadoCargaContrato } from './estado-cargas';
 
 const num = (x: unknown) => (x == null ? 0 : Number(x));
 
@@ -123,5 +124,43 @@ export class AnaliticaService {
       ORDER BY mes ASC, anio ASC
     `);
     return armarInteranual(rows.map((r) => ({ ...r, anio: Number(r.anio), mes: Number(r.mes) })));
+  }
+
+  async contratos(certIn: CertClaim | null): Promise<string[]> {
+    const cert = this.exigirClaim(certIn);
+    if (cert.nivel === 'carga') return cert.ks; // como el portal: directo del claim
+    const rows = await this.prisma.$queryRaw<{ codigo_k: string }[]>(
+      Prisma.sql`SELECT codigo_k FROM sth_cert_contratos ORDER BY codigo_k`,
+    );
+    return rows.map((r) => r.codigo_k);
+  }
+
+  async provincias(certIn: CertClaim | null): Promise<string[]> {
+    this.exigirClaim(certIn);
+    const rows = await this.prisma.$queryRaw<{ provincia: string }[]>(
+      Prisma.sql`SELECT provincia FROM sth_cert_provincias WHERE activo = 1 ORDER BY provincia`,
+    );
+    return rows.map((r) => r.provincia);
+  }
+
+  async estadoCargas(certIn: CertClaim | null): Promise<EstadoCargaContrato[]> {
+    const cert = this.exigirClaim(certIn);
+    const todosRows = await this.prisma.$queryRaw<{ codigo_k: string }[]>(
+      Prisma.sql`SELECT codigo_k FROM sth_cert_contratos ORDER BY codigo_k`,
+    );
+    let todos = todosRows.map((r) => r.codigo_k);
+    if (cert.nivel === 'carga') {
+      const propios = new Set(cert.ks.map((k) => k.toUpperCase()));
+      todos = todos.filter((k) => propios.has(k.toUpperCase()));
+    }
+    const cargas = await this.prisma.$queryRaw<CargaLogFila[]>(
+      Prisma.sql`
+      SELECT contrato, periodo, usuario_nombre, cargado_en, filas_cargadas, estado
+      FROM sth_cert_cargas_log
+      WHERE periodo >= '2025-01' AND estado != 'error'
+      ORDER BY periodo DESC, contrato
+    `,
+    );
+    return construirEstadoCargas(todos, cargas, new Date());
   }
 }

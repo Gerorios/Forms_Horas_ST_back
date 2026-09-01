@@ -107,4 +107,25 @@ export class CertificacionesController {
   interanual(@Query() q: Record<string, unknown>, @Req() req: any) {
     return this.analiticaService.interanual(filtrosDesdeQuery(q), req.user?.cert ?? null);
   }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/contratos')
+  contratos(@Req() req: any) {
+    return this.analiticaService.contratos(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/provincias')
+  provincias(@Req() req: any) {
+    return this.analiticaService.provincias(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/estado-cargas')
+  estadoCargas(@Req() req: any) {
+    return this.analiticaService.estadoCargas(req.user?.cert ?? null);
+  }
 }

@@ -43,4 +43,10 @@ describe('AnaliticaService', () => {
     expect(sql.sql).toContain('LIMIT ?');
     expect(sql.values).toContain(10);
   });
+
+  it('contratos con nivel carga devuelve cert.ks sin llamar a $queryRaw', async () => {
+    const result = await service.contratos(carga);
+    expect(result).toEqual(['K6']);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
 });
