@@ -29,7 +29,16 @@ INSERT INTO sth_cert_presupuestos SELECT * FROM dim_presupuesto_contrato;
 -- B.1 Copias frescas desde testing (el portal siguió escribiendo ahí):
 -- CREATE TABLE sth_cert_certificaciones LIKE testing.fact_certificaciones;
 -- INSERT INTO sth_cert_certificaciones SELECT * FROM testing.fact_certificaciones;
---   ... (idéntico para las otras 5 tablas renombradas)
+-- CREATE TABLE sth_cert_items LIKE testing.dim_item;
+-- INSERT INTO sth_cert_items SELECT * FROM testing.dim_item;
+-- CREATE TABLE sth_cert_contratos LIKE testing.dim_contrato;
+-- INSERT INTO sth_cert_contratos SELECT * FROM testing.dim_contrato;
+-- CREATE TABLE sth_cert_provincias LIKE testing.ma_provincias;
+-- INSERT INTO sth_cert_provincias SELECT * FROM testing.ma_provincias;
+-- CREATE TABLE sth_cert_cargas_log LIKE testing.carga_log;
+-- INSERT INTO sth_cert_cargas_log SELECT * FROM testing.carga_log;
+-- CREATE TABLE sth_cert_presupuestos LIKE testing.dim_presupuesto_contrato;
+-- INSERT INTO sth_cert_presupuestos SELECT * FROM testing.dim_presupuesto_contrato;
 -- CREATE TABLE usuarios LIKE testing.usuarios;
 -- INSERT INTO usuarios SELECT * FROM testing.usuarios;
 --

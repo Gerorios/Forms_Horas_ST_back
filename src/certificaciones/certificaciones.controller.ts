@@ -99,7 +99,8 @@ export class CertificacionesController {
   @UseGuards(JwtAuthGuard)
   @Get('analytics/top-items')
   topItems(@Query() q: Record<string, unknown>, @Req() req: any) {
-    const limite = q.limite ? parseInt(String(q.limite), 10) : 10;
+    const n = parseInt(String(q.limite ?? ''), 10);
+    const limite = Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 10;
     return this.analiticaService.topItems(filtrosDesdeQuery(q), req.user?.cert ?? null, limite);
   }
 
