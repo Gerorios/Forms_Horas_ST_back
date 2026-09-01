@@ -2711,3 +2711,36 @@ original tenía inyección SQL), fail-closed en visibilidad, fechas por DATE_FOR
 limite saneado. Cambio de comportamiento: estado-cargas para nivel carga ya no da 403,
 muestra sus Ks. Sección A de la mudanza YA aplicada en testing (snapshot dev verificado).
 Tests: back 334/334, front 540/540.
+
+## 75. ERP etapa 2 DEPLOYADA a producción (2026-09-01)
+
+Checklist docs/2026-09-01-erp-etapa2-deploy.md ejecutado completo:
+1. Grants: NINGÚN usuario cruza las dos bases (root_test sin Horas_Sertec;
+   root_SerTec sin SELECT en testing) → plan alternativo del checklist:
+   copia por doble conexión en el VPS (origen = credenciales del portal
+   sobre testing, destino = root_SerTec sobre Horas_Sertec; secretos sin
+   salir del VPS).
+2. Mudanza OK: 7 tablas copiadas con SHOW CREATE + batch INSERT (FKs
+   remapeadas a nombres nuevos; fechas como strings crudos + sql_mode laxo
+   por fechas cero en la fact) — conteos y suma total_mes idénticos
+   (fact 7738, suma 24.162.879.583,1259). 6 vistas de compatibilidad creadas.
+3. Repunte portal: DB_NAME=Horas_Sertec + credenciales root_SerTec copiadas
+   dentro del VPS (root_test no entra a Horas_Sertec); backup
+   .env.bak-20260901-etapa2; force-recreate; health 200 y datos vía vistas.
+4. Deploy Horas: pull+install+prisma generate+build ambos, pm2 restart
+   (avisado), front 200, guard 401, logs limpios.
+5. PARIDAD verificada: /certificaciones/resumen y analytics/evolucion-mensual
+   byte a byte idénticos entre NestJS y FastAPI.
+6. Limpieza: NEXT_PUBLIC_CERT_API_URL fuera del .env.production;
+   ALLOWED_ORIGINS del portal sin misregistros; HORAS_JWT_SECRET vaciado;
+   recreate final, health 200.
+
+Estado: el módulo Certificaciones de Horas se sirve 100% desde NestJS.
+El portal queda solo para sus propios usuarios, operando sobre las vistas.
+Las tablas viejas de testing quedaron CONGELADAS (rollback disponible:
+restaurar el .env del portal desde el backup). Trampas nuevas anotadas:
+fechas cero en fact_certificaciones; FKs reales en dim_item/fact (el
+models.py del portal no las declara); root_test usa caching_sha2 (el driver
+necesita allowPublicKeyRetrieval).
+
+Siguiente: etapa 3 (maestro de ítems).
