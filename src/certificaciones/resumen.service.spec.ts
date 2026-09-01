@@ -39,8 +39,8 @@ describe('ResumenService.presupuesto', () => {
 
   it('calcula pct a 1 decimal y serializa fechas YYYY-MM-DD', async () => {
     prisma.$queryRaw.mockResolvedValue([{
-      contrato: 'K6', descripcion: 'Mant.', periodo_desde: new Date(2026, 0, 1),
-      periodo_hasta: new Date(2026, 11, 31), monto_presupuesto: '3000', consumido: '1000',
+      contrato: 'K6', descripcion: 'Mant.', periodo_desde: '2026-01-01',
+      periodo_hasta: '2026-12-31', monto_presupuesto: '3000', consumido: '1000',
     }]);
     expect(await service.presupuesto(lectura)).toEqual([{
       contrato: 'K6', descripcion: 'Mant.', periodo_desde: '2026-01-01', periodo_hasta: '2026-12-31',
@@ -50,8 +50,8 @@ describe('ResumenService.presupuesto', () => {
 
   it('monto_presupuesto 0 → pct 0 (sin división por cero)', async () => {
     prisma.$queryRaw.mockResolvedValue([{
-      contrato: 'K6', descripcion: 'x', periodo_desde: new Date(2026, 0, 1),
-      periodo_hasta: new Date(2026, 0, 2), monto_presupuesto: '0', consumido: '10',
+      contrato: 'K6', descripcion: 'x', periodo_desde: '2026-01-01',
+      periodo_hasta: '2026-01-02', monto_presupuesto: '0', consumido: '10',
     }]);
     expect((await service.presupuesto(lectura))[0].pct).toBe(0);
   });

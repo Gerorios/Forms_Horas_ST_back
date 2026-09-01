@@ -4,10 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CertClaim } from './accesos.service';
 
 const num = (x: unknown) => (x == null ? 0 : Number(x));
-const fechaISO = (d: Date) => {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
 
 @Injectable()
 export class ResumenService {
@@ -51,7 +47,9 @@ export class ResumenService {
     const rows = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT dc.codigo_k AS contrato,
              dc.descripcion AS descripcion,
-             dp.periodo_desde, dp.periodo_hasta, dp.monto_presupuesto,
+             DATE_FORMAT(dp.periodo_desde, '%Y-%m-%d') AS periodo_desde,
+             DATE_FORMAT(dp.periodo_hasta, '%Y-%m-%d') AS periodo_hasta,
+             dp.monto_presupuesto,
              COALESCE(SUM(fc.total_mes), 0) AS consumido
       FROM sth_cert_presupuestos dp
       JOIN sth_cert_contratos dc ON dp.id_contrato = dc.id_contrato
@@ -67,7 +65,7 @@ export class ResumenService {
       const consumido = num(r.consumido);
       return {
         contrato: r.contrato, descripcion: r.descripcion,
-        periodo_desde: fechaISO(r.periodo_desde), periodo_hasta: fechaISO(r.periodo_hasta),
+        periodo_desde: r.periodo_desde, periodo_hasta: r.periodo_hasta,
         monto_presupuesto: monto, consumido,
         pct: monto ? Math.round((consumido / monto) * 1000) / 10 : 0,
       };
