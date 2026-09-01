@@ -2659,3 +2659,38 @@ feriados, usuario MySQL de solo lectura para el analista (IT).
 quincena entraba con scroll horizontal — alertas apiladas en columna, hint
 de expandir = chevron con tooltip, padding px-2 y min-width 1250/1100 →
 960px (tabla principal y por tantos).
+
+## 73. ERP Certificaciones etapa 1 — pantalla de accesos, PRs y DEPLOY (2026-09-01)
+
+Cierre de la etapa 1 de la unificación ERP. **El módulo Certificaciones está
+EN PRODUCCIÓN** dentro de la app de Horas (resumen, analytics y accesos).
+
+**Agregado de esta sesión** (sobre lo ya desarrollado en la rama):
+1. **Backend**: `listar()` de accesos devuelve nombre para mostrar
+   (snuempleados → nombreFueraNomina → email, criterio de novedades) y los
+   contratos K de cada acceso.
+2. **Frontend**: pantalla `Admin → Accesos a Certificaciones`
+   (`/admin/accesos-certificaciones`): alta/edición/baja con nivel
+   (admin/carga/lectura), chips de contratos K (solo nivel carga) y flag
+   "Ve incidencia de MO". El select de alta solo ofrece activos sin acceso.
+3. **Tests**: timeout 15s en 2 tests de gráficos Recharts (falsos rojos con
+   la suite en paralelo; corridos solos siempre pasaron). Suites completas
+   verificadas: back 303, front 543, typecheck ambos.
+
+**PRs**: back #52, front #58 — mergeados con `--admin`.
+
+**Deploy**: la migración `certificaciones_accesos` rebotó con P3005 en
+`Horas_Sertec` (base no vacía sin historial) → se aplicó con
+`prisma db execute --file` + `migrate resolve --applied`; ahora
+`migrate deploy` queda limpio. En `testing` ya estaba aplicada. Frontend:
+`NEXT_PUBLIC_CERT_API_URL=https://certificaciones.serytec.com.ar/api` en
+`.env.production` (backup .bak-20260901). Portal FastAPI: `HORAS_JWT_SECRET`
+seteado (copiado del JWT_SECRET de Horas dentro del VPS) y CORS ampliado a
+misregistros (backup .bak-20260901). OJO: `docker compose restart` NO
+recarga el .env — hizo falta `up -d --force-recreate`. Smoke: front 200,
+API 401 sin token, preflight CORS 200, health portal 200, logs pm2 limpios.
+
+**Pendiente inmediato**: cargar los accesos iniciales (jefes/gerentes) desde
+la pantalla nueva. **Siguiente**: spec de la unificación (diseño aprobado en
+chat 2026-09-01, ver memoria plan-unificacion-erp-certificaciones) y plan de
+etapa 2 (lectura servida por NestJS, muerte de apiCert).
