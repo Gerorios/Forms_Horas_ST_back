@@ -52,10 +52,23 @@ quita una responsabilidad. Sin big-bang.
   | `dim_contrato` | `sth_cert_contratos` |
   | `ma_provincias` | `sth_cert_provincias` |
   | `carga_log` | `sth_cert_cargas_log` |
+  | `dim_presupuesto_contrato` | `sth_cert_presupuestos` |
+  | `usuarios` | `usuarios` (sin renombrar — muere en etapa 5) |
 
-  El renombre implica actualizar los `__tablename__` de los modelos
-  SQLAlchemy del portal (5 líneas + tests) en el mismo PR del repunte —
-  el portal se toca igual en ese paso, no agrega un deploy extra.
+  (Corrección 2026-09-01, tras inventariar el código real del portal: se
+  suman `dim_presupuesto_contrato` — la usa `/analytics/presupuesto` — y
+  `usuarios` — el login propio del portal la necesita en la base a la que
+  apunte.)
+
+  **El portal NO se toca**: casi todo su acceso a datos es SQL crudo con los
+  nombres viejos (su `models.py` solo mapea 2 tablas), así que renombrar
+  editando su código implicaría reescribir todos sus routers. En su lugar,
+  la mudanza crea en `Horas_Sertec` **vistas de compatibilidad** con los
+  nombres viejos (`CREATE VIEW fact_certificaciones AS SELECT * FROM
+  sth_cert_certificaciones`, etc. — vistas de tabla única, actualizables:
+  los INSERT de la carga del portal siguen funcionando). El portal solo
+  repunta su `DB_NAME`. Las vistas se eliminan en la etapa 5 junto con el
+  portal.
 - Las copias que queden en `testing` tras la mudanza se conservan un tiempo
   como respaldo y después se limpian (etapa 5), para que no haya dos fuentes
   de verdad.
