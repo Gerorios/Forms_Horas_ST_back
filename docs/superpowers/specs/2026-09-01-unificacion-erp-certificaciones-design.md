@@ -40,6 +40,22 @@ quita una responsabilidad. Sin big-bang.
   recreate del contenedor — no alcanza el restart). Así el portal y el módulo
   de Horas siguen leyendo/escribiendo LOS MISMOS datos durante toda la
   transición, y los modelos Prisma se agregan normalmente con `@@map`.
+- **Renombre en la mudanza** (aprobado 2026-09-01): las tablas adoptan la
+  convención `sth_` de la app, con sub-prefijo `sth_cert_` para agruparlas
+  y evitar choques (`sth_contratos` es de Horas;
+  `sth_certificaciones_accesos`/`_contratos` ya son del módulo de accesos):
+
+  | Tabla del portal | Nombre en `Horas_Sertec` |
+  |---|---|
+  | `fact_certificaciones` | `sth_cert_certificaciones` |
+  | `dim_item` | `sth_cert_items` |
+  | `dim_contrato` | `sth_cert_contratos` |
+  | `ma_provincias` | `sth_cert_provincias` |
+  | `carga_log` | `sth_cert_cargas_log` |
+
+  El renombre implica actualizar los `__tablename__` de los modelos
+  SQLAlchemy del portal (5 líneas + tests) en el mismo PR del repunte —
+  el portal se toca igual en ese paso, no agrega un deploy extra.
 - Las copias que queden en `testing` tras la mudanza se conservan un tiempo
   como respaldo y después se limpian (etapa 5), para que no haya dos fuentes
   de verdad.
@@ -86,14 +102,15 @@ sintéticos).
 
 ### Etapa 3 — Maestro de ítems
 
-ABM de `dim_item` (ítems con ptos_gasnor y contrato asignado) como pantalla
+ABM de `sth_cert_items` (ítems con ptos_gasnor y contrato asignado) como pantalla
 del módulo (solo nivel `admin`), estilo pantallas de Admin de Horas.
 
 ### Etapa 4 — Carga de certificaciones
 
 La parte pesada: subir Excel/PDF, parser y validación portados de Python a
 Node (exceljs ya está en el backend por liquidación), escritura en
-`fact_certificaciones` + `carga_log`. Visibilidad: `carga` solo sobre sus Ks.
+`sth_cert_certificaciones` + `sth_cert_cargas_log`. Visibilidad: `carga`
+solo sobre sus Ks.
 
 - **Tests de paridad obligatorios**: mismos archivos reales de entrada →
   mismas filas resultantes que el parser Python (fixtures tomadas del
