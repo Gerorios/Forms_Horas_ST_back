@@ -12,6 +12,7 @@ import { LiquidacionController } from './liquidacion.controller';
   controllers: [LiquidacionController],
   // CalculoService también lo usa NovedadesService (resumen-ausencias, ver
   // ADR de esa feature) para clipear días de Ausencia a la quincena.
-  exports: [CalculoService],
+  // AnalisisService lo consume CertificacionesModule (incidencia-mo).
+  exports: [CalculoService, AnalisisService],
 })
 export class LiquidacionModule {}
