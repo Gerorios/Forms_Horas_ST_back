@@ -111,6 +111,12 @@ export class ItemsService {
     const item = await this.prisma.certItem.findUnique({ where: { id_item: idItem } });
     if (!item) throw new NotFoundException('Ítem no encontrado');
 
+    if (dto.tarea === null) {
+      // La columna es NOT NULL: sin este guard, @IsOptional() deja pasar el
+      // null (saltea la validación) y el UPDATE fallaría con un 500 de Prisma.
+      throw new BadRequestException('La tarea no puede quedar vacía');
+    }
+
     const data: Record<string, unknown> = {};
     const CAMPOS = ['tarea', 'grupo', 'subgrupo', 'frecuencia', 'contratista', 'ptos_gasnor', 'unidad_medida', 'tipo', 'contrato_nombre'] as const;
     for (const campo of CAMPOS) {

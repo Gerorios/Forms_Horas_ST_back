@@ -109,6 +109,13 @@ describe('ItemsService.actualizar', () => {
     expect(await service.actualizar(1, {} as any, admin)).toEqual({ mensaje: 'Sin cambios' });
     expect(prisma.certItem.update).not.toHaveBeenCalled();
   });
+
+  it('tarea: null → BadRequest claro (la columna es NOT NULL)', async () => {
+    prisma.certItem.findUnique.mockResolvedValue({ id_item: 1, item_codigo: '1', id_contrato: 3 });
+    await expect(service.actualizar(1, { tarea: null } as any, admin))
+      .rejects.toThrow('La tarea no puede quedar vacía');
+    expect(prisma.certItem.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('ItemsService.eliminar', () => {
