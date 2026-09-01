@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CertClaim } from './accesos.service';
 import { condicionesFiltros, FiltrosAnalitica } from './filtros-analitica';
+import { armarInteranual, InteranualResponse } from './interanual';
 
 const num = (x: unknown) => (x == null ? 0 : Number(x));
 
@@ -106,5 +107,21 @@ export class AnaliticaService {
       item_codigo: r.item_codigo, tarea: r.tarea, contrato: r.contrato,
       monto_total: num(r.monto_total), pgn_total: num(r.pgn_total),
     }));
+  }
+
+  async interanual(f: FiltrosAnalitica, certIn: CertClaim | null): Promise<InteranualResponse> {
+    const cert = this.exigirClaim(certIn);
+    const cond = condicionesFiltros({ ...f, desde: undefined, hasta: undefined }, cert);
+    if (cond === null) return { anio_actual: null, anio_anterior: null, meses: [] };
+    const rows = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT YEAR(fc.fecha) AS anio, MONTH(fc.fecha) AS mes,
+             SUM(fc.total_mes) AS monto_total,
+             SUM(fc.cantidades * COALESCE(fc.ptos_gasnor, 0)) AS pgn_total
+      ${this.fromBase}
+      WHERE YEAR(fc.fecha) IN (YEAR(CURDATE()), YEAR(CURDATE()) - 1) ${cond}
+      GROUP BY anio, mes
+      ORDER BY mes ASC, anio ASC
+    `);
+    return armarInteranual(rows.map((r) => ({ ...r, anio: Number(r.anio), mes: Number(r.mes) })));
   }
 }

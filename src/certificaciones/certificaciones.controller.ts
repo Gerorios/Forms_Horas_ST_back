@@ -100,4 +100,11 @@ export class CertificacionesController {
     const limite = q.limite ? parseInt(String(q.limite), 10) : 10;
     return this.analiticaService.topItems(filtrosDesdeQuery(q), req.user?.cert ?? null, limite);
   }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/interanual')
+  interanual(@Query() q: Record<string, unknown>, @Req() req: any) {
+    return this.analiticaService.interanual(filtrosDesdeQuery(q), req.user?.cert ?? null);
+  }
 }
