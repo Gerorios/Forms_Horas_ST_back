@@ -14,6 +14,7 @@ import {
 import { AccesosService } from './accesos.service';
 import { IncidenciaService } from './incidencia.service';
 import { AnaliticaService } from './analitica.service';
+import { ResumenService } from './resumen.service';
 import { UpsertAccesoDto } from './dto/upsert-acceso.dto';
 import { filtrosDesdeQuery } from './filtros-analitica';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -26,6 +27,7 @@ export class CertificacionesController {
     private readonly service: AccesosService,
     private readonly incidenciaService: IncidenciaService,
     private readonly analiticaService: AnaliticaService,
+    private readonly resumenService: ResumenService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -127,5 +129,19 @@ export class CertificacionesController {
   @Get('analytics/estado-cargas')
   estadoCargas(@Req() req: any) {
     return this.analiticaService.estadoCargas(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('resumen')
+  resumen(@Req() req: any) {
+    return this.resumenService.resumen(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización por claim `cert` vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/presupuesto')
+  presupuesto(@Req() req: any) {
+    return this.resumenService.presupuesto(req.user?.cert ?? null);
   }
 }
