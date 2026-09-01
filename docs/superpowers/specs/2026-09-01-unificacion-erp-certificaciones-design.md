@@ -27,9 +27,22 @@ quita una responsabilidad. Sin big-bang.
 ## 3. Datos
 
 - Las tablas del portal (`fact_certificaciones`, `dim_item`, `dim_contrato`,
-  `ma_provincias`, `carga_log`) **ya viven en `Horas_Sertec`** (confirmado
-  2026-09-01). NO se migran datos: se agregan modelos a `prisma/schema.prisma`
-  con `@@map`, sin tocar el DDL existente.
+  `ma_provincias`, `carga_log`) viven en la base **`testing`** del servidor
+  MySQL compartido (verificado en el `.env` del VPS el 2026-09-01: el portal
+  usa `DB_NAME=testing` en producción — ojo con la confusión: esa base es
+  "de pruebas" para Horas pero es la producción del portal). **NO existen en
+  `Horas_Sertec`.**
+- Prisma no puede mapear modelos de otra base con `@@map` (un datasource =
+  una base), así que **el primer paso de la etapa 2 es mudarlas una única
+  vez a `Horas_Sertec`**: copia de tablas + datos (`mysqldump` o
+  `CREATE TABLE ... SELECT` equivalente), verificación de conteos, backup, y
+  repuntar el portal (`DB_NAME=testing` → `Horas_Sertec` en su `.env`, con
+  recreate del contenedor — no alcanza el restart). Así el portal y el módulo
+  de Horas siguen leyendo/escribiendo LOS MISMOS datos durante toda la
+  transición, y los modelos Prisma se agregan normalmente con `@@map`.
+- Las copias que queden en `testing` tras la mudanza se conservan un tiempo
+  como respaldo y después se limpian (etapa 5), para que no haya dos fuentes
+  de verdad.
 - Si alguna etapa requiere DDL nuevo, va a las DOS bases (`Horas_Sertec` y
   `testing`), como siempre.
 - ⚠️ El `Contrato` de Horas (`sth_contratos`) y `dim_contrato` del portal son
