@@ -2775,3 +2775,65 @@ simultáneas). Se apaga en etapa 5.
 
 **Siguiente**: etapa 4 (carga de certificaciones: parser Excel y PDF de
 Python a Node con tests de paridad; decidir OneDrive) y etapa 5 (apagado).
+
+## 77. ERP etapa 4 — carga de certificaciones EN PRODUCCIÓN (2026-09-02)
+
+PRs back #55 y front #61 mergeados y deployados. Ejecutada con subagentes
+(plan docs/superpowers/plans/2026-09-02-erp-etapa4-carga.md, ledger en
+.superpowers/sdd/2026-09-02-erp-etapa4-carga/). OneDrive: se descartó (no
+se guardan bytes del archivo; solo el nombre en sth_cert_cargas_log).
+
+**Lo construido (back)**: parser Excel (`carga/parser-excel.ts`, port de
+parser.py con exceljs) y PDF (`carga/parser-pdf.ts`, port de parser_pdf.py
+con pdfjs-dist ESM vía import() dinámico; exige node >= 22.13 — el VPS tiene
+22.23), validación + resolución de contrato (editado > maestro > archivo),
+preview store en memoria de proceso (TTL, ownership por cuil; válido porque
+pm2 corre 1 worker) y CargaService server-authoritative: confirmar
+revalida TODO, filtra hojas/filas excluidas, chequea Ks del nivel carga
+ANTES de insertar y escribe en UNA transacción (multi-INSERT + cargas_log).
+Endpoints bajo /certificaciones/carga: preview, confirmar, historial,
+DELETE :logId (deshacer, solo admin). 413 de multer parametrizado por ruta.
+
+**Lo construido (front)**: wizard Certificaciones → Cargar (admin y carga):
+archivo + período → hojas (preselección por Ks del usuario) → revisión
+editable con contrato en cascada por ítem, provincia, cantidad y total,
+exclusión por fila, fila expandible → confirmación. Historial + Deshacer.
+
+**Bugs encontrados probando en local con Excel REALES de Naturgy** (el
+smoke de la task 8 fue con fixture sintético; los archivos reales estaban en
+Descargas): (1) exceljs omite `result` dentro de `cell.value` cuando la
+fórmula da 0 → el parser leía null: desaparecían los "Cantidad es 0.",
+total_mes null y TOTAL MES de cabecera perdido. Fix: `rawDeCelda` usa
+`cell.result` para celdas con fórmula; paridad exacta con parser.py en los
+3 archivos (agrupado .xlsm 3678 filas/3433 avisos, K2 junio 66/64, K8 julio
+3163/14). (2) el maestro guarda provincias en MAYÚSCULAS ("SALTA") y el
+archivo trae "Salta": el select exigía match exacto y quedaba vacío → match
+case-insensitive como el portal. (3) el paso 3 no mostraba el monto total →
+métricas "Total a cargar" y "Declarado en el archivo"; declarado 0 no dispara
+aviso de descuadre (paridad con upload.html).
+
+**Deploy**: DDL `docs/sql/2026-09-02-cargas-log-contrato.sql` (contrato
+VARCHAR(60) NULL) aplicado en Horas_Sertec (`sudo npx prisma db execute` en
+el VPS) y en testing (mismo comando desde local, cuyo .env apunta a testing).
+Pull + npm install (pdfjs-dist y exceljs nuevos) + prisma generate + build
+en ambos repos como root (`sudo`: los repos de /var/www son root:root),
+`sudo pm2 restart forms-horas-back forms-horas-front`. Smoke: front 200,
+preview e historial 401 sin token, logs limpios. PENDIENTE del checklist:
+paridad manual con archivo real en producción vs portal y una carga chica +
+deshacer (lo hace el usuario).
+
+**Incidente de la sesión**: al remover un worktree local con `git worktree
+remove --force` que tenía una JUNCTION de Windows hacia node_modules del
+checkout principal, git siguió la unión y borró parte de node_modules (se
+restauró con `npm ci` + prisma generate). Regla: quitar la unión con
+`[System.IO.Directory]::Delete()` ANTES de remover el worktree.
+
+**Aviso operativo**: la carga se hace desde misregistros; upload.html del
+portal queda redundante — NO cargar el mismo archivo por los dos lados (el
+duplicado por archivo_nombre protege, pero avisar al equipo).
+
+**Siguiente**: rediseño visual de la pantalla Cargar (mockup APROBADO por el
+usuario el 2026-09-02, ver memoria "redisenio-carga-certificaciones-aprobado":
+pestaña Cargar primera, paso 1 ancho con guía de pasos, paso 3 con tarjetas
+de métricas y panel de problemas, modal de confirmación) y luego etapa 5
+(apagado del portal).
