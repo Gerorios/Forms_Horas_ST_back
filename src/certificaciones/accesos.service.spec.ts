@@ -148,3 +148,39 @@ describe('AccesosService.listar', () => {
     ]);
   });
 });
+
+describe('AccesosService.resolverNombre', () => {
+  const prisma = {
+    snuempleados: { findUnique: jest.fn() },
+    usuario: { findUnique: jest.fn() },
+  } as any;
+  const service = new AccesosService(prisma);
+
+  it('prioriza snuempleados.apellido_nombre', async () => {
+    prisma.snuempleados.findUnique.mockResolvedValue({ apellido_nombre: 'PEREZ JUAN' });
+    prisma.usuario.findUnique.mockResolvedValue({ nombreFueraNomina: 'Otro', email: 'juan@st.local' });
+
+    expect(await service.resolverNombre('20-1')).toBe('PEREZ JUAN');
+  });
+
+  it('sin snuempleados usa nombreFueraNomina', async () => {
+    prisma.snuempleados.findUnique.mockResolvedValue(null);
+    prisma.usuario.findUnique.mockResolvedValue({ nombreFueraNomina: 'Gerente Fuera Nomina', email: 'g@st.local' });
+
+    expect(await service.resolverNombre('20-2')).toBe('Gerente Fuera Nomina');
+  });
+
+  it('sin snuempleados ni nombreFueraNomina cae al email', async () => {
+    prisma.snuempleados.findUnique.mockResolvedValue(null);
+    prisma.usuario.findUnique.mockResolvedValue({ nombreFueraNomina: null, email: 'admin@st.local' });
+
+    expect(await service.resolverNombre('20-3')).toBe('admin@st.local');
+  });
+
+  it('sin ninguna fila cae al cuil crudo', async () => {
+    prisma.snuempleados.findUnique.mockResolvedValue(null);
+    prisma.usuario.findUnique.mockResolvedValue(null);
+
+    expect(await service.resolverNombre('20-4')).toBe('20-4');
+  });
+});

@@ -3,11 +3,33 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
+
+/**
+ * Body de /certificaciones/carga/preview (multipart, campos de texto junto
+ * al archivo). Rango de año igual al resto del módulo de certificaciones
+ * (2022 en adelante); mes 1..12.
+ */
+export class PreviewCargaDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(2022)
+  @Max(2100)
+  periodo_anio: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  periodo_mes: number;
+}
 
 /**
  * Edición de UNA fila del preview, aplicada en el confirmar. SOLO estos 5

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   DefaultValuePipe,
@@ -11,19 +12,28 @@ import {
   Put,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AccesosService } from './accesos.service';
 import { IncidenciaService } from './incidencia.service';
 import { AnaliticaService } from './analitica.service';
 import { ResumenService } from './resumen.service';
 import { ItemsService } from './items.service';
+import { CargaService } from './carga/carga.service';
+import { HistorialService } from './carga/historial.service';
+import { elegirTipoArchivo } from './carga/extension';
 import { UpsertAccesoDto } from './dto/upsert-acceso.dto';
 import { CrearItemDto, ActualizarItemDto } from './dto/item.dto';
+import { PreviewCargaDto, ConfirmarCargaDto } from './dto/carga.dto';
 import { filtrosDesdeQuery } from './filtros-analitica';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+
+const MAX_ARCHIVO_CARGA_BYTES = 20 * 1024 * 1024;
 
 @Controller('certificaciones')
 export class CertificacionesController {
@@ -33,6 +43,8 @@ export class CertificacionesController {
     private readonly analiticaService: AnaliticaService,
     private readonly resumenService: ResumenService,
     private readonly itemsService: ItemsService,
+    private readonly cargaService: CargaService,
+    private readonly historialService: HistorialService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -183,5 +195,52 @@ export class CertificacionesController {
   @Delete('items/:id')
   eliminarItem(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.itemsService.eliminar(id, req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización (niveles admin/carga) vive dentro del
+  // service. El límite de 20MB lo aplica multer; si se excede, el
+  // MulterExceptionFilter global (main.ts) lo traduce a un 4xx legible en
+  // vez del 500 pelado por defecto.
+  @UseGuards(JwtAuthGuard)
+  @Post('carga/preview')
+  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: MAX_ARCHIVO_CARGA_BYTES } }))
+  previewCarga(
+    @UploadedFile() archivo: Express.Multer.File | undefined,
+    @Body() dto: PreviewCargaDto,
+    @Req() req: any,
+  ) {
+    if (!archivo) throw new BadRequestException('Adjuntá un archivo.');
+    const tipoArchivo = elegirTipoArchivo(archivo.originalname);
+    return this.cargaService.preview(
+      archivo.buffer,
+      archivo.originalname,
+      dto.periodo_anio,
+      dto.periodo_mes,
+      tipoArchivo,
+      req.user?.cert ?? null,
+      req.user.cuil,
+    );
+  }
+
+  // Sin @Roles: la autorización (niveles admin/carga) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Post('carga/confirmar')
+  async confirmarCarga(@Body() dto: ConfirmarCargaDto, @Req() req: any) {
+    const nombre = await this.service.resolverNombre(req.user.cuil);
+    return this.cargaService.confirmar(dto, req.user?.cert ?? null, req.user.cuil, nombre);
+  }
+
+  // Sin @Roles: la visibilidad (todos/propias por nivel) vive dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Get('carga/historial')
+  historialCarga(@Req() req: any) {
+    return this.historialService.listar(req.user?.cert ?? null, req.user.cuil);
+  }
+
+  // Sin @Roles: solo nivel admin, verificado dentro del service.
+  @UseGuards(JwtAuthGuard)
+  @Delete('carga/:logId')
+  deshacerCarga(@Param('logId', ParseIntPipe) logId: number, @Req() req: any) {
+    return this.historialService.deshacer(logId, req.user?.cert ?? null);
   }
 }

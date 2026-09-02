@@ -73,4 +73,18 @@ export class AccesosService {
       this.prisma.certificacionAcceso.delete({ where: { cuil } }),
     ]);
   }
+
+  /** Nombre a mostrar de UN cuil: snuempleados.apellido_nombre →
+   * usuario.nombreFueraNomina → usuario.email → el cuil crudo si no hay
+   * nada (mismo criterio que `listar`, extraído para T5 de carga: se usa
+   * para `cargado_por`/`usuario_nombre` en `sth_cert_cargas_log` y para
+   * filtrar el historial del nivel `carga` por nombre — ver decisión en
+   * historial.service.ts). */
+  async resolverNombre(cuil: string): Promise<string> {
+    const [empleado, usuario] = await Promise.all([
+      this.prisma.snuempleados.findUnique({ where: { cuil }, select: { apellido_nombre: true } }),
+      this.prisma.usuario.findUnique({ where: { cuil }, select: { nombreFueraNomina: true, email: true } }),
+    ]);
+    return empleado?.apellido_nombre || usuario?.nombreFueraNomina || usuario?.email || cuil;
+  }
 }

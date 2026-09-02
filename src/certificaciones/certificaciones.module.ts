@@ -7,6 +7,7 @@ import { ItemsService } from './items.service';
 import { ResolucionService } from './carga/resolucion.service';
 import { PreviewStore } from './carga/preview-store';
 import { CargaService } from './carga/carga.service';
+import { HistorialService } from './carga/historial.service';
 import { CertificacionesController } from './certificaciones.controller';
 import { LiquidacionModule } from '../liquidacion/liquidacion.module';
 
@@ -21,8 +22,9 @@ import { LiquidacionModule } from '../liquidacion/liquidacion.module';
     ResolucionService,
     PreviewStore,
     CargaService,
+    HistorialService,
   ],
   controllers: [CertificacionesController],
-  exports: [AccesosService, CargaService],
+  exports: [AccesosService, CargaService, HistorialService],
 })
 export class CertificacionesModule {}
