@@ -1,0 +1,14 @@
+-- Etapa 4 (Task 4) — sth_cert_cargas_log.contrato
+--
+-- Verificado con SHOW CREATE TABLE (2026-09-02, base `testing`):
+--   `contrato` varchar(50) DEFAULT NULL
+-- (no varchar(10) como sugería el bug B7 del inventario portal — igual se
+-- deja este margen: el port graba el CSV de TODOS los Ks resueltos que
+-- efectivamente insertaron filas en la carga, y un archivo multi-contrato
+-- con varios K de 3+ dígitos puede acercarse al límite actual).
+--
+-- NO EJECUTAR automáticamente. Correr a mano, en el deploy, en las DOS
+-- bases (`testing` y `Horas_Sertec` — ver memoria "BD producción =
+-- Horas_Sertec").
+--
+-- ALTER TABLE sth_cert_cargas_log MODIFY contrato VARCHAR(60) NULL;
