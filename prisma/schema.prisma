@@ -792,3 +792,38 @@ model Auditoria {
   @@index([tabla, registroId])
   @@map("sth_auditoria")
 }
+
+// ------------------------------------------------------------
+// CERTIFICACIONES (tablas mudadas del portal — etapa 2/3, spec §3)
+// Modelos calcados al DDL real (SHOW CREATE TABLE, verificado 2026-09-01):
+// codigo_k es varchar(5) y descripcion varchar(120) (no (10)/(300) como el
+// borrador inicial); sth_cert_contratos tiene además `activo` (tinyint(1)).
+// ------------------------------------------------------------
+model CertContratoErp {
+  id_contrato Int        @id @default(autoincrement()) @db.UnsignedTinyInt
+  codigo_k    String     @unique @db.VarChar(5)
+  descripcion String?    @db.VarChar(120)
+  activo      Boolean    @default(true)
+  items       CertItem[]
+
+  @@map("sth_cert_contratos")
+}
+
+model CertItem {
+  id_item         Int             @id @default(autoincrement()) @db.UnsignedInt
+  item_codigo     String          @db.VarChar(20)
+  grupo           String?         @db.VarChar(100)
+  subgrupo        String?         @db.VarChar(200)
+  id_contrato     Int             @db.UnsignedTinyInt
+  contrato_nombre String?         @db.VarChar(300)
+  tarea           String          @db.VarChar(500)
+  frecuencia      String?         @db.VarChar(20)
+  contratista     String?         @db.VarChar(60)
+  ptos_gasnor     Decimal?        @db.Decimal(12, 4)
+  unidad_medida   String?         @db.VarChar(20)
+  tipo            String?         @db.VarChar(10)
+  contrato        CertContratoErp @relation(fields: [id_contrato], references: [id_contrato])
+
+  @@unique([item_codigo, id_contrato], map: "uq_item_contrato")
+  @@map("sth_cert_items")
+}
