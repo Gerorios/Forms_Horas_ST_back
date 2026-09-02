@@ -224,10 +224,13 @@ export class CargaService {
       select: { id: true },
     });
     if (yaCargado) {
+      // Paridad textual exacta con el portal (app/routers/certificaciones.py
+      // líneas 23-29, `mensaje_archivo_duplicado`).
+      const base = `El archivo '${sesion.archivo}' ya fue cargado anteriormente. `;
       const mensaje =
         cert!.nivel === 'admin'
-          ? `Ya se cargó un archivo llamado "${sesion.archivo}". Eliminá la carga anterior desde el historial antes de repetirla.`
-          : `Ya se cargó un archivo llamado "${sesion.archivo}". Pedile a un administrador que elimine la carga anterior.`;
+          ? base + 'Si necesitás reemplazarlo, eliminá la carga anterior desde el historial.'
+          : base + 'Si necesitás reemplazarlo, pedile a un administrador que elimine la carga anterior desde el historial.';
       throw new BadRequestException(mensaje);
     }
 

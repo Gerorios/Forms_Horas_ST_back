@@ -214,19 +214,23 @@ describe('CargaService.confirmar', () => {
     expect(insertCall.values).toContain('7');
   });
 
-  it('duplicado por archivo_nombre: mensaje distinto para admin y no-admin', async () => {
+  it('duplicado por archivo_nombre: mensaje EXACTO del portal, distinto para admin y no-admin', async () => {
     const { prisma } = fixtureBase();
     (prisma as any).certCargaLog.findFirst.mockResolvedValue({ id: 1 });
 
     const { service: serviceAdmin, preview: previewAdmin } = await armarPreview(prisma, CERT_ADMIN);
-    await expect(serviceAdmin.confirmar({ previewId: previewAdmin.previewId, ediciones: [] }, CERT_ADMIN, CUIL, 'Juan')).rejects.toThrow(
-      /historial/,
+    await expect(
+      serviceAdmin.confirmar({ previewId: previewAdmin.previewId, ediciones: [] }, CERT_ADMIN, CUIL, 'Juan'),
+    ).rejects.toThrow(
+      "El archivo 'archivo.xlsx' ya fue cargado anteriormente. Si necesitás reemplazarlo, eliminá la carga anterior desde el historial.",
     );
 
     const { service: serviceCarga, preview: previewCarga } = await armarPreview(prisma, CERT_CARGA_K12);
     await expect(
       serviceCarga.confirmar({ previewId: previewCarga.previewId, ediciones: [] }, CERT_CARGA_K12, CUIL, 'Juan'),
-    ).rejects.toThrow(/administrador/);
+    ).rejects.toThrow(
+      "El archivo 'archivo.xlsx' ya fue cargado anteriormente. Si necesitás reemplazarlo, pedile a un administrador que elimine la carga anterior desde el historial.",
+    );
   });
 
   it('item inexistente al confirmar (B2): re-revalida server-side (no confía en el tiene_error del preview)', async () => {
