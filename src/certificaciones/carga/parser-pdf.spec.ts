@@ -322,26 +322,27 @@ describe('parsearPdf (integración con pdfjs-dist real, PDF generado con pdf-lib
     return Buffer.from(await doc.save());
   }
 
-  // SKIP bajo `npx jest` normal: pdfjs-dist >= 4 es ESM-only y el wrapper
-  // usa `import()` NATIVO (ver comentario en parser-pdf.ts) para poder
-  // cargarlo desde este repo en CommonJS. Ese `import()` nativo, al correr
-  // DENTRO del sandbox vm.Context que arma Jest para cada test file, tira
-  // `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` salvo que el proceso de
-  // Jest se levante con el flag `--experimental-vm-modules` de Node — algo
-  // que no se puede setear de forma portable (Windows cmd/PowerShell no
-  // soportan `VAR=val cmd`) sin sumar una dependencia nueva solo para esto
-  // (p.ej. cross-env) y sin tocar el script `test` global del repo.
-  // Verificado A MANO que el wrapper funciona end-to-end (este mismo test,
-  // sin el .skip, en VERDE) corriendo:
-  //   NODE_OPTIONS=--experimental-vm-modules npx jest src/certificaciones/carga/parser-pdf.spec.ts -t "procesa un PDF real"
-  // -> "Tests: 1 passed" con la fila A100/K12/Salta bien extraída. Evidencia
-  // completa en el reporte de la tarea. El resto de la suite (401 tests,
-  // 35 suites) también pasa igual con ese flag puesto, así que no rompe
-  // nada — pero no se lo agrega al script `test` por el problema de
-  // portabilidad recién explicado. Cubierto por: typecheck (tsc --noEmit)
-  // + el test de abajo (PDF corrupto, sí corre en jest normal y ejercita
-  // el mismo try/catch del wrapper) + smoke manual documentado.
-  it.skip('procesa un PDF real de punta a punta (header por x0, 1 fila válida) [requiere --experimental-vm-modules]', async () => {
+  // pdfjs-dist >= 4 es ESM-only y el wrapper usa `import()` NATIVO (ver
+  // comentario en parser-pdf.ts) para poder cargarlo desde este repo en
+  // CommonJS. Ese `import()` nativo, al correr DENTRO del sandbox
+  // vm.Context que arma Jest para cada test file, tira
+  // `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` salvo que el PROCESO DE
+  // NODE que levanta Jest tenga el flag `--experimental-vm-modules`. Eso no
+  // depende de una env var (`NODE_OPTIONS=...` no es portable a
+  // cmd/PowerShell) sino de cómo se invoca el binario de Jest: pasando el
+  // flag como argumento posicional a `node` SÍ es portable —
+  // `node --experimental-vm-modules node_modules/jest/bin/jest.js ...`
+  // funciona igual en bash, cmd y PowerShell — de ahí el script
+  // `test:pdf-integration` del package.json.
+  //
+  // Detectamos esa capacidad en runtime con `process.execArgv` (los flags
+  // con los que arrancó el proceso de Node actual) para que el test corra
+  // quede como skip LEGÍTIMO bajo `npx jest`/`npm test` normal (no soporta
+  // el import nativo) y en VERDE bajo `npm run test:pdf-integration` (si
+  // soporta) — no un skip "porque sí".
+  const puedeVm = process.execArgv.some((a) => a.includes('experimental-vm-modules'));
+
+  (puedeVm ? it : it.skip)('procesa un PDF real de punta a punta (header por x0, 1 fila válida) [requiere --experimental-vm-modules; correr con `npm run test:pdf-integration`]', async () => {
     const buf = await generarPdfSimple();
     const resultado = await parsearPdf(buf, 'certificacion.pdf', 2026, 8);
 
