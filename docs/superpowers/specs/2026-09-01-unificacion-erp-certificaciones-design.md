@@ -128,10 +128,13 @@ solo sobre sus Ks.
 - **Tests de paridad obligatorios**: mismos archivos reales de entrada →
   mismas filas resultantes que el parser Python (fixtures tomadas del
   histórico de `carga_log`).
-- **Decisión OneDrive (hoy EN PAUSA)** se toma acá: portar la copia de
-  respaldo a Node (Graph API + rotar el secreto de Azure pendiente) o
-  eliminarla y guardar copia en disco del VPS con backup. Default sugerido:
-  disco del VPS, salvo que alguien use activamente la carpeta de OneDrive.
+- **Decisión OneDrive (RESUELTA 2026-09-02 por el usuario): se ELIMINA y no
+  se guarda copia en ningún lado.** El archivo subido se parsea, se cargan
+  las filas y queda el registro en `carga_log` (nombre de archivo, filas,
+  estado, errores); los bytes se descartan. Ventajas: cero dependencia de
+  Azure (el secreto vencido se abandona), y el flujo preview→confirmar no
+  necesita retener el archivo. La carpeta histórica de OneDrive queda como
+  archivo muerto.
 
 ### Etapa 5 — Apagado del portal
 
