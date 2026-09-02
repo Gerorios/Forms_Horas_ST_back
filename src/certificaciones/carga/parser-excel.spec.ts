@@ -18,6 +18,32 @@ async function crearLibroUnaHoja(nombre: string, filas: Celda[][]): Promise<Buff
 }
 
 describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
+  // Regresión (archivos reales de Naturgy): exceljs omite `result` en `cell.value`
+  // cuando el resultado cacheado de una fórmula es 0 (falsy); solo `cell.result` lo
+  // conserva. Sin este caso, cantidades/total_mes con fórmula = 0 se leían como null
+  // (desaparecía el error "Cantidad es 0.") y el TOTAL MES de cabecera se perdía.
+  it('lee el resultado 0 de celdas con fórmula (cantidades, total_mes y TOTAL MES)', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CERTIFICO K5');
+    ws.addRow(['TOTAL MES', { formula: 'SUM(C3:C3)', result: 0 }]);
+    ws.addRow(['ÍTEMS', 'CANTIDADES', '$ TOTAL MES']);
+    ws.addRow(['289', { formula: 'B1*0', result: 0 }, { formula: 'B3*100', result: 0 }]);
+    ws.addRow(['290', { formula: 'B1*0', result: 2 }, { formula: 'B4*100', result: 200 }]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2026, 7);
+
+    expect(r.total_declarado).toBe(0);
+    expect(r.filas).toHaveLength(2);
+    expect(r.filas[0].cantidades).toBe('0');
+    expect(r.filas[0].total_mes).toBe('0');
+    expect(r.filas[1].cantidades).toBe('2');
+    expect(r.filas[1].total_mes).toBe('200');
+    expect(r.errores).toEqual([
+      { hoja: 'CERTIFICO K5', fila: 3, campo: 'cantidades', mensaje: 'Cantidad es 0.' },
+    ]);
+  });
+
   // Caso 1: header en fila 5, aliases mezclados, region Norte, k_gasnor del nombre de hoja.
   it('mapea columnas con aliases mezclados y detecta region/k_gasnor por nombre de hoja', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K8 NORTE', [

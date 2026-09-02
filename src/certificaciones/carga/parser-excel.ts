@@ -68,6 +68,19 @@ function valorCeldaPlano(v: ExcelJS.CellValue): unknown {
   return v;
 }
 
+/** Texto crudo de una celda. Para celdas con fórmula usa `cell.result`: exceljs
+ * OMITE `result` dentro de `cell.value` cuando el resultado cacheado es 0 (falsy),
+ * así que leer `cell.value.result` convertía todo 0 en null (bug visto con los
+ * Excel reales de Naturgy: "Cantidad es 0." desaparecía y TOTAL MES se perdía). */
+function rawDeCelda(cell: ExcelJS.Cell): string | null {
+  const v = cell.value;
+  if (v !== null && typeof v === 'object' && ('formula' in (v as any) || 'sharedFormula' in (v as any))) {
+    const res = cell.result;
+    return rawToStr((res === undefined ? null : res) as ExcelJS.CellValue);
+  }
+  return rawToStr(v);
+}
+
 /** Equivalente a `str(v)` de Python para los tipos que produce exceljs. */
 function rawToStr(v: ExcelJS.CellValue): string | null {
   const plano = valorCeldaPlano(v);
@@ -194,7 +207,7 @@ function extraerMeta(
     const vals: string[] = [];
     const colCount = Math.max(row.cellCount, worksheet.columnCount || 0);
     for (let c = 1; c <= colCount; c++) {
-      const raw = rawToStr(row.getCell(c).value);
+      const raw = rawDeCelda(row.getCell(c));
       if (raw === null) continue;
       const trimmed = raw.trim();
       if (trimmed === '' || trimmed.toLowerCase() === 'nan') continue;
@@ -233,7 +246,7 @@ function encontrarHeaderIdx(worksheet: ExcelJS.Worksheet): number | null {
     const row = worksheet.getRow(r);
     const colCount = Math.max(row.cellCount, worksheet.columnCount || 0);
     for (let c = 1; c <= colCount; c++) {
-      const raw = rawToStr(row.getCell(c).value);
+      const raw = rawDeCelda(row.getCell(c));
       if (raw !== null && HEADER_ITEM.has(raw.trim().toUpperCase())) {
         return r;
       }
@@ -255,7 +268,7 @@ function procesarFila(
   const get = (campo: string): string | null => {
     const col = colMap.get(campo);
     if (col === undefined) return null;
-    const raw = rawToStr(row.getCell(col).value);
+    const raw = rawDeCelda(row.getCell(col));
     if (raw === null) return null;
     const s = raw.trim();
     return s && !LITERALES_NULOS.has(s.toUpperCase()) ? s : null;
@@ -344,7 +357,7 @@ function procesarHoja(
   const colCount = Math.max(headerRow.cellCount, worksheet.columnCount || 0);
   const headerUpper = new Map<number, string>();
   for (let c = 1; c <= colCount; c++) {
-    const raw = rawToStr(headerRow.getCell(c).value);
+    const raw = rawDeCelda(headerRow.getCell(c));
     headerUpper.set(c, raw !== null ? raw.trim().toUpperCase() : '');
   }
 
@@ -365,7 +378,7 @@ function procesarHoja(
   const totalFilas = worksheet.rowCount || 0;
   for (let r = headerIdx + 1; r <= totalFilas; r++) {
     const row = worksheet.getRow(r);
-    const rawItem = rawToStr(row.getCell(colItem).value);
+    const rawItem = rawDeCelda(row.getCell(colItem));
     if (!esItemValido(rawItem)) continue;
 
     const { fila, errores } = procesarFila(row, colMap, nombreHoja, r, nombreArchivo, meta);
