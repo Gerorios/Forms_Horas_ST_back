@@ -49,16 +49,26 @@ la paridad manual con un archivo real como parte del deploy.
    "BD producción = Horas_Sertec"). NO se ejecuta automáticamente vía
    migración.
 
-3. **VPS**: `git pull` en Backend y Frontend, `npm install` en ambos
-   (¡`pdfjs-dist ^6.3.289` es dependencia NUEVA del Backend — confirmado
-   en `package.json`, junto con `exceljs ^4.4.0`!), `npx prisma generate`,
-   `npm run build` en ambos.
+3. **VPS — versión de Node (previo al build)**: `pdfjs-dist@6.3` exige
+   `node >=22.13.0` (o `>=24`). Correr `node -v` en misregistros ANTES de
+   instalar/buildear. `npm install` NO corta si la versión es menor
+   (`engines` solo warnea) — el fallo recién aparece en runtime, al subir
+   el primer PDF de certificación. Si `node -v` da menos de `22.13.0`,
+   actualizar Node antes de seguir (nvm, o `apt`/NodeSource si es como
+   está instalado en misregistros — confirmar el mecanismo en el VPS
+   antes de actualizar) y hacer `pm2 restart` del Backend después de
+   actualizar, además del reinicio del paso 4.
 
-4. **Aviso + reinicio**: avisar a los usuarios activos antes del corte,
+4. **VPS — build**: `git pull` en Backend y Frontend, `npm install` en
+   ambos (¡`pdfjs-dist ^6.3.289` es dependencia NUEVA del Backend —
+   confirmado en `package.json`, junto con `exceljs ^4.4.0`!), `npx prisma
+   generate`, `npm run build` en ambos.
+
+5. **Aviso + reinicio**: avisar a los usuarios activos antes del corte,
    luego `pm2 restart` (Backend, 1 worker — ver memoria "PortalCertificaciones
    en el VPS" para el patrón de reinicio de este tipo de apps).
 
-5. **Smoke post-deploy**:
+6. **Smoke post-deploy**:
    - `POST /certificaciones/carga/preview` sin token → 401.
    - `POST /certificaciones/carga/preview` con usuario de nivel lectura
      (sin nivel admin/carga) → 403 (la autorización vive en
@@ -72,13 +82,13 @@ la paridad manual con un archivo real como parte del deploy.
      /certificaciones/carga/:logId`), para validar el circuito completo
      incluyendo `sth_cert_cargas_log`.
 
-6. **Aviso operativo**: la carga de certificaciones se hace desde
+7. **Aviso operativo**: la carga de certificaciones se hace desde
    misregistros a partir de ahora. `upload.html` del portal queda
    redundante — **no cargar el mismo archivo por los dos lados**. La
    regla de duplicado exacto por `archivo_nombre` protege contra una
    doble carga accidental, pero igual hay que avisar al equipo para que
    no lo intenten a propósito ni por costumbre.
 
-7. **Documentar en los dos contextos**: `CONTEXTO_SISTEMA.md` /
+8. **Documentar en los dos contextos**: `CONTEXTO_SISTEMA.md` /
    `CONTEXT.md` de misregistros y del portal (ver memoria "Flujo de
    trabajo del Portal"). Commit.
