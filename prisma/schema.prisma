@@ -827,3 +827,37 @@ model CertItem {
   @@unique([item_codigo, id_contrato], map: "uq_item_contrato")
   @@map("sth_cert_items")
 }
+
+// sth_cert_cargas_log — auditoría de cargas (Etapa 4, Task 4). Calcado al
+// DDL real (SHOW CREATE TABLE, verificado 2026-09-02): `contrato` es
+// varchar(50) NULL (no varchar(10) como sugería el inventario B7 — igual
+// se deja el ALTER a varchar(60) documentado en
+// docs/sql/2026-09-02-cargas-log-contrato.sql, sin aplicar, por si el CSV
+// de Ks de un archivo multi-contrato se acerca al límite actual);
+// `usuario_id` es int unsigned NOT NULL (no hay columna alternativa para
+// guardar el cuil — CargaService documenta que graba 0, mismo criterio
+// que el bug B1 del portal para usuarios de Horas).
+enum CertCargaLogEstado {
+  ok
+  parcial
+  error // nunca se escribe desde el port (bug B3 del portal: queda muerto)
+}
+
+model CertCargaLog {
+  id             Int                @id @default(autoincrement()) @db.UnsignedInt
+  usuarioId      Int                @map("usuario_id") @db.UnsignedInt
+  usuarioNombre  String             @map("usuario_nombre") @db.VarChar(100)
+  archivoNombre  String             @map("archivo_nombre") @db.VarChar(200)
+  contrato       String?            @db.VarChar(50)
+  periodo        String?            @db.VarChar(10)
+  filasCargadas  Int                @map("filas_cargadas") @default(0)
+  filasError     Int                @map("filas_error") @default(0)
+  estado         CertCargaLogEstado @default(ok)
+  detalleErrores String?            @map("detalle_errores") @db.Text
+  cargadoEn      DateTime           @map("cargado_en") @default(now())
+
+  @@index([usuarioId], map: "idx_usuario")
+  @@index([periodo], map: "idx_periodo")
+  @@index([archivoNombre], map: "idx_archivo")
+  @@map("sth_cert_cargas_log")
+}
