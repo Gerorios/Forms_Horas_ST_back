@@ -2744,3 +2744,34 @@ models.py del portal no las declara); root_test usa caching_sha2 (el driver
 necesita allowPublicKeyRetrieval).
 
 Siguiente: etapa 3 (maestro de ítems).
+
+## 76. ERP etapa 3 — maestro de ítems EN PRODUCCIÓN (2026-09-02)
+
+PRs back #54 y front #60 mergeados (ramas borradas) y deployados. Ejecutada
+con subagentes (plan docs de superpowers, plans, 2026-09-01-erp-etapa3-items.md).
+
+**Lo construido**: ABM de sth_cert_items en NestJS (primeros modelos Prisma
+del módulo: CertItem y CertContratoErp, calcados al DDL real — codigo_k
+VarChar(5), descripcion VarChar(120), columna activo que no filtramos por
+paridad) + pantalla Certificaciones → Ítems (solo nivel admin, gate triple:
+nav, página y service). Buscador con debounce, paginación 50 por página
+(pedida por el usuario probando en local), modal alta-edición con "Ver más
+campos", advertencia al mover de contrato (el maestro define a qué K se
+imputan cargas futuras). Fixes conscientes vs el portal: PATCH que sí borra
+con null, ptos_gasnor=0 guardable, unicidad normalizada también al mover,
+404 honesto, LIKE escapado, tarea obligatoria (NOT NULL real), tipo IsIn.
+Paridad deliberada: item_codigo inmutable (desempate del parser por
+id_item), mensajes del portal, hard delete con guard de uso.
+
+**Deploy**: limpieza única de datos (648 filas con tipo legacy vacío o "m"
+→ NULL en Horas_Sertec Y en testing), pull+build+pm2 restart (avisado).
+Smoke: front 200, items 401 sin token, admin lista K6 real, nivel carga 403,
+logs limpios. Sin DDL. El usuario probó todo en local antes del merge (alta,
+edición, borrado, duplicados, paginación).
+
+**Aviso operativo**: el maestro se administra desde misregistros; items.html
+del portal queda redundante (misma tabla física vía vista — evitar ediciones
+simultáneas). Se apaga en etapa 5.
+
+**Siguiente**: etapa 4 (carga de certificaciones: parser Excel y PDF de
+Python a Node con tests de paridad; decidir OneDrive) y etapa 5 (apagado).
