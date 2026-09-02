@@ -118,6 +118,27 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
     expect(r.filas[0].total_mes).toBe('100');
   });
 
+  // Borde fmt_num (ronda de fix 1, hallazgo Important): celda NUMÉRICA real
+  // (no string) escrita vía exceljs. pandas stringifica floats con ".0"
+  // (str(431.0) → "431.0"), así que Python produciría fmt_num("431.0") →
+  // "431.0" (fmt_num solo normaliza es-AR, no recorta el ".0"). Nuestro
+  // `rawToStr` usa `String(431)` → "431" (sin ".0"), así que el TS produce
+  // "431", no "431.0": es una divergencia CONSCIENTE frente a Python.
+  // Adjudicación del controller: es inofensiva a nivel de datos porque
+  // total_mes/cantidades/precio_unitario/ptos_gasnor son columnas DECIMAL en
+  // MySQL — "431" y "431.0" castean al mismo valor numérico. No se cambia
+  // la stringificación; este test deja la divergencia documentada y cubierta.
+  it('fmt_num en celda numérica real: "431" (no "431.0" como pandas) — divergencia inocua por cast DECIMAL', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K13', [
+      ['ÍTEMS', 'TOTAL'],
+      ['431', 431.0],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.filas[0].total_mes).toBe('431');
+  });
+
   // Caso 7a: contrato desde celda "8" → "K8".
   it('contrato: celda "8" se normaliza a "K8"', async () => {
     const buf = await crearLibroUnaHoja('CERTIF GENERAL', [
