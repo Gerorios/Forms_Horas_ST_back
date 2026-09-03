@@ -44,11 +44,23 @@ export function condicionesFiltros(f: FiltrosAnalitica, cert: CertClaim): Prisma
   return conds.length ? Prisma.sql` AND ${Prisma.join(conds, ' AND ')}` : Prisma.empty;
 }
 
+/** Los filtros de fecha de la analítica son MENSUALES (las certificaciones
+ * llevan fecha día 1 del mes y el SQL compara `DATE_FORMAT(fecha,'%Y-%m')`
+ * como texto). El front manda el `<input type="date">` completo
+ * ('2026-01-01'); si llegara así al SQL, '2026-01' < '2026-01-01' y el mes
+ * de inicio quedaba afuera (bug heredado del portal, reporte 2026-09-03).
+ * Se recorta a 'YYYY-MM'; lo que no parece una fecha se descarta. */
+export function aPeriodoMensual(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  const m = /^(\d{4}-\d{2})/.exec(String(v).trim());
+  return m ? m[1] : undefined;
+}
+
 /** Normaliza los query params crudos del controller a `FiltrosAnalitica`. */
 export function filtrosDesdeQuery(q: Record<string, unknown>): FiltrosAnalitica {
   return {
-    desde: q.desde ? String(q.desde) : undefined,
-    hasta: q.hasta ? String(q.hasta) : undefined,
+    desde: aPeriodoMensual(q.desde),
+    hasta: aPeriodoMensual(q.hasta),
     contratos: aLista(q.contratos),
     provincias: aLista(q.provincias),
     tipo: q.tipo ? String(q.tipo) : undefined,
