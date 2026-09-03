@@ -87,6 +87,32 @@ describe('HistorialService.listar — visibilidad por nivel', () => {
     const resultado = await service.listar({ nivel: 'admin', ks: [], inc: false }, '20-1');
     expect(resultado).toEqual([fila]);
   });
+
+  // Regresión de producción (2026-09-03): `id` es INT UNSIGNED y Prisma lo
+  // devuelve como BigInt en $queryRaw → Nest tiraba "Do not know how to
+  // serialize a BigInt" (500) y el historial quedaba vacío tras cada carga.
+  it('castea a number los enteros que $queryRaw devuelve como BigInt (id, filas)', async () => {
+    const fila = {
+      id: BigInt(7),
+      usuario_nombre: 'PEREZ JUAN',
+      archivo_nombre: 'archivo.xlsx',
+      contrato: 'K6',
+      periodo: '2026-08',
+      filas_cargadas: BigInt(10),
+      filas_error: BigInt(1),
+      estado: 'parcial',
+      cargado_en: '2026-08-21 14:30',
+    };
+    const prisma = crearPrismaMock({ queryRawResult: [fila] });
+    const accesos = { resolverNombre: jest.fn() } as unknown as AccesosService;
+    const service = new HistorialService(prisma, accesos);
+
+    const resultado = await service.listar({ nivel: 'admin', ks: [], inc: false }, '20-1');
+    expect(resultado[0].id).toBe(7);
+    expect(resultado[0].filas_cargadas).toBe(10);
+    expect(resultado[0].filas_error).toBe(1);
+    expect(() => JSON.stringify(resultado)).not.toThrow();
+  });
 });
 
 describe('HistorialService.deshacer', () => {

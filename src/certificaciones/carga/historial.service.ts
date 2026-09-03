@@ -65,7 +65,7 @@ export class HistorialService {
   }
 
   private async consultar(where: Prisma.Sql, limite: number): Promise<FilaHistorial[]> {
-    return this.prisma.$queryRaw<FilaHistorial[]>(Prisma.sql`
+    const rows = await this.prisma.$queryRaw<FilaHistorial[]>(Prisma.sql`
       SELECT id, usuario_nombre, archivo_nombre, contrato, periodo,
              filas_cargadas, filas_error, estado,
              DATE_FORMAT(cargado_en, '%Y-%m-%d %H:%i') AS cargado_en
@@ -74,6 +74,15 @@ export class HistorialService {
       ORDER BY cargado_en DESC
       LIMIT ${limite}
     `);
+    // `id` es INT UNSIGNED: Prisma lo entrega como BigInt en $queryRaw y JSON
+    // no lo serializa (500 en producción, historial vacío). Mismo casteo que
+    // items.service. filas_* son INT con signo, pero se castean por simetría.
+    return rows.map((r) => ({
+      ...r,
+      id: Number(r.id),
+      filas_cargadas: Number(r.filas_cargadas),
+      filas_error: Number(r.filas_error),
+    }));
   }
 
   /**
