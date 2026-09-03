@@ -266,6 +266,82 @@ describe('RegistrosHorasService', () => {
     });
   });
 
+  // Decisión 2026-09-03 (glosario "Operario del jefe" / "Horas completas"):
+  // mis contratos deciden QUIÉN entra; de cada uno se cuentan TODAS sus horas
+  // de la quincena, en cualquier contrato — misma regla que el Detalle diario.
+  describe('resumenOperarios — horas completas (2026-09-03)', () => {
+    it('totalHoras suma todos los contratos del operario; horasMisContratos solo los míos; 88hs sobre el total', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          // filas en mis contratos (inclusión + conteos de estado)
+          { operarioCuil: '20-2-2', horas: 40, estado: 'aprobado' },
+          { operarioCuil: '20-2-2', horas: 10, estado: 'pendiente' },
+        ])
+        .mockResolvedValueOnce([
+          // quincena completa: mis contratos (1 y 2) + uno ajeno (9)
+          { id: 1, operarioCuil: '20-2-2', fecha: new Date('2026-08-01'), horas: 40, contratoId: 1, tareas: [], moviles: [] },
+          { id: 2, operarioCuil: '20-2-2', fecha: new Date('2026-08-02'), horas: 10, contratoId: 2, tareas: [], moviles: [] },
+          { id: 3, operarioCuil: '20-2-2', fecha: new Date('2026-08-03'), horas: 45, contratoId: 9, tareas: [], moviles: [] },
+        ])
+        .mockResolvedValueOnce([]); // filasAnteriores
+      prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20-2-2', apellido_nombre: 'Perez, Juan' }]);
+
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+
+      expect(r).toHaveLength(1);
+      expect(r[0].totalHoras).toBe(95); // 40 + 10 + 45 (ajeno)
+      expect(r[0].horasMisContratos).toBe(50); // solo contratos 1 y 2
+      expect(r[0].superaHorasExtra).toBe(true); // 95 > 88 aunque en los míos haya 50
+      expect(r[0].pendiente).toBe(1); // los conteos de estado siguen siendo de mis contratos
+    });
+
+    it('con filtro de contrato, horasMisContratos se juzga contra TODOS mis contratos (no solo el filtrado)', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: '20-2-2', horas: 8, estado: 'aprobado' }]) // solo contrato 1 (filtrado)
+        .mockResolvedValueOnce([
+          { id: 1, operarioCuil: '20-2-2', fecha: new Date('2026-08-01'), horas: 8, contratoId: 1, tareas: [], moviles: [] },
+          { id: 2, operarioCuil: '20-2-2', fecha: new Date('2026-08-02'), horas: 6, contratoId: 2, tareas: [], moviles: [] },
+          { id: 3, operarioCuil: '20-2-2', fecha: new Date('2026-08-03'), horas: 4, contratoId: 9, tareas: [], moviles: [] },
+        ])
+        .mockResolvedValueOnce([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20-2-2', apellido_nombre: 'Perez, Juan' }]);
+
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, { contratoIds: [1] });
+
+      expect(r[0].totalHoras).toBe(18);
+      expect(r[0].horasMisContratos).toBe(14); // 8 (K1) + 6 (K2, mío aunque filtrado)
+    });
+  });
+
+  describe('historicoQuincenas — horas completas (2026-09-03)', () => {
+    it('cada quincena suma las horas completas de los operarios que entran por mis contratos en ESA quincena', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          // inclusión: filas en mis contratos → (cuil, quincena)
+          { operarioCuil: 'A', fecha: new Date(2026, 7, 3) }, // A entra en 1ra ago
+          { operarioCuil: 'B', fecha: new Date(2026, 6, 20) }, // B entra en 2da jul
+        ])
+        .mockResolvedValueOnce([
+          // horas completas de A y B en el rango
+          { operarioCuil: 'A', fecha: new Date(2026, 7, 3), horas: 8 }, // mío
+          { operarioCuil: 'A', fecha: new Date(2026, 7, 5), horas: 4 }, // ajeno, misma quincena → suma
+          { operarioCuil: 'A', fecha: new Date(2026, 6, 20), horas: 9 }, // 2da jul: A NO entra esa quincena → no suma
+          { operarioCuil: 'B', fecha: new Date(2026, 6, 20), horas: 5 }, // B mío
+          { operarioCuil: 'B', fecha: new Date(2026, 6, 22), horas: 3 }, // B ajeno → suma
+        ]);
+      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      expect(r[23]).toEqual({ anio: 2026, mes: 8, quincena: 1, horas: 12 });
+      expect(r[22]).toEqual({ anio: 2026, mes: 7, quincena: 2, horas: 8 });
+      const wheres = prismaMock.registroHoras.findMany.mock.calls.map((c) => c[0].where);
+      expect(wheres[0]).toMatchObject({ contratoId: { in: [1] }, estado: { not: 'desaprobado' } });
+      expect(wheres[1].contratoId).toBeUndefined(); // la segunda consulta no recorta por contrato
+      expect(wheres[1]).toMatchObject({ operarioCuil: { in: ['A', 'B'] }, estado: { not: 'desaprobado' } });
+    });
+  });
+
   describe('historicoQuincenas', () => {
     it('agrupa por quincena calendario, excluye desaprobado en el where y rellena con 0', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
