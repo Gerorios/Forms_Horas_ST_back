@@ -847,6 +847,21 @@ export class RegistrosHorasService {
     });
     const conAlertaCruzada = duplicadosExactos(filasQuincenaCompleta).cuilesConDuplicado;
 
+    // Horas COMPLETAS (decisión 2026-09-03, glosario "Horas completas"): mis
+    // contratos deciden quién entra, pero de cada operario se cuentan todas
+    // sus horas de la quincena, en cualquier contrato — igual que el Detalle
+    // diario. `horasMisContratos` es la porción en TODOS mis contratos (no
+    // solo los filtrados: si soy jefe de K5/K8 y filtro K5, K8 sigue siendo
+    // mío) y se muestra de forma discreta junto al total.
+    const misContratos = new Set(misContratoIds);
+    const horasCompletasPorCuil = new Map<string, { total: number; mias: number }>();
+    for (const f of filasQuincenaCompleta) {
+      const acc = horasCompletasPorCuil.get(f.operarioCuil) ?? { total: 0, mias: 0 };
+      acc.total += Number(f.horas);
+      if (misContratos.has(f.contratoId)) acc.mias += Number(f.horas);
+      horasCompletasPorCuil.set(f.operarioCuil, acc);
+    }
+
     // Horas aprobadas de la quincena anterior, mismo scope de "mis
     // contratos" (comparable con lo de arriba) — para ver si le estoy
     // aprobando de golpe mucho más (o algo por primera vez) a alguien, señal
@@ -874,11 +889,15 @@ export class RegistrosHorasService {
       .map((cuil) => {
         const acc = porOperario.get(cuil)!;
         const horasAprobadasAnterior = horasAprobadasAnteriorPorCuil.get(cuil) ?? 0;
+        const completas = horasCompletasPorCuil.get(cuil) ?? { total: acc.totalHoras, mias: acc.totalHoras };
+        const totalHoras = Math.round(completas.total * 100) / 100;
         return {
           cuil,
           apellido_nombre: nombrePorCuil.get(cuil) ?? '',
           ...acc,
-          superaHorasExtra: acc.totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
+          totalHoras,
+          horasMisContratos: Math.round(completas.mias * 100) / 100,
+          superaHorasExtra: totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
           tieneAlertaCruzada: conAlertaCruzada.has(cuil),
           horasAprobadasAnterior,
           deltaHorasAprobadas: acc.horasAprobadas - horasAprobadasAnterior,
@@ -965,7 +984,14 @@ export class RegistrosHorasService {
 
     const { desde } = rangoQuincena(quincenas[0].anio, quincenas[0].mes, quincenas[0].quincena);
     const { hasta } = rangoQuincena(anio, mes, quincena);
-    const filas = await this.prisma.registroHoras.findMany({
+    const claveQuincena = (fecha: Date) =>
+      `${fecha.getFullYear()}-${fecha.getMonth() + 1}-${fecha.getDate() <= 15 ? 1 : 2}`;
+
+    // Horas COMPLETAS por quincena (decisión 2026-09-03, misma regla que el
+    // resumen y el Detalle diario): en cada quincena entra el operario que
+    // tiene al menos una fila en mis contratos (filtrados) ESA quincena, y de
+    // él se suman todas sus horas de esa quincena, en cualquier contrato.
+    const filasInclusion = await this.prisma.registroHoras.findMany({
       where: {
         contratoId: { in: contratoIdsEfectivos },
         ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
@@ -973,14 +999,26 @@ export class RegistrosHorasService {
         fecha: { gte: desde, lte: hasta },
         estado: { not: 'desaprobado' },
       },
-      select: { fecha: true, horas: true },
+      select: { fecha: true, operarioCuil: true },
     });
+    const entran = new Set(filasInclusion.map((f) => `${f.operarioCuil}|${claveQuincena(f.fecha)}`));
+    const cuils = [...new Set(filasInclusion.map((f) => f.operarioCuil))];
 
     const acum = new Map<string, number>();
-    for (const f of filas) {
-      const q = f.fecha.getDate() <= 15 ? 1 : 2;
-      const k = `${f.fecha.getFullYear()}-${f.fecha.getMonth() + 1}-${q}`;
-      acum.set(k, (acum.get(k) ?? 0) + Number(f.horas));
+    if (cuils.length > 0) {
+      const filasCompletas = await this.prisma.registroHoras.findMany({
+        where: {
+          operarioCuil: { in: cuils },
+          fecha: { gte: desde, lte: hasta },
+          estado: { not: 'desaprobado' },
+        },
+        select: { fecha: true, horas: true, operarioCuil: true },
+      });
+      for (const f of filasCompletas) {
+        const k = claveQuincena(f.fecha);
+        if (!entran.has(`${f.operarioCuil}|${k}`)) continue;
+        acum.set(k, (acum.get(k) ?? 0) + Number(f.horas));
+      }
     }
     return quincenas.map((q) => ({
       ...q,

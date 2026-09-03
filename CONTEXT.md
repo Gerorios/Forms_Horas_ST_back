@@ -97,3 +97,35 @@ tiene "resuelto"/"sugerencia" como el resto de las secciones, y puede
 cargarse a varios empleados a la vez si comparten monto y motivo.
 _Avoid_: bono particular, bono individual (confunde con el bono no
 remunerativo, que es por categoría y por mes, no por persona y por quincena).
+
+### Control general (panel del Jefe de Contrato)
+
+**Mis contratos** (de un jefe):
+Los contratos en los que el usuario figura como jefe. Para Admin son todos.
+Definen qué puede aprobar y editar, y quiénes son sus operarios — nunca
+recortan las horas que se le muestran de esas personas.
+
+**Operario del jefe** (2026-09-03):
+Persona con al menos una carga en alguno de mis contratos en la quincena
+consultada. Los filtros del panel (contrato, provincia, operario) achican esta
+lista de personas, nunca sus horas. Es la única regla de inclusión del panel:
+tiles, ranking, histórico, Detalle diario y zona de revisión la comparten.
+_Avoid_: operario de mi contrato, mi operario (sugiere que la persona es
+exclusiva del contrato; en la práctica trabaja para varios).
+
+**Horas completas** (de un operario, 2026-09-03):
+Todas las horas del operario en la quincena, sumando todos los contratos
+(míos y ajenos), pendientes más aprobadas, sin las desaprobadas. Es el número
+que muestran el tile "Horas de la quincena", el ranking, el histórico y el
+total de la jornada del Detalle diario, y sobre el que se evalúa el umbral de
+horas extra (88 hs por quincena). Lo que el jefe controla es a la persona, no
+al contrato: ver solo las horas de su contrato le ocultaba una jornada real
+mayor y llevaba a controles equivocados.
+_Avoid_: horas del contrato, horas propias (es el número parcial que confundía).
+
+**Horas en mis contratos**:
+La porción de las horas completas cargada en mis contratos. Se muestra de
+forma discreta junto al total ("incluye N hs en otros contratos", tooltip del
+ranking) para que el jefe sepa de dónde sale la diferencia. Las filas
+pendientes de revisar sí se cuentan solo sobre mis contratos: las ajenas las
+aprueba otro jefe.
