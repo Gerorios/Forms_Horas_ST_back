@@ -266,7 +266,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
   });
 
-  describe('presentismo y Ausencia (regla 2026-08-18: cualquier estadoHys hace perder presentismo)', () => {
+  describe('presentismo y Ausencia (pendiente/desaprobada siempre pierden; aprobada depende de pierdePresentismoHys, ADR-022)', () => {
     const PERFIL_JORNALIZADO = {
       cuil: '20444444444',
       regimen: 'jornalizado',
@@ -312,7 +312,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.montoPresentismo).toBe(0);
     });
 
-    it('Ausencia APROBADA (justificada) también hace perder presentismo (cambio de regla)', async () => {
+    it('Ausencia APROBADA sin pierdePresentismoHys cargado (legado, previo a ADR-022) hace perder presentismo por defecto', async () => {
       prismaMock.novedad.findMany.mockResolvedValue([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
@@ -321,12 +321,49 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
           fechaFin: new Date(2026, 7, 2),
           estadoHys: 'aprobada',
           estado: 'activa',
+          pierdePresentismoHys: null,
           tipoNovedad: { nombre: 'Ausencia' },
         },
       ]);
       const [fila] = await service.calcularQuincena(2026, 8, 1);
       expect(fila.tienePresentismo).toBe(false);
       expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Ausencia APROBADA con pierdePresentismoHys=true hace perder presentismo', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'aprobada',
+          estado: 'activa',
+          pierdePresentismoHys: true,
+          tipoNovedad: { nombre: 'Ausencia' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(false);
+      expect(fila.montoPresentismo).toBe(0);
+    });
+
+    it('Ausencia APROBADA con pierdePresentismoHys=false (ej. licencia especial) MANTIENE presentismo (ADR-022)', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: PERFIL_JORNALIZADO.cuil,
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 2),
+          fechaFin: new Date(2026, 7, 2),
+          estadoHys: 'aprobada',
+          estado: 'activa',
+          pierdePresentismoHys: false,
+          tipoNovedad: { nombre: 'Ausencia' },
+        },
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+      expect(fila.tienePresentismo).toBe(true);
+      expect(fila.montoPresentismo).toBe(fila.totalBruto * 0.2);
     });
 
     it('Ausencia DESAPROBADA (injustificada) sigue haciendo perder presentismo (sin cambios)', async () => {

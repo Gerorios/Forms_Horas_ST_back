@@ -628,6 +628,11 @@ model Novedad {
   estadoHys          EstadoHys @default(no_aplica) @map("estado_hys")
   aprobadoHysPorCuil String?   @map("aprobado_hys_por_cuil") @db.Char(13)
   aprobadoHysEn      DateTime? @map("aprobado_hys_en")
+  // Solo tiene valor cuando estadoHys = 'aprobada' (Ausencia justificada):
+  // decide si ESA ausencia puntual hace perder el 20% de presentismo, pese
+  // a estar justificada (ver ADR-022). Null en cualquier otro estadoHys —
+  // esos casos siempre pierden presentismo por regla fija, no leen este campo.
+  pierdePresentismoHys Boolean? @map("pierde_presentismo_hys")
   // Descargo/comentario que deja HyS al resolver (aprobar/desaprobar) una
   // novedad de Ausencia/Accidente — se limpia si se reabre o se corrige.
   descargoHys        String?   @map("descargo_hys") @db.Text
