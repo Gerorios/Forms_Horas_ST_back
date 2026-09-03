@@ -228,10 +228,11 @@ export class PanelService {
       const fila = calculo.find((c) => c.cuil === n.operarioCuil);
       let efecto: string;
       if (n.tipoNovedad.nombre === 'Ausencia') {
-        // Cambio de regla 2026-08-18: cualquier Ausencia (pendiente,
-        // justificada o injustificada) hace perder el presentismo, no solo
-        // la desaprobada — ver CalculoService#calcularQuincena.
-        efecto = 'pierde presentismo';
+        // Pendiente o desaprobada: siempre pierde presentismo. Aprobada
+        // (justificada): depende de lo que HyS decidió caso por caso al
+        // justificar (ADR-022) — ver CalculoService#calcularQuincena.
+        const pierde = n.estadoHys !== 'aprobada' || n.pierdePresentismoHys !== false;
+        efecto = pierde ? 'pierde presentismo' : 'no pierde presentismo (justificada)';
       } else if (n.tipoNovedad.nombre === 'Suspensión') {
         efecto = 'pierde presentismo (suspensión)';
       } else if (n.tipoNovedad.generaPlus) {

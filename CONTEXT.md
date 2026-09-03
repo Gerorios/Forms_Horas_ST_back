@@ -98,6 +98,28 @@ cargarse a varios empleados a la vez si comparten monto y motivo.
 _Avoid_: bono particular, bono individual (confunde con el bono no
 remunerativo, que es por categoría y por mes, no por persona y por quincena).
 
+**Presentismo**:
+20% del sueldo básico (mismo tope de 88hs). Se pierde siempre con una
+Suspensión, o con una Ausencia injustificada (`estadoHys='desaprobada'`) o
+aún sin resolver (`'pendiente'`). Con una Ausencia justificada (`'aprobada'`)
+depende del caso: HyS decide explícitamente, al justificar, si esa ausencia
+puntual pierde presentismo o no — no todas las justificadas se comportan
+igual (ej. una licencia especial no lo pierde, una enfermedad común sí,
+aunque ambas estén justificadas con certificado válido). Ver ADR-022, que
+revierte parcialmente la decisión de 2026-08-19 ("cualquier Ausencia lo
+pierde, sin importar el certificado").
+_Avoid_: "toda ausencia pierde presentismo" (regla vieja, ya no vale para
+las justificadas).
+
+**`pierdePresentismoHys` (de una Ausencia)**:
+Booleano nullable en `Novedad`, con valor únicamente cuando
+`estadoHys='aprobada'` — en cualquier otro estado queda `null` y no se
+consulta (esos casos siempre pierden presentismo por regla fija). Es de
+carga obligatoria al justificar, sin default: HyS lo tilda en el mismo
+diálogo donde ya deja el `descargoHys` (que es también donde escribe el
+motivo de esta decisión puntual). Se resetea a `null` al reabrir la
+novedad. Ver ADR-022.
+
 ### Control general (panel del Jefe de Contrato)
 
 **Mis contratos** (de un jefe):

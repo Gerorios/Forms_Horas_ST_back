@@ -428,12 +428,15 @@ describe('NovedadesService#anular', () => {
 describe('NovedadesService#resolverHys', () => {
   const prismaMock: any = {
     novedad: { findUnique: jest.fn(), update: jest.fn() },
+    auditoria: { create: jest.fn() },
     snuempleados: { findMany: jest.fn() },
+    $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
   let service: NovedadesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.$transaction.mockImplementation((fn: any) => fn(prismaMock));
     prismaMock.snuempleados.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
@@ -449,19 +452,19 @@ describe('NovedadesService#resolverHys', () => {
   it('404 si la novedad no existe', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue(null);
     await expect(
-      service.resolverHys(999, { estadoHys: 'aprobada' }, '20000000000'),
+      service.resolverHys(999, { estadoHys: 'aprobada', pierdePresentismoHys: true }, '20000000000'),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('resolver una novedad anulada lanza BadRequestException', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'anulada' });
     await expect(
-      service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000'),
+      service.resolverHys(1, { estadoHys: 'aprobada', pierdePresentismoHys: true }, '20000000000'),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('resuelve una novedad activa sin problemas', async () => {
-    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa' });
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa', estadoHys: 'pendiente' });
     prismaMock.novedad.update.mockResolvedValue({
       id: 1,
       estadoHys: 'aprobada',
@@ -469,8 +472,71 @@ describe('NovedadesService#resolverHys', () => {
     });
 
     await expect(
-      service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000'),
+      service.resolverHys(1, { estadoHys: 'aprobada', pierdePresentismoHys: true }, '20000000000'),
     ).resolves.toBeDefined();
+  });
+
+  // ADR-022: HyS decide, solo al justificar, si esa ausencia puntual pierde
+  // presentismo pese a estar justificada.
+  it('al justificar, guarda pierdePresentismoHys y audita ambos cambios', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1,
+      estado: 'activa',
+      estadoHys: 'pendiente',
+      pierdePresentismoHys: null,
+    });
+    prismaMock.novedad.update.mockResolvedValue({
+      id: 1,
+      estadoHys: 'aprobada',
+      pierdePresentismoHys: false,
+      cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
+    });
+
+    await service.resolverHys(1, { estadoHys: 'aprobada', pierdePresentismoHys: false }, '20000000000');
+
+    expect(prismaMock.novedad.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pierdePresentismoHys: false }) }),
+    );
+    expect(prismaMock.auditoria.create).toHaveBeenCalledTimes(2);
+    expect(prismaMock.auditoria.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ campo: 'estadoHys', valorAnterior: 'pendiente', valorNuevo: 'aprobada' }),
+      }),
+    );
+    expect(prismaMock.auditoria.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ campo: 'pierdePresentismoHys', valorNuevo: 'false' }),
+      }),
+    );
+  });
+
+  it('al no justificar, ignora pierdePresentismoHys del DTO y lo guarda en null (sin auditarlo)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1,
+      estado: 'activa',
+      estadoHys: 'pendiente',
+      pierdePresentismoHys: null,
+    });
+    prismaMock.novedad.update.mockResolvedValue({
+      id: 1,
+      estadoHys: 'desaprobada',
+      pierdePresentismoHys: null,
+      cargadoPor: { cuil: '20999999999', nombreFueraNomina: null },
+    });
+
+    // pierdePresentismoHys en el DTO no debería llegar nunca en este flujo
+    // (el front no lo manda para "No justificar"), pero si llegara igual se
+    // ignora — la regla fija de "desaprobada siempre pierde" no es opinable.
+    await service.resolverHys(
+      1,
+      { estadoHys: 'desaprobada', pierdePresentismoHys: true } as any,
+      '20000000000',
+    );
+
+    expect(prismaMock.novedad.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pierdePresentismoHys: null }) }),
+    );
+    expect(prismaMock.auditoria.create).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -511,8 +577,8 @@ describe('NovedadesService#reabrir', () => {
     );
   });
 
-  it('resetea estadoHys a pendiente y limpia aprobadoHysPorCuil/aprobadoHysEn/descargoHys', async () => {
-    prismaMock.novedad.findUnique.mockResolvedValue({ id: 2, estadoHys: 'aprobada' });
+  it('resetea estadoHys a pendiente y limpia aprobadoHysPorCuil/aprobadoHysEn/descargoHys/pierdePresentismoHys', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 2, estadoHys: 'aprobada', pierdePresentismoHys: false });
     prismaMock.novedad.update.mockResolvedValue({
       id: 2,
       estadoHys: 'pendiente',
@@ -527,6 +593,7 @@ describe('NovedadesService#reabrir', () => {
       aprobadoHysPorCuil: null,
       aprobadoHysEn: null,
       descargoHys: null,
+      pierdePresentismoHys: null,
     });
   });
 

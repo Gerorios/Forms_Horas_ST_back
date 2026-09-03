@@ -313,15 +313,50 @@ export class NovedadesService {
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    const updated = await this.prisma.novedad.update({
-      where: { id },
-      data: {
-        estadoHys: dto.estadoHys,
-        aprobadoHysPorCuil: aprobadoPorCuil,
-        aprobadoHysEn: new Date(),
-        descargoHys: dto.descargoHys,
-      },
-      include: INCLUDE_BASICO,
+    // pierdePresentismoHys (ADR-022) solo tiene sentido al justificar — para
+    // 'desaprobada' se ignora lo que venga en el DTO y queda null, esa
+    // siempre pierde presentismo por regla fija (ver CalculoService).
+    const pierdePresentismoHys = dto.estadoHys === 'aprobada' ? dto.pierdePresentismoHys : null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.novedad.update({
+        where: { id },
+        data: {
+          estadoHys: dto.estadoHys,
+          aprobadoHysPorCuil: aprobadoPorCuil,
+          aprobadoHysEn: new Date(),
+          descargoHys: dto.descargoHys,
+          pierdePresentismoHys,
+        },
+        include: INCLUDE_BASICO,
+      });
+
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades',
+          registroId: id,
+          usuarioCuil: aprobadoPorCuil,
+          accion: dto.estadoHys === 'aprobada' ? 'aprobar' : 'desaprobar',
+          campo: 'estadoHys',
+          valorAnterior: novedad.estadoHys,
+          valorNuevo: dto.estadoHys,
+        },
+      });
+      if (dto.estadoHys === 'aprobada') {
+        await tx.auditoria.create({
+          data: {
+            tabla: 'sth_novedades',
+            registroId: id,
+            usuarioCuil: aprobadoPorCuil,
+            accion: 'aprobar',
+            campo: 'pierdePresentismoHys',
+            valorAnterior: novedad.pierdePresentismoHys == null ? null : String(novedad.pierdePresentismoHys),
+            valorNuevo: String(pierdePresentismoHys),
+          },
+        });
+      }
+
+      return updated;
     });
     return this.conNombreCargador(updated);
   }
@@ -336,7 +371,13 @@ export class NovedadesService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
         where: { id },
-        data: { estadoHys: 'pendiente', aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null },
+        data: {
+          estadoHys: 'pendiente',
+          aprobadoHysPorCuil: null,
+          aprobadoHysEn: null,
+          descargoHys: null,
+          pierdePresentismoHys: null,
+        },
         include: INCLUDE_BASICO,
       });
 

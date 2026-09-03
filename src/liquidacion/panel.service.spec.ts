@@ -346,6 +346,57 @@ describe('PanelService', () => {
       expect(r.filas[0].novedades[0]).toMatchObject({ tipo: 'Ausencia', efecto: 'pierde presentismo' });
     });
 
+    it('novedad de Ausencia justificada con pierdePresentismoHys=true produce efecto "pierde presentismo"', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 1),
+          fechaFin: new Date(2026, 7, 3),
+          estadoHys: 'aprobada',
+          estado: 'activa',
+          pierdePresentismoHys: true,
+          tipoNovedad: { id: 5, nombre: 'Ausencia', generaPlus: false },
+        },
+      ]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].novedades[0]).toMatchObject({ tipo: 'Ausencia', efecto: 'pierde presentismo' });
+    });
+
+    it('novedad de Ausencia justificada con pierdePresentismoHys=false produce efecto "no pierde presentismo (justificada)" (ADR-022)', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          tipoNovedadId: 5,
+          fechaInicio: new Date(2026, 7, 1),
+          fechaFin: new Date(2026, 7, 3),
+          estadoHys: 'aprobada',
+          estado: 'activa',
+          pierdePresentismoHys: false,
+          tipoNovedad: { id: 5, nombre: 'Ausencia', generaPlus: false },
+        },
+      ]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+
+      expect(r.filas[0].novedades[0]).toMatchObject({
+        tipo: 'Ausencia',
+        efecto: 'no pierde presentismo (justificada)',
+      });
+    });
+
     it('novedad de Ausencia ANULADA no llega en la query (where filtra estado: activa) y no produce "pierde presentismo"', async () => {
       calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
       prismaMock.registroHoras.groupBy.mockResolvedValue([]);
