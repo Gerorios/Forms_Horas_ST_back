@@ -2943,3 +2943,53 @@ persistente del shell quedó en el checkout principal — se destraba con
 ExitWorktree(keep) + EnterWorktree(path). `git worktree remove` en Windows
 deja directorios residuales por rutas largas/permisos: borrar con
 `rmdir /s /q "\\?\<ruta>"` y `git worktree prune`.
+
+---
+
+## 81. Ausencia justificada: HyS decide si pierde presentismo (2026-09-03)
+
+Sesión con `/grill-with-docs`. Investigación posterior a la decisión de
+2026-08-19 (§61: "cualquier Ausencia pierde presentismo, sin importar el
+certificado") encontró casos reales donde eso no debería ser así — el
+ejemplo del usuario: una ausencia por enfermedad común justificada sí pierde
+presentismo, pero una por **licencia especial** (ej. paternidad), también
+justificada, no debería perderlo.
+
+**Decisiones del grilling (glosario nuevo en CONTEXT.md: `Presentismo`,
+`pierdePresentismoHys`)**:
+1. **Booleano manual, no catálogo de motivos** — se descartó estructurar un
+   catálogo de causales de ausencia (más preciso pero mucho más alcance);
+   HyS tilda caso por caso, sin heurística automática.
+2. **Solo se pregunta al justificar** — injustificada y pendiente siguen
+   perdiendo presentismo siempre, sin excepción, igual que antes. El campo
+   nuevo (`pierdePresentismoHys`) solo tiene valor cuando `estadoHys='aprobada'`.
+3. **Obligatorio, sin default** — el botón "Justificar" queda deshabilitado
+   hasta elegir Sí/No explícitamente (una reversión de regla de negocio
+   reciente no debía tener un default silencioso).
+4. **El motivo va en el `descargoHys` ya existente** — no se creó un campo
+   de texto nuevo para explicar la decisión.
+5. **Histórico**: backfill a `true` (pierde presentismo) para toda Ausencia
+   justificada previa a este cambio — preserva liquidaciones ya cerradas sin
+   recomputar nada. **Excepción**: 3 operarios de la última quincena que el
+   usuario había ajustado a mano al liquidar sueldos — esos se corrigen con
+   el flujo existente (reabrir → volver a justificar marcando "no pierde
+   presentismo"), no con SQL.
+6. **Resumen de ausencias (export CSV) sin cambios** — el dueño de producto
+   aclaró que ese cruce ya se ve en el panel de liquidación al armar/cerrar
+   la quincena, duplicarlo ahí no aporta.
+
+**Implementación** (PRs back #63 y front #65, ADR-022): `Novedad.pierdePresentismoHys`
+(nullable); `resolverHys()` pasa a transacción y agrega auditoría (antes no
+dejaba rastro en `Auditoria`, a diferencia de `anular`/`reabrir`); `reabrir()`
+también resetea el flag nuevo. `calculo.service.ts` y `panel.service.ts`
+(efecto del drill-down del Liquidador) actualizados. Front: toggle obligatorio
+en el mismo diálogo del descargo, solo para "Justificar"; detalle muestra la
+decisión ya tomada. TDD: back 495 (+9 nuevos) y front 597 (+5 nuevos) en
+verde. Probado manualmente en local por el usuario contra `testing` (ambos
+casos: justificada pierde / no pierde presentismo).
+
+⚠️ **Requiere DDL manual** `docs/sql/2026-09-03-pierde-presentismo-hys.sql`
+(columna nueva + backfill) — **ya aplicada en `testing`** (vía script Node
+puntual con el adapter de Prisma, no había cliente `mysql` disponible;
+backfill afectó 1 fila). **Pendiente aplicar en `Horas_Sertec` al deployar**
+(orden: DDL → merge → deploy).
