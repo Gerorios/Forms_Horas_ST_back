@@ -2837,3 +2837,41 @@ usuario el 2026-09-02, ver memoria "redisenio-carga-certificaciones-aprobado":
 pestaña Cargar primera, paso 1 ancho con guía de pasos, paso 3 con tarjetas
 de métricas y panel de problemas, modal de confirmación) y luego etapa 5
 (apagado del portal).
+
+## 78. Hotfix historial de cargas + rediseño de Cargar EN PRODUCCIÓN (2026-09-03)
+
+**Hotfix (PR back #57)**: el usuario cargó una certificación y no aparecía
+en Historial. Causa: `sth_cert_cargas_log.id` es INT UNSIGNED → Prisma lo
+devuelve como BigInt en `$queryRaw` y Nest fallaba al serializar ("Do not
+know how to serialize a BigInt", 500) → la pantalla mostraba "Sin cargas".
+La carga en sí estaba bien guardada. Fix: `HistorialService.consultar`
+castea id/filas con `Number()` (mismo criterio que items.service), con test
+de regresión que mockea BigInt. Lección: TODO `$queryRaw` que devuelva
+enteros unsigned o agregados debe castearse; los mocks de Prisma con
+números comunes no lo detectan.
+
+**Rediseño de Cargar (PR front #62, commit c21e617)**: implementado según
+el mockup que el usuario aprobó el 2026-09-02 (regla explícita del usuario:
+"antes de seguir mostrame un mockup, no te mandes a hacer sola"). Pestaña
+Cargar primera en el nav; stepper de 4 pasos en todo el flujo; paso 1 ancho
+con zona de arrastre grande, mes con nombre y guía de 3 pasos; paso 3 con 4
+tarjetas de métricas (a cargar / con problema / excluidas / total a cargar +
+declarado), panel ámbar con la lista de filas con problema y la explicación
+del descuadre, filtro por hoja y "Ver solo problemas"; modal "Confirmar la
+carga" (overlay de la casa, role=dialog) con archivo, contratos, filas,
+total y aviso, botón "Cargar N filas"; paso 4 con tarjetas de resultado y
+acceso al Historial. Extras: $ Total de filas no editadas se muestra con 2
+decimales (solo vista, el valor original viaja intacto); "Revisar y cargar"
+deshabilitado sin filas a cargar (paridad portal). Verificado en local con
+el Excel real K8 de julio hasta el modal. Deploy: pull + build + pm2
+restart del front; /certificaciones/carga 200.
+
+**Truco de entorno**: el Frontend en un worktree con JUNCTION a
+node_modules no levanta con Turbopack ("Symlink node_modules is invalid");
+sí con `npx next dev --webpack`. Y para reusar la sesión del navegador hay
+que servirlo en el MISMO puerto (3000) que el checkout principal. Quitar
+SIEMPRE la unión con `[System.IO.Directory]::Delete()` antes de remover el
+worktree (ver §77).
+
+**Pendiente**: accesos iniciales de jefes/gerentes (Admin → Accesos) y
+etapa 5 (apagado del portal).
