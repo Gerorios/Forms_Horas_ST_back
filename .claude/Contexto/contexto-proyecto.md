@@ -2897,3 +2897,49 @@ viejo sigue corriendo en Docker (:8000, certificaciones.serytec.com.ar)
 sobre las vistas de compatibilidad — redundante para todo salvo usuarios
 que aún no tengan acceso en Horas. **Siguiente: etapa 5 (apagado)**,
 precedida por la carga de accesos iniciales de jefes/gerentes.
+
+**Corrección (misma tarde)**: el usuario puso la **etapa 5 EN PAUSA** a
+propósito — el portal viejo queda vivo como BACKUP de carga "por si algo
+sale mal" con la carga nueva. No arrancarla ni proponerla hasta pedido
+explícito. Mientras conviven: no cargar el mismo archivo por los dos lados.
+
+## 80. Control general: horas COMPLETAS por operario (2026-09-03)
+
+Sesión con `/grill-with-docs`. Pedido del dueño de producto: un jefe de
+contrato buscaba las horas de un operario y el tile "Horas de la quincena"
+le mostraba solo las de su contrato (8) cuando la persona había hecho 12 en
+total, mientras el Detalle diario (§62) sí mostraba la jornada completa —
+"eso estaba confundiendo al momento de controlar".
+
+**Decisiones del grilling (glosario nuevo en CONTEXT.md, sección "Control
+general": Mis contratos / Operario del jefe / Horas completas / Horas en mis
+contratos)**:
+1. Regla única del panel, la misma del Detalle diario: mis contratos deciden
+   QUIÉN entra (≥1 fila en la quincena); de cada operario se cuentan TODAS
+   sus horas, en cualquier contrato. Los filtros achican personas, nunca horas.
+2. A total completo: tile "Horas de la quincena", tile "Con horas extra
+   (+88hs)" (el umbral es por persona: 60 en K5 + 40 en K8 antes no aparecía
+   para el jefe de K5), ranking top 10 e histórico "Horas por quincena"
+   (inclusión por operario+quincena).
+3. Queda sobre mis contratos: "Filas pendientes de revisar" (las ajenas las
+   aprueba otro jefe). Aprobar/editar siguen scopeados como siempre.
+4. La parte ajena se muestra discreta: bajo el tile "incluye N hs en otros
+   contratos"; tooltip del ranking "X hs en tus contratos · Y hs en otros".
+   `horasMisContratos` se juzga contra TODOS mis contratos (no los filtrados,
+   misma sutileza que §62). Admin no cambia en la práctica.
+
+**Implementación** (PRs back #60 y front #64, EN PRODUCCIÓN): `resumenOperarios`
+reutiliza la consulta de la quincena completa (la de la alerta cruzada) para
+`totalHoras` y el nuevo `horasMisContratos`; `historicoQuincenas` pasa a dos
+consultas (inclusión por (cuil, quincena) + horas completas de esos cuils).
+Front: tipo `ResumenOperario.horasMisContratos`, `StatTile` con `sub`,
+tooltip del ranking con desglose. TDD: 3 tests back + 1 front nuevos; back
+492 / front 595 en verde; los 5 fallos de la suite completa del front fueron
+timeouts por correr junto a los dev servers (pasan aislados). Deploy: pull +
+build + pm2 restart de ambos, sin DDL.
+
+**Entorno**: el guard de aislamiento del worktree se traba si el cwd
+persistente del shell quedó en el checkout principal — se destraba con
+ExitWorktree(keep) + EnterWorktree(path). `git worktree remove` en Windows
+deja directorios residuales por rutas largas/permisos: borrar con
+`rmdir /s /q "\\?\<ruta>"` y `git worktree prune`.
