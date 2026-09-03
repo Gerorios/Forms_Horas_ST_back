@@ -2875,3 +2875,25 @@ worktree (ver §77).
 
 **Pendiente**: accesos iniciales de jefes/gerentes (Admin → Accesos) y
 etapa 5 (apagado del portal).
+
+## 79. Hojas bloqueadas para nivel carga (paridad portal) — EN PRODUCCIÓN (2026-09-03)
+
+Reporte del usuario: en el portal, un jefe con K6/K2/K12 que subía un
+archivo con una hoja "CERTIFICO K5" la veía BLOQUEADA (chip con opacidad
+.4, cursor not-allowed, candado — `mostrarSelectorHojas` de upload.html).
+El wizard nuevo solo la deseleccionaba y dejaba elegirla; el 403 del backend
+("No tenés acceso al contrato K5") llegaba recién al confirmar.
+
+Fix (PR front #63, commit 0dec873): `hojaPermitida(h)` en la página (admin →
+true; carga → `hojaCoincideConKs` por token K, fix B9); el chip queda
+`disabled` con candado SVG, tooltip "No es un contrato a tu cargo" y aviso
+"N hojas bloqueadas: no son contratos a tu cargo"; `toggleHoja` ignora las
+bloqueadas. El 403 del backend sigue como segunda barrera. Tests para ambos
+niveles (módulo carga 17/17). Deploy: pull + build + pm2 restart del front.
+
+**Estado del módulo Certificaciones al cierre del 2026-09-03**: etapas 1 a 4
+en producción, rediseño de Cargar hecho, hotfix de historial hecho. Portal
+viejo sigue corriendo en Docker (:8000, certificaciones.serytec.com.ar)
+sobre las vistas de compatibilidad — redundante para todo salvo usuarios
+que aún no tengan acceso en Horas. **Siguiente: etapa 5 (apagado)**,
+precedida por la carga de accesos iniciales de jefes/gerentes.
