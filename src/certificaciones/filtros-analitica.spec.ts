@@ -52,6 +52,22 @@ describe('aLista', () => {
 });
 
 describe('filtrosDesdeQuery', () => {
+  // Bug heredado del portal (reporte 2026-09-03): el SQL compara
+  // DATE_FORMAT(fecha,'%Y-%m') como TEXTO; con desde='2026-01-01' el mes
+  // '2026-01' quedaba afuera ('2026-01' < '2026-01-01' por ser más corto) y
+  // enero solo aparecía poniendo desde=2025-12-01. Los filtros son mensuales:
+  // se recortan a YYYY-MM antes de llegar al SQL.
+  it('recorta desde/hasta con día (YYYY-MM-DD del input date) a YYYY-MM', () => {
+    const f = filtrosDesdeQuery({ desde: '2026-01-01', hasta: '2026-03-15' });
+    expect(f.desde).toBe('2026-01');
+    expect(f.hasta).toBe('2026-03');
+  });
+
+  it('desde/hasta ya en YYYY-MM quedan igual; basura no-fecha se descarta', () => {
+    expect(filtrosDesdeQuery({ desde: '2026-01', hasta: '2026-02' })).toMatchObject({ desde: '2026-01', hasta: '2026-02' });
+    expect(filtrosDesdeQuery({ desde: 'ayer' }).desde).toBeUndefined();
+  });
+
   it('normaliza query params a FiltrosAnalitica', () => {
     expect(filtrosDesdeQuery({ contratos: 'K6', desde: '2026-01' })).toEqual({
       desde: '2026-01',
