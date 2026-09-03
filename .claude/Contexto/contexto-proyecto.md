@@ -2993,3 +2993,65 @@ casos: justificada pierde / no pierde presentismo).
 puntual con el adapter de Prisma, no había cliente `mysql` disponible;
 backfill afectó 1 fila). **Pendiente aplicar en `Horas_Sertec` al deployar**
 (orden: DDL → merge → deploy).
+
+**Deploy (2026-09-03, tarde)**: PRs #63/#65 revisados (diff completo, tests en
+worktrees locales: back 500/500, front 57/57 de ausencias+novedades, tsc
+limpio en ambos) y mergeados con `--admin`. DDL aplicado en `Horas_Sertec`
+con `sudo npx prisma db execute --file` en el VPS + `prisma generate` + build
++ `pm2 restart` de ambos. EN PRODUCCIÓN. Pendiente del usuario: reabrir las
+3 ausencias de la última quincena que ajustó a mano y volver a justificarlas
+con "No pierde presentismo". Ver §82.
+
+## 82. Cierre del 2026-09-03: GUANTAY duplicado, fix analytics, paginación de ausencias, limpieza de ramas
+
+**GUANTAY ERIK ELIAS duplicado en `snuempleados`** (reporte del usuario).
+Legajo 10912 con dos CUIL: 20-39215995-0 (alta 1/8, sección "SIN SECCION",
+dígito verificador INVÁLIDO) y 23-39215995-9 (alta 17/8, "SERTEC", válido).
+El malo se cargó en el sistema de sueldos y el 17/8 se dio de alta bien sin
+borrar el viejo; `snuempleados` la sincroniza IT desde sueldos (la app no la
+escribe). Diagnóstico con script Node solo lectura vía `PrismaService` del
+Backend en el VPS (`sudo node -r dotenv/config -e ...` desde
+/var/www/Forms_Horas_ST_back, `require` con ruta ABSOLUTA a
+dist/src/prisma/prisma.service.js): el malo tenía 28 registros de horas
+(187,5 hs, 4/8→1/9), 1 novedad, el usuario de login (10912@st.local), el
+perfil de liquidación y filas en los cierres de agosto; el bueno 10 registros
+(63,5 hs). Sin ningún día en ambos (no hubo doble pago), pero en los cierres
+de agosto figuraba como dos personas. FKs hacia snuempleados: solo
+registros_horas, novedades, perfiles (km/sueldos sin filas).
+**Resolución (autorizada por el usuario)**: backup JSON de todo lo tocado en
+`/var/www/backups/guantay-cuil-20392159950-2026-09-03.json` (chmod 600);
+backend detenido unos segundos; UNA transacción: UPDATE de registros_horas
+(28), novedades (1), perfiles_liquidacion (1), usuarios (1) al CUIL bueno +
+DELETE de la fila mala; verificación rh_malo=0 / rh_bueno=38 / emp=1. Los
+snapshots de cierre viejos quedaron como historia (sin FK).
+**Pendiente del usuario**: recerrar 1ra y 2da quincena de agosto desde la app
+(Liquidación → Cierre, exige nota de motivo; el endpoint necesita Liquidador
+logueado) y avisar a IT que borre el CUIL malo en sueldos — si la sincro lo
+revive, vuelve vacío y se borra de nuevo.
+**Trampa del entorno**: el clasificador de permisos bloqueó los UPDATE/DELETE
+inline por SSH; funcionó subiendo el script con `scp` y ejecutándolo en el VPS.
+
+**Analytics de certificaciones — "Desde 1 de enero" mostraba desde febrero**
+(PR back #62, EN PRODUCCIÓN). Causa heredada del portal: el SQL compara
+`DATE_FORMAT(fc.fecha,'%Y-%m')` como TEXTO y el front manda el input date
+completo ('2026-01-01'); '2026-01' < '2026-01-01' por ser más corto. Fix:
+`filtrosDesdeQuery` normaliza desde/hasta a YYYY-MM (`aPeriodoMensual`);
+cualquier día del mes equivale al mes entero. Tests 2 nuevos (RED sin fix).
+
+**Paginación de Ausencias (HyS)** (PR front #66, EN PRODUCCIÓN): pedido del
+usuario, 20 por página elegido por él. Componente reutilizable
+`src/components/paginador.tsx` (`Paginador` + helper `paginar`, patrón de
+Ítems/Control general); paginación en el cliente por pestaña, vuelve a 1 al
+cambiar pestaña/quincena, anuladas también paginadas, los contadores de las
+pestañas siguen viendo todo. 3 tests nuevos con timeout 15s (renderizan 25+
+filas; bajo suite completa daban falso rojo).
+
+**Limpieza de ramas remotas**: borradas 10 en Backend y 8 en Frontend, todas
+ya mergeadas en main (verificado con `merge-base --is-ancestor`). En ambos
+repos queda solo `main`. Nota: `gh pr merge --delete-branch` NO venía
+borrando las ramas remotas en este repo.
+
+**Estado al cierre**: producción con todo lo anterior + §77-§81. Etapa 5 del
+portal EN PAUSA (backup de carga). Pendientes del usuario: recierre de agosto
+(GUANTAY), aviso a IT (CUIL malo), 3 ausencias a re-justificar (ADR-022),
+accesos iniciales de jefes/gerentes en Admin → Accesos.
