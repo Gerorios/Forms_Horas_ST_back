@@ -40,6 +40,7 @@ export interface FilaHistorial {
   periodo: string | null;
   filas_cargadas: number;
   filas_error: number;
+  filas_manuales: number;
   estado: string;
   cargado_en: string;
 }
@@ -67,7 +68,7 @@ export class HistorialService {
   private async consultar(where: Prisma.Sql, limite: number): Promise<FilaHistorial[]> {
     const rows = await this.prisma.$queryRaw<FilaHistorial[]>(Prisma.sql`
       SELECT id, usuario_nombre, archivo_nombre, contrato, periodo,
-             filas_cargadas, filas_error, estado,
+             filas_cargadas, filas_error, filas_manuales, estado,
              DATE_FORMAT(cargado_en, '%Y-%m-%d %H:%i') AS cargado_en
       FROM sth_cert_cargas_log
       WHERE ${where}
@@ -82,6 +83,7 @@ export class HistorialService {
       id: Number(r.id),
       filas_cargadas: Number(r.filas_cargadas),
       filas_error: Number(r.filas_error),
+      filas_manuales: Number(r.filas_manuales),
     }));
   }
 
