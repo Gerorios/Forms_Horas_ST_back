@@ -24,8 +24,12 @@ function crearPrismaMock(opts: {
   provinciasActivas?: string[];
   provinciasTodas?: { id: number; provincia: string }[];
   cargaExistente?: boolean;
+  /** Ks que `contratosExistentes` debe reportar como INEXISTENTES en el
+   * maestro de contratos. Por defecto todos los Ks consultados existen. */
+  ksInexistentes?: string[];
 } = {}) {
   const maestro = opts.maestro ?? [];
+  const ksInexistentes = new Set(opts.ksInexistentes ?? []);
   const provinciasActivas = opts.provinciasActivas ?? ['Salta', 'Jujuy'];
   const provinciasTodas = opts.provinciasTodas ?? [
     { id: 1, provincia: 'SALTA' },
@@ -57,6 +61,14 @@ function crearPrismaMock(opts: {
         maestro.map((m) => ({ item_norm: m.itemCodigo.replace(/\./g, ','), codigo_k: m.codigoK })),
       );
     }
+    if (sql.includes('SELECT codigo_k FROM sth_cert_contratos')) {
+      // contratosExistentes (paso 6c): por defecto TODOS los Ks consultados
+      // existen en el maestro; `ksInexistentes` deja simular el K tipeado mal.
+      const pedidos = (query.values as string[]) ?? [];
+      return Promise.resolve(
+        pedidos.filter((k) => !ksInexistentes.has(k)).map((codigo_k) => ({ codigo_k })),
+      );
+    }
     if (sql.includes('sth_cert_contratos')) {
       const ks = [...new Set(maestro.map((m) => m.codigoK))];
       return Promise.resolve(ks.map((k, i) => ({ id_contrato: i + 1, codigo_k: k })));
@@ -78,7 +90,7 @@ function crearPrismaMock(opts: {
     certCargaLog: { findFirst: certCargaLogFindFirst, create: certCargaLogCreate },
   };
 
-  return { prisma, executeRaw, certCargaLogCreate, certCargaLogFindFirst, transaction };
+  return { prisma, queryRaw, executeRaw, certCargaLogCreate, certCargaLogFindFirst, transaction };
 }
 
 import * as ExcelJS from 'exceljs';
@@ -755,5 +767,167 @@ describe('CargaService.confirmar — bloqueadas, confirmada y filas manuales (Ta
         'N',
       ),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Review final Etapa B: normalización de coma, idempotencia del
+// confirmar y K inexistente en el maestro de contratos.
+// ---------------------------------------------------------------------
+describe('CargaService.confirmar — coma decimal, idempotencia y K inexistente', () => {
+  async function armarPreviewUnaFila(
+    opts: Parameters<typeof crearPrismaMock>[0] = {
+      maestro: [{ itemCodigo: '431', codigoK: 'K12', idItem: 1, ptosGasnor: null, idContrato: 1 }],
+    },
+  ) {
+    const mock = crearPrismaMock(opts);
+    const store = new PreviewStore();
+    const service = new CargaService(mock.prisma as any, new ResolucionService(mock.prisma as any), store);
+    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100, 300]]);
+    const preview = await service.preview(buf, 'archivo.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
+    return { ...mock, service, store, preview, rowId: preview.filas[0].rowId };
+  }
+
+  it('una cantidad editada con coma se guarda con PUNTO y así llega al INSERT', async () => {
+    const { service, preview, rowId, executeRaw } = await armarPreviewUnaFila();
+    // 3,5 × 100 = 350 vs total impreso 300 → no cuadra; `confirmada` levanta
+    // ese bloqueo para poder observar la cifra que efectivamente se inserta.
+    const r = await service.confirmar(
+      {
+        previewId: preview.previewId,
+        ediciones: [{ rowId, cantidades: '3,5', confirmada: true } as any],
+      },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    expect(r.insertadas).toBe(1);
+    const values = executeRaw.mock.calls[0][0].values;
+    expect(values).toContain('3.5');
+    expect(values).not.toContain('3,5');
+  });
+
+  it('un precio unitario con coma normalizado hace CUADRAR la fila (revalidarFila ve el mismo número)', async () => {
+    const { service, preview, rowId, executeRaw } = await armarPreviewUnaFila();
+    // 3 × 100,5 = 301,5 vs 301,5 impreso → cuadra sin `confirmada`, lo que
+    // solo puede pasar si la coma se normalizó ANTES de revalidar.
+    const r = await service.confirmar(
+      {
+        previewId: preview.previewId,
+        ediciones: [{ rowId, precio_unitario: '100,5', total_mes: '301,5' } as any],
+      },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    expect(r.insertadas).toBe(1);
+    const values = executeRaw.mock.calls[0][0].values;
+    expect(values).toContain('100.5');
+    expect(values).toContain('301.5');
+  });
+
+  it('idempotencia: un confirmar que falló con 422 no deja pegada la edición — el reintento sin ediciones vuelve al valor ORIGINAL', async () => {
+    const { service, preview, rowId, executeRaw, transaction } = await armarPreviewUnaFila();
+
+    // Intento 1: cantidades 99 (99 × 100 = 9900 vs 300 impreso) → 422.
+    await expect(
+      service.confirmar(
+        { previewId: preview.previewId, ediciones: [{ rowId, cantidades: '99' } as any] },
+        CERT_ADMIN,
+        CUIL,
+        'Juan',
+      ),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(transaction).not.toHaveBeenCalled();
+
+    // Intento 2: MISMA sesión, sin ediciones → la fila vuelve a valer 3.
+    const r = await service.confirmar(
+      { previewId: preview.previewId, ediciones: [] },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    expect(r.insertadas).toBe(1);
+    const values = executeRaw.mock.calls[0][0].values;
+    expect(values).toContain('3');
+    expect(values).not.toContain('99');
+  });
+
+  it('idempotencia: `confirmada` tampoco queda pegado entre intentos', async () => {
+    const { service, preview, rowId, prisma, executeRaw } = await armarPreviewUnaFila();
+
+    // Intento 1: cantidades=99 + confirmada=true (que solas pasarían), pero
+    // el duplicado por nombre de archivo lo aborta DESPUÉS de aplicar las
+    // ediciones sobre la sesión.
+    (prisma as any).certCargaLog.findFirst.mockResolvedValueOnce({ id: 1 });
+    await expect(
+      service.confirmar(
+        {
+          previewId: preview.previewId,
+          ediciones: [{ rowId, cantidades: '99', confirmada: true } as any],
+        },
+        CERT_ADMIN,
+        CUIL,
+        'Juan',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // Intento 2 sin ediciones: si `confirmada`/cantidades hubieran quedado
+    // pegados, se insertaría 99; el reset devuelve la fila a 3.
+    const r = await service.confirmar(
+      { previewId: preview.previewId, ediciones: [] },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    expect(r.insertadas).toBe(1);
+    const values = executeRaw.mock.calls[0][0].values;
+    expect(values).toContain('3');
+    expect(values).not.toContain('99');
+  });
+
+  it('K editado que no existe en el maestro de contratos → 422 con el detalle, sin transacción', async () => {
+    const { service, preview, rowId, transaction, queryRaw } = await armarPreviewUnaFila({
+      maestro: [{ itemCodigo: '431', codigoK: 'K12', idItem: 1, ptosGasnor: null, idContrato: 1 }],
+      ksInexistentes: ['KZZ'],
+    });
+
+    await expect(
+      service.confirmar(
+        { previewId: preview.previewId, ediciones: [{ rowId, contrato: 'KZZ' } as any] },
+        CERT_ADMIN,
+        CUIL,
+        'Juan',
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'Hay 1 fila bloqueada. Corregilas, confirmalas o excluilas antes de cargar.',
+        bloqueadas: [
+          expect.objectContaining({
+            rowId,
+            detalle: expect.stringContaining('Contrato KZZ no existe en el maestro de contratos'),
+          }),
+        ],
+      },
+    });
+    expect(transaction).not.toHaveBeenCalled();
+
+    // Batch: UNA sola query de existencia de contratos para toda la carga.
+    const consultasExistencia = queryRaw.mock.calls.filter((c: any[]) =>
+      String((c[0] as { sql: string }).sql).includes('SELECT codigo_k FROM sth_cert_contratos'),
+    );
+    expect(consultasExistencia).toHaveLength(1);
+  });
+
+  it('K existente en el maestro no agrega ningún detalle (el camino feliz sigue intacto)', async () => {
+    const { service, preview } = await armarPreviewUnaFila();
+    const r = await service.confirmar(
+      { previewId: preview.previewId, ediciones: [] },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    expect(r.insertadas).toBe(1);
+    expect(r.errores).toEqual([]);
   });
 });

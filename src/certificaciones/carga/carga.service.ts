@@ -14,7 +14,7 @@ import { parsearPdf } from './parser-pdf';
 import { esFilaPlantilla, revalidarFila } from './validacion';
 import { avisoKNombre, avisoPeriodo } from './avisos';
 import { ResolucionService } from './resolucion.service';
-import { PreviewStore, PreviewSession, FilaPreview } from './preview-store';
+import { PreviewStore, PreviewSession, FilaPreview, clonarFila } from './preview-store';
 import { ConfirmarCargaDto } from '../dto/carga.dto';
 
 /**
@@ -81,6 +81,16 @@ function pad2(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
+/**
+ * Normaliza una cifra tipeada por el usuario a decimales con PUNTO. El DTO
+ * ya garantizó el formato (`^\d+([.,]\d{1,4})?$`), así que acá solo hay que
+ * pasar la coma argentina a punto para que `revalidarFila` (que hace
+ * `Number()`) y el INSERT vean el mismo número.
+ */
+function normalizarCifra(v: string): string {
+  return v.trim().replace(',', '.');
+}
+
 function num(v: string | null | undefined): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = Number(v);
@@ -136,6 +146,9 @@ export class CargaService {
     ]);
 
     const filasMap = new Map<string, FilaPreview>();
+    // Copia intacta de cada fila para que `confirmar` pueda volver al estado
+    // del preview en cada intento (idempotencia — ver `EdicionFilaDto`).
+    const originales = new Map<string, FilaPreview>();
     let conError = 0;
     let totalMes = 0;
 
@@ -169,6 +182,7 @@ export class CargaService {
         origen: 'archivo',
       };
       filasMap.set(rowId, filaPreview);
+      originales.set(rowId, clonarFila(filaPreview));
 
       if (tieneError) conError++;
       else totalMes += num(filaPreview.total_mes);
@@ -191,6 +205,7 @@ export class CargaService {
       anio,
       mes,
       filas: filasMap,
+      originales,
       creadaEn: Date.now(),
       total_declarado: resultado.total_declarado,
       k_nombre_archivo: resultado.k_nombre_archivo,
@@ -238,7 +253,17 @@ export class CargaService {
 
     this.exigirNivelCarga(cert);
 
-    // 3) aplicar ediciones — SOLO los 8 campos del DTO, whitelist real (el
+    // 3a) RESET a los valores originales del preview: cada confirmar es
+    // idempotente. Sin esto, un reintento después de un 422 arrastraría las
+    // cifras editadas, el `contrato_fuente = 'editado'` y el `confirmada` de
+    // la llamada fallida, y omitir un campo pasaría a significar "dejá lo de
+    // antes" en vez de "valor original". El contrato con el cliente (ver
+    // `EdicionFilaDto`) es: mandá TODAS las ediciones vigentes en cada intento.
+    for (const [rowId, original] of sesion.originales) {
+      sesion.filas.set(rowId, clonarFila(original));
+    }
+
+    // 3b) aplicar ediciones — SOLO los 8 campos del DTO, whitelist real (el
     // service nunca hace spread del DTO sobre la fila).
     for (const edicion of dto.ediciones) {
       const fila = sesion.filas.get(edicion.rowId);
@@ -249,10 +274,12 @@ export class CargaService {
         fila.contrato_fuente = 'editado';
       }
       if (edicion.provincia !== undefined) fila.provincia = edicion.provincia;
-      if (edicion.cantidades !== undefined) fila.cantidades = edicion.cantidades;
-      if (edicion.total_mes !== undefined) fila.total_mes = edicion.total_mes;
+      // Las tres cifras se guardan normalizadas (coma→punto): así lo que ve
+      // `revalidarFila` y lo que va al INSERT es el MISMO número.
+      if (edicion.cantidades !== undefined) fila.cantidades = normalizarCifra(edicion.cantidades);
+      if (edicion.total_mes !== undefined) fila.total_mes = normalizarCifra(edicion.total_mes);
       if (edicion.excluida !== undefined) fila.excluida = edicion.excluida;
-      if (edicion.precio_unitario !== undefined) fila.precio_unitario = edicion.precio_unitario;
+      if (edicion.precio_unitario !== undefined) fila.precio_unitario = normalizarCifra(edicion.precio_unitario);
       if (edicion.item_codigo !== undefined) fila.item_codigo = edicion.item_codigo.trim();
       if (edicion.confirmada !== undefined) fila.confirmada = edicion.confirmada;
     }
@@ -339,9 +366,10 @@ export class CargaService {
         contratista: it.contratista,
         provincia: m.provincia.trim(),
         region: '',
-        cantidades: m.cantidades.trim(),
-        precio_unitario: m.precio_unitario.trim(),
-        total_mes: m.total_mes.trim(),
+        // Mismas cifras normalizadas (coma→punto) que en las ediciones.
+        cantidades: normalizarCifra(m.cantidades),
+        precio_unitario: normalizarCifra(m.precio_unitario),
+        total_mes: normalizarCifra(m.total_mes),
         observaciones: m.observaciones?.trim() || null,
         fecha: `${sesion.anio}-${pad2(sesion.mes)}-01`,
         nro_np: null,
@@ -371,11 +399,30 @@ export class CargaService {
       idsManualesPorRowId.set(rowId, { idItem: it.id_item, idContrato: it.id_contrato });
     }
 
+    // 6c) el K resuelto de CADA fila (del archivo y manual) tiene que existir
+    // en el maestro de contratos. Una sola query batch para todos los Ks. Un K
+    // tipeado mal en el preview se convierte así en una fila bloqueada (422,
+    // corregible) en vez de llegar al paso 9, no resolver `id_contrato` y
+    // terminar en una carga 'parcial' con la fila omitida sin que nadie la vea.
+    // ORDEN GARANTIZADO: primero las filas del archivo (en el orden del
+    // preview) y DESPUÉS las manuales, siempre. Los tests posicionales del
+    // INSERT (`values[0]`, la última tupla, etc.) dependen de esto, y el
+    // `rowId` de las manuales (`manual-1`, `manual-2`…) también.
+    const todas = [...filas, ...manuales];
+    const ksExistentes = await this.resolucion.contratosExistentes(
+      todas.map((f) => f.contrato).filter((k): k is string => !!k),
+    );
+    for (const fila of todas) {
+      if (!fila.contrato || ksExistentes.has(fila.contrato)) continue;
+      const detalle = `Contrato ${fila.contrato} no existe en el maestro de contratos`;
+      fila.tiene_error = true;
+      fila.error_detalle = fila.error_detalle ? `${fila.error_detalle}; ${detalle}` : detalle;
+    }
+
     // 7) bloqueadas RECHAZAN la carga entera (spec §2.9): cualquier fila no
     // excluida —del archivo o manual— con error server-side devuelve 422 con
     // la lista de rowIds, en vez de omitirse en silencio. La exclusión sigue
     // siendo silenciosa: es una elección explícita del usuario.
-    const todas = [...filas, ...manuales];
     const bloqueadas: FilaBloqueada[] = todas
       .filter((f) => !f.excluida && f.tiene_error)
       .map((f) => ({
@@ -418,28 +465,32 @@ export class CargaService {
     // `resolverIds` matchee por código+K — un código puede estar duplicado
     // dentro de un mismo K, y en ese caso "por código+K" podría elegir un
     // id_item distinto al que la persona realmente seleccionó.
-    const idsPorIndice =
-      cargables.length > 0
-        ? await this.resolucion.resolverIds(
-            cargables.map((f) => ({
-              item_codigo: f.item_codigo,
-              contrato: f.contrato || null,
-              provincia: f.provincia,
-              ptos_gasnor: f.ptos_gasnor,
-            })),
-          )
-        : new Map();
+    const idsPorIndice = await this.resolucion.resolverIds(
+      cargables.map((f) => ({
+        item_codigo: f.item_codigo,
+        contrato: f.contrato || null,
+        provincia: f.provincia,
+        ptos_gasnor: f.ptos_gasnor,
+      })),
+    );
 
     const paraInsertar: { fila: FilaPreview; idItem: number; idContrato: number; idProvincia: number; ptosGasnor: string | null }[] = [];
 
     cargables.forEach((fila, i) => {
       const ids = idsPorIndice.get(i);
-      if (!ids) return; // resolverIds siempre devuelve una entrada por índice
+      // Invariante: `resolverIds` devuelve una entrada por CADA índice de
+      // entrada. Si falta, es un bug del resolutor — no una fila inválida —
+      // y omitirla en silencio perdería plata sin dejar rastro.
+      if (!ids) throw new Error(`resolverIds no devolvió entrada para la fila ${i}`);
 
       const idsManual = fila.origen === 'manual' ? idsManualesPorRowId.get(fila.rowId) : undefined;
       const idContrato = idsManual ? idsManual.idContrato : ids.idContrato;
       const idItem = idsManual ? idsManual.idItem : ids.idItem;
 
+      // Último recurso: desde el paso 6c un K inexistente ya bloquea la fila
+      // con 422, así que en la práctica esto es inalcanzable. Se deja como
+      // red de contención por si el contrato desaparece del maestro entre el
+      // paso 6c y el 9 (o si `resolverIds` cambia de criterio).
       if (idContrato === null) {
         errores.push({
           hoja: fila.hoja_origen,
