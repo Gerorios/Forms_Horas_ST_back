@@ -1,4 +1,4 @@
-import { parsearFechaDMA } from './fechas';
+import { fechaISODeCelda, parsearFechaDMA } from './fechas';
 
 describe('parsearFechaDMA (D/M/AAAA -> AAAA-MM-DD)', () => {
   it("'4/9/2026' -> '2026-09-04'", () => {
@@ -27,5 +27,21 @@ describe('parsearFechaDMA (D/M/AAAA -> AAAA-MM-DD)', () => {
     expect(parsearFechaDMA('2026-08-01')).toBeNull();
     expect(parsearFechaDMA('')).toBeNull();
     expect(parsearFechaDMA('abc')).toBeNull();
+  });
+});
+
+describe('fechaISODeCelda (celda de Excel: texto d/m/aaaa o ISO de celda Date)', () => {
+  it("texto 'd/m/aaaa' -> 'aaaa-mm-dd' (vía parsearFechaDMA)", () => {
+    expect(fechaISODeCelda('1/8/2026')).toBe('2026-08-01');
+    expect(fechaISODeCelda('31/8/2026')).toBe('2026-08-31');
+  });
+
+  it("ISO de celda Date ('2026-08-01T00:00:00.000Z') -> '2026-08-01'", () => {
+    expect(fechaISODeCelda('2026-08-01T00:00:00.000Z')).toBe('2026-08-01');
+  });
+
+  it('formato no reconocido -> null', () => {
+    expect(fechaISODeCelda('PERIODO A CERTIFICAR')).toBeNull();
+    expect(fechaISODeCelda('')).toBeNull();
   });
 });

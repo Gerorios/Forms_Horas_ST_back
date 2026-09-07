@@ -23,3 +23,17 @@ export function parsearFechaDMA(s: string): string | null {
   if (d < 1 || d > 31 || mo < 1 || mo > 12) return null;
   return `${m[3]}-${pad2(mo)}-${pad2(d)}`;
 }
+
+/**
+ * Fecha de una celda de Excel ya "aplanada" a texto (ver `rawToStr` en
+ * parser-excel.ts): acepta 'd/m/aaaa' (vía `parsearFechaDMA`, texto tal
+ * como lo escribe Naturgy en "PERIODO A CERTIFICAR") y también el ISO que
+ * produce `Date.toISOString()` cuando la celda es una celda Date real de
+ * Excel ('2026-08-01T00:00:00.000Z'). `null` si no matchea ninguno.
+ */
+export function fechaISODeCelda(raw: string): string | null {
+  const porDMA = parsearFechaDMA(raw);
+  if (porDMA) return porDMA;
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})T/);
+  return m ? m[1] : null;
+}

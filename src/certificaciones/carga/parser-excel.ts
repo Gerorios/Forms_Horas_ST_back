@@ -26,9 +26,25 @@
  * regla de texto.
  */
 import * as ExcelJS from 'exceljs';
-import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import { ErrorParseo, FilaParseada, PeriodoArchivo, ResultadoParseo } from './parser-tipos';
 import { montoANumero, parsearMontoTexto } from './montos';
 import { extraerKDeNombre } from './nombre-archivo';
+import { fechaISODeCelda } from './fechas';
+
+/**
+ * Columnas sin las cuales la hoja no se puede leer: si falta alguna, no se
+ * procesa ninguna fila y se emite un error de `header` (mejor no cargar
+ * nada que cargar valores corridos de columna). Paridad con
+ * `COLUMNAS_REQUERIDAS` del parser PDF.
+ */
+const COLUMNAS_REQUERIDAS_XLS = [
+  'item_codigo',
+  'contrato',
+  'provincia',
+  'cantidades',
+  'precio_unitario',
+  'total_mes',
+];
 
 /** Mapeo flexible: nombre canónico → variantes posibles en el header (orden = prioridad). */
 const COL_ALIAS: Record<string, string[]> = {
@@ -180,29 +196,38 @@ function esItemValido(raw: string | null): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9\s\-_,.]*$/.test(s);
 }
 
-/** Dado el header en UPPER (índice 1-based → texto), resuelve {canon: índice de columna}. */
-function mapearColumnas(headerUpper: Map<number, string>): Map<string, number> {
+/**
+ * Dado el header en UPPER (índice 1-based → texto), resuelve
+ * {canon: índice de columna}, más las columnas de header que no matchean
+ * ningún alias conocido (`ignoradas`) y las requeridas que no aparecieron
+ * (`faltantes`). Paridad con `construirCabecera` del parser PDF.
+ */
+function mapearColumnas(
+  headerUpper: Map<number, string>,
+): { mapa: Map<string, number>; ignoradas: string[]; faltantes: string[] } {
   const headerNorm = new Map<number, string>();
   for (const [idx, h] of headerUpper) headerNorm.set(idx, normalizarEspacios(h));
 
   const mapa = new Map<string, number>();
+  const usadas = new Set<number>();
   for (const [canon, aliases] of Object.entries(COL_ALIAS)) {
     for (const alias of aliases) {
       const aliasNorm = normalizarEspacios(alias);
-      let encontrado: number | undefined;
-      for (const [idx, h] of headerNorm) {
-        if (h === aliasNorm) {
-          encontrado = idx;
-          break;
-        }
-      }
-      if (encontrado !== undefined) {
-        mapa.set(canon, encontrado);
+      const idx = [...headerNorm.entries()].find(([, h]) => h === aliasNorm)?.[0];
+      if (idx !== undefined) {
+        mapa.set(canon, idx);
+        usadas.add(idx);
         break;
       }
     }
   }
-  return mapa;
+
+  const ignoradas = [...headerNorm.entries()]
+    .filter(([idx, h]) => h !== '' && !usadas.has(idx))
+    .map(([, h]) => h);
+  const faltantes = COLUMNAS_REQUERIDAS_XLS.filter((c) => !mapa.has(c));
+
+  return { mapa, ignoradas, faltantes };
 }
 
 interface Meta {
@@ -210,6 +235,7 @@ interface Meta {
   nro_np: string | null;
   fecha: string;
   total_declarado: number | null;
+  periodo_archivo: PeriodoArchivo | null;
 }
 
 function extraerMeta(
@@ -223,6 +249,7 @@ function extraerMeta(
     nro_np: null,
     fecha: `${anio}-${pad2(mes)}-01`,
     total_declarado: null,
+    periodo_archivo: null,
   };
 
   const mSheet = nombreHoja.toUpperCase().match(/K\d+/);
@@ -253,6 +280,25 @@ function extraerMeta(
           meta.nro_np = vals[i + 1].texto;
         }
       }
+    }
+
+    if ((filaStr.includes('NRO. WK') || filaStr.includes('NRO WK')) && !meta.nro_np) {
+      for (let i = 0; i < vals.length; i++) {
+        if (
+          vals[i].texto.toUpperCase().includes('WK') &&
+          i + 1 < vals.length &&
+          /^\d{4,}$/.test(vals[i + 1].texto)
+        ) {
+          meta.nro_np = vals[i + 1].texto;
+        }
+      }
+    }
+
+    if (filaStr.includes('PERIODO A CERTIFICAR') && !meta.periodo_archivo) {
+      const fechas = vals
+        .map((v) => fechaISODeCelda(v.texto))
+        .filter((f): f is string => f !== null);
+      if (fechas.length >= 2) meta.periodo_archivo = { desde: fechas[0], hasta: fechas[1] };
     }
 
     if (meta.total_declarado === null) {
@@ -388,6 +434,9 @@ function procesarHoja(
   if (resultado.total_declarado === null) {
     resultado.total_declarado = meta.total_declarado;
   }
+  if (resultado.periodo_archivo === null && meta.periodo_archivo) {
+    resultado.periodo_archivo = meta.periodo_archivo;
+  }
 
   const headerRow = worksheet.getRow(headerIdx);
   const colCount = Math.max(headerRow.cellCount, worksheet.columnCount || 0);
@@ -397,17 +446,32 @@ function procesarHoja(
     headerUpper.set(c, raw !== null ? raw.trim().toUpperCase() : '');
   }
 
-  const colMap = mapearColumnas(headerUpper);
+  const { mapa: colMap, ignoradas, faltantes } = mapearColumnas(headerUpper);
 
-  if (!colMap.has('item_codigo')) {
+  if (faltantes.length > 0) {
     const primeros12 = Array.from(headerUpper.values()).slice(0, 12);
     resultado.errores.push({
       hoja: nombreHoja,
       fila: 0,
       campo: 'header',
-      mensaje: `Columna ÍTEMS no encontrada. Header: ${JSON.stringify(primeros12)}`,
+      mensaje:
+        `Faltan columnas requeridas en la hoja: ${faltantes.join(', ')}. ` +
+        `Header: ${JSON.stringify(primeros12)}`,
     });
     return;
+  }
+
+  for (const columna of ignoradas) {
+    if (!resultado.columnas_ignoradas.includes(columna)) {
+      resultado.columnas_ignoradas.push(columna);
+    }
+    resultado.avisos.push({
+      tipo: 'columna_ignorada',
+      hoja: nombreHoja,
+      fila: 0,
+      fuerte: false,
+      mensaje: `Columna ignorada: ${columna}. Sus valores no se asignaron a ninguna columna.`,
+    });
   }
 
   const colItem = colMap.get('item_codigo')!;
@@ -465,6 +529,17 @@ export async function parsearExcel(
 
   for (const ws of hojasCert) {
     procesarHoja(ws, nombreArchivo, anio, mes, resultado);
+  }
+
+  if (resultado.total_declarado === null || resultado.total_declarado === 0) {
+    resultado.avisos.push({
+      tipo: 'sin_total_declarado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: true,
+      mensaje:
+        'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
+    });
   }
 
   return resultado;

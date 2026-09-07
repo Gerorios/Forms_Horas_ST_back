@@ -26,9 +26,23 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('CERTIFICO K5');
     ws.addRow(['TOTAL MES', { formula: 'SUM(C3:C3)', result: 0 }]);
-    ws.addRow(['ÍTEMS', 'CANTIDADES', '$ TOTAL MES']);
-    ws.addRow(['289', { formula: 'B1*0', result: 0 }, { formula: 'B3*100', result: 0 }]);
-    ws.addRow(['290', { formula: 'B1*0', result: 2 }, { formula: 'B4*100', result: 200 }]);
+    ws.addRow(['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES']);
+    ws.addRow([
+      '289',
+      'K5',
+      'Salta',
+      { formula: 'B1*0', result: 0 },
+      100,
+      { formula: 'B3*100', result: 0 },
+    ]);
+    ws.addRow([
+      '290',
+      'K5',
+      'Salta',
+      { formula: 'B1*0', result: 2 },
+      100,
+      { formula: 'B4*100', result: 200 },
+    ]);
     const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
     const r = await parsearExcel(buf, 'test.xlsx', 2026, 7);
@@ -75,8 +89,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   it('normaliza números es-AR: total declarado, cantidades y total_mes', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K6', [
       ['TOTAL MES', '$ 39.072.433,92'],
-      ['ÍTEMS', 'CANTIDADES', 'TOTAL'],
-      ['431', '3,5', '1.234,56'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', 'TOTAL'],
+      ['431', 'K6', 'Salta', '3,5', '100', '1.234,56'],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -91,8 +105,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // JS, no separador de miles). Antes del fix, 59164.8 → "591648" (10x).
   it('celda numérica con fracción conserva el valor real (no aplica la regla de texto)', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K9', [
-      ['ÍTEMS', '$ UNITARIO MES', '$ TOTAL MES'],
-      ['431', 59164.8, 2827089.4219859],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K9', 'Salta', 15, 59164.8, 2827089.4219859],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -105,8 +119,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // la regla es-AR (punto = miles, coma = decimal).
   it('celda de TEXTO en $ TOTAL MES sigue la regla es-AR de miles/decimal', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K9', [
-      ['ÍTEMS', '$ UNITARIO MES', '$ TOTAL MES'],
-      ['431', '133.337,26', '400.012'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K9', 'Salta', '3', '133.337,26', '400.012'],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -120,16 +134,16 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   it('total_declarado: TOTAL MES numérico real vs TOTAL MES en texto es-AR', async () => {
     const bufNumerico = await crearLibroUnaHoja('CERTIF K9', [
       ['TOTAL MES', 22535209.93],
-      ['ÍTEMS'],
-      ['431'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K9', 'Salta', 1, 10, 10],
     ]);
     const rNumerico = await parsearExcel(bufNumerico, 'test.xlsx', 2025, 2);
     expect(rNumerico.total_declarado).toBe(22535209.93);
 
     const bufTexto = await crearLibroUnaHoja('CERTIF K9', [
       ['TOTAL MES', '22.535.210'],
-      ['ÍTEMS'],
-      ['431'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K9', 'Salta', 1, 10, 10],
     ]);
     const rTexto = await parsearExcel(bufTexto, 'test.xlsx', 2025, 2);
     expect(rTexto.total_declarado).toBe(22535210);
@@ -138,7 +152,7 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 3: fmt_item — float de celda, texto con coma, texto alfanumérico, celda vacía descartada.
   it('fmt_item: numérico entero, decimal con coma, texto tal cual; vacío se descarta', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K1', [
-      ['ÍTEMS'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
       [431],
       ['431,2'],
       ['116-a'],
@@ -154,7 +168,7 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 4: fila de subtotal "TOTAL:" descartada; header repetido descartado.
   it('descarta filas de subtotal ("TOTAL:") y repeticiones del header', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K2', [
-      ['ÍTEMS'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
       ['431'],
       ['TOTAL:'],
       ['ÍTEMS'],
@@ -174,7 +188,7 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
       [],
       [],
       [],
-      ['ÍTEMS'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
       ['431'],
       [null],
       ['432'],
@@ -188,8 +202,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 6 (fix B6): headers duplicados (dos columnas "TOTAL") → toma la primera.
   it('fix B6: headers duplicados no corrompen el mapeo, toma la primera columna', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K4', [
-      ['ÍTEMS', 'TOTAL', 'TOTAL'],
-      ['431', 100, 999],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', 'TOTAL', 'TOTAL'],
+      ['431', 'K4', 'Salta', 5, 50, 100, 999],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -209,8 +223,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // la stringificación; este test deja la divergencia documentada y cubierta.
   it('fmt_num en celda numérica real: "431" (no "431.0" como pandas) — divergencia inocua por cast DECIMAL', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K13', [
-      ['ÍTEMS', 'TOTAL'],
-      ['431', 431.0],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', 'TOTAL'],
+      ['431', 'K13', 'Salta', 1, 10, 431.0],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -221,8 +235,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 7a: contrato desde celda "8" → "K8".
   it('contrato: celda "8" se normaliza a "K8"', async () => {
     const buf = await crearLibroUnaHoja('CERTIF GENERAL', [
-      ['ÍTEMS', 'K GASNOR'],
-      ['431', '8'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', '8', 'Salta', 1, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -234,8 +248,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 7b: contrato vacío en la celda → fallback a meta.k_gasnor por nombre de hoja.
   it('contrato: celda vacía usa el k_gasnor de la meta (nombre de hoja "CERTIF K12 SUR")', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K12 SUR', [
-      ['ÍTEMS', 'K GASNOR'],
-      ['431', null],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', null, 'Salta', 1, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -247,8 +261,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 7c: sin celda ni meta → tiene_error true + mensaje.
   it('contrato: sin celda y sin meta → tiene_error true con "Contrato K no detectado."', async () => {
     const buf = await crearLibroUnaHoja('CERTIF GENERAL2', [
-      ['ÍTEMS', 'K GASNOR'],
-      ['431', null],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', null, 'Salta', 1, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -266,8 +280,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 8: "Cantidad es 0." se anota pero NO marca tiene_error.
   it('cantidad 0 se anota en errores pero no marca tiene_error', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K5', [
-      ['ÍTEMS', 'K GASNOR', 'CANTIDADES'],
-      ['431', 'K5', 0],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K5', 'Salta', 0, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -284,7 +298,13 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 9a: libro con hoja CERTIF* y otra que no → solo se procesa la primera CERTIF*.
   it('hojas: si hay hojas CERTIF*, solo se procesan esas (se ignora "Resumen")', async () => {
     const buf = await crearLibro([
-      { nombre: 'CERTIF K8', filas: [['ÍTEMS'], ['431']] },
+      {
+        nombre: 'CERTIF K8',
+        filas: [
+          ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+          ['431', 'K8', 'Salta', 1, 10, 10],
+        ],
+      },
       { nombre: 'Resumen', filas: [['ÍTEMS'], ['999']] },
     ]);
 
@@ -297,8 +317,20 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 9b: libro sin hojas CERTIF* → se procesan todas.
   it('hojas: si ninguna hoja empieza con CERTIF, se procesan todas', async () => {
     const buf = await crearLibro([
-      { nombre: 'Datos1', filas: [['ÍTEMS'], ['431']] },
-      { nombre: 'Datos2', filas: [['ÍTEMS'], ['432']] },
+      {
+        nombre: 'Datos1',
+        filas: [
+          ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+          ['431', 'K1', 'Salta', 1, 10, 10],
+        ],
+      },
+      {
+        nombre: 'Datos2',
+        filas: [
+          ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+          ['432', 'K1', 'Salta', 1, 10, 10],
+        ],
+      },
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -311,8 +343,8 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   it('meta: extrae nro_np de la fila "NRO. DE NP"', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K9', [
       ['NRO. DE NP', '12345'],
-      ['ÍTEMS'],
-      ['431'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K9', 'Salta', 1, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -323,9 +355,9 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   // Caso 11: provincia .title() y literales NAN/#N/A → null.
   it('provincia se titula ("salta"→"Salta"); literales NAN/#N/A se normalizan a null', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K10', [
-      ['ÍTEMS', 'PROVINCIA', 'TAREA'],
-      ['431', 'salta', 'NAN'],
-      ['432', '#N/A', 'x'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'TAREA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K10', 'salta', 'NAN', 1, 10, 10],
+      ['432', 'K10', '#N/A', 'x', 1, 10, 10],
     ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
@@ -367,11 +399,74 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
   });
 
   it('periodo y fecha siempre vienen del período recibido, no del archivo', async () => {
-    const buf = await crearLibroUnaHoja('CERTIF K1', [['ÍTEMS'], ['431']]);
+    const buf = await crearLibroUnaHoja('CERTIF K1', [
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K1', 'Salta', 1, 10, 10],
+    ]);
 
     const r = await parsearExcel(buf, 'test.xlsx', 2026, 9);
 
     expect(r.periodo).toBe('2026-09');
     expect(r.filas[0].fecha).toBe('2026-09-01');
+  });
+});
+
+describe('parsearExcel: columnas requeridas e ignoradas', () => {
+  it('lista CUENTA como ignorada y no la confunde con cantidades', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CERTIFICO K8');
+    ws.addRow(['NRO. WK', '362000594']);
+    ws.addRow(['PERIODO A CERTIFICAR', '1/8/2026', '31/8/2026']);
+    ws.addRow(['ÍTEMS', 'TAREA', 'K GASNOR', 'PROVINCIA', 'CUENTA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES']);
+    ws.addRow([436, 'Instalación', 'K8', 'Salta', 922, 16, 240007.08, 3840113.28]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+    const r = await parsearExcel(buf, 'CERTIFICADOS SERTEC (K8) -agosto 26.xlsx', 2026, 8);
+    expect(r.columnas_ignoradas).toEqual(['CUENTA']);
+    expect(r.filas[0].cantidades).toBe('16');
+    expect(r.filas[0].nro_np).toBe('362000594');
+    expect(r.periodo_archivo).toEqual({ desde: '2026-08-01', hasta: '2026-08-31' });
+    expect(r.k_nombre_archivo).toBe('K8');
+    expect(r.avisos.some((a) => a.tipo === 'columna_ignorada')).toBe(true);
+  });
+
+  it('sin columna de total: error de header con faltantes, sin filas', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CERTIFICO K8');
+    ws.addRow(['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES']);
+    ws.addRow([436, 'K8', 'Salta', 16, 240007.08]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+    const r = await parsearExcel(buf, 'x.xlsx', 2026, 8);
+    expect(r.filas).toEqual([]);
+    expect(r.errores[0].campo).toBe('header');
+    expect(r.errores[0].mensaje).toContain('total_mes');
+  });
+
+  it('celda de TEXTO con monto es-AR: "400.012" → 400012', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CERTIFICO K8');
+    ws.addRow(['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES']);
+    ws.addRow([442, 'K8', 'Salta', '3', '133.337,26', '400.012']);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+    const r = await parsearExcel(buf, 'x.xlsx', 2026, 8);
+    expect(r.filas[0].total_mes).toBe('400012');
+    expect(r.filas[0].precio_unitario).toBe('133337.26');
+  });
+
+  it('sin total declarado (null o 0): aviso fuerte sin_total_declarado', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K1', [
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K1', 'Salta', 1, 10, 10],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.total_declarado).toBeNull();
+    const aviso = r.avisos.find((a) => a.tipo === 'sin_total_declarado');
+    expect(aviso).toBeDefined();
+    expect(aviso?.fuerte).toBe(true);
+    expect(aviso?.fila).toBe(0);
+    expect(aviso?.mensaje).toBe(
+      'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
+    );
   });
 });
