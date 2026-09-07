@@ -25,9 +25,16 @@
  * (mismo comportamiento, incluida la duplicación de números entre páginas
  * si el PDF tiene más de una).
  */
-import { AvisoParseo, ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
-import { parsearMontoTexto } from './montos';
+import {
+  AvisoParseo,
+  ErrorParseo,
+  FilaParseada,
+  PeriodoArchivo,
+  ResultadoParseo,
+} from './parser-tipos';
+import { montoANumero, parsearMontoTexto } from './montos';
 import { extraerKDeNombre } from './nombre-archivo';
+import { parsearFechaDMA } from './fechas';
 
 /** Palabra con posición, equivalente al dict que devuelve `page.extract_words()` de pdfplumber. */
 export interface PalabraPosicionada {
@@ -145,6 +152,7 @@ interface Meta {
   k_gasnor: string | null;
   nro_np: string | null;
   total_declarado: number | null;
+  periodo_archivo: PeriodoArchivo | null;
 }
 
 function pad2(n: number): string {
@@ -374,22 +382,51 @@ export function agruparPorLinea(words: PalabraPosicionada[]): Map<number, Palabr
 }
 
 /**
- * `_extraer_meta`: k_gasnor por `\bK(\d+)\b` en el texto completo;
- * total_declarado por `TOTAL MES \$? ((?:[\d.,]+\s*)+)` (monto que puede
- * venir partido en varias palabras). `nro_np` nunca se completa en el PDF
- * (el Python original no lo busca acá) — queda siempre null.
+ * `_extraer_meta`, extendida (brief T5): k_gasnor por `\bK(\d+)\b` en el
+ * texto completo; `nro_np` por la etiqueta "NRO. [DE] NP|WK" seguida de 4+
+ * dígitos (Naturgy usa las dos formas según el archivo — "NRO. DE NP" y
+ * "NRO. WK" — según la certificación); `periodo_archivo` por "PERIODO A
+ * CERTIFICAR d/m/aaaa d/m/aaaa"; `total_declarado` por el primer monto REAL
+ * después de "TOTAL MES", saltando tokens "$"/"-" sueltos (columna de saldo
+ * vacía antes del total real) y volviendo a pegar el monto si el extractor
+ * lo partió en varios tokens numéricos consecutivos (ver test "monto
+ * partido en varias palabras").
  */
 export function extraerMeta(words: PalabraPosicionada[]): Meta {
-  const meta: Meta = { k_gasnor: null, nro_np: null, total_declarado: null };
-  const full = words.map((w) => w.text).join(' ').toUpperCase();
+  const meta: Meta = {
+    k_gasnor: null,
+    nro_np: null,
+    total_declarado: null,
+    periodo_archivo: null,
+  };
+  const full = words
+    .map((w) => w.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 
   const mK = full.match(/\bK(\d+)\b/);
   if (mK) meta.k_gasnor = 'K' + mK[1];
 
-  const mTotal = full.match(/TOTAL MES\s*\$?\s*((?:[\d.,]+\s*)+)/);
+  const mNp = full.match(/NRO\.?\s*(?:DE\s+)?(?:NP|WK)\s+(\d{4,})/);
+  if (mNp) meta.nro_np = mNp[1];
+
+  const mPer = full.match(
+    /PERIODO A CERTIFICAR\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}\/\d{1,2}\/\d{4})/,
+  );
+  if (mPer) {
+    const desde = parsearFechaDMA(mPer[1]);
+    const hasta = parsearFechaDMA(mPer[2]);
+    if (desde && hasta) meta.periodo_archivo = { desde, hasta };
+  }
+
+  // Salta tokens "$"/"-" sueltos (p. ej. "TOTAL MES $ - $ 22.535.210": la
+  // primera columna de saldo viene vacía) y después pega los tokens
+  // numéricos consecutivos que hayan quedado partidos por el extractor.
+  const mTotal = full.match(/TOTAL MES(?:\s+[$-])*\s+([\d.,]+(?:\s[\d.,]+)*)/);
   if (mTotal) {
-    const n = limpiarNum(mTotal[1].replace(/\s+/g, ''));
-    if (n !== null) meta.total_declarado = Number(n);
+    const n = montoANumero(mTotal[1].replace(/\s+/g, ''));
+    if (n !== null && n > 0) meta.total_declarado = n;
   }
   return meta;
 }
@@ -495,6 +532,8 @@ export interface ResultadoPagina {
   columnasIgnoradas: string[];
   /** Avisos de lectura de esta página (columna ignorada, línea no leída, etc.). */
   avisos: AvisoParseo[];
+  /** Período a certificar declarado en la cabecera de esta página, si lo trae. */
+  periodoArchivo: PeriodoArchivo | null;
 }
 
 /**
@@ -513,11 +552,13 @@ export function procesarPagina(
     totalDeclarado: null,
     columnasIgnoradas: [],
     avisos: [],
+    periodoArchivo: null,
   };
   if (words.length === 0) return resultado;
 
   const meta = extraerMeta(words);
   resultado.totalDeclarado = meta.total_declarado;
+  resultado.periodoArchivo = meta.periodo_archivo;
 
   const lineas = agruparPorLinea(words);
   const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
@@ -741,6 +782,7 @@ export async function parsearPdf(
     resultado.errores.push(...pagina.errores);
     resultado.avisos.push(...pagina.avisos);
     if (resultado.total_declarado === null) resultado.total_declarado = pagina.totalDeclarado;
+    if (resultado.periodo_archivo === null) resultado.periodo_archivo = pagina.periodoArchivo;
     for (const columna of pagina.columnasIgnoradas) {
       if (!resultado.columnas_ignoradas.includes(columna)) {
         resultado.columnas_ignoradas.push(columna);
@@ -755,6 +797,27 @@ export async function parsearPdf(
       fila: 0,
       fuerte: false,
       mensaje: `Columna ignorada: ${columna}. Sus valores no se asignaron a ninguna columna.`,
+    });
+  }
+
+  if (resultado.total_declarado === null) {
+    resultado.avisos.push({
+      tipo: 'sin_total_declarado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: true,
+      mensaje:
+        'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
+    });
+  }
+
+  if (resultado.filas.length > 0 && resultado.filas.every((f) => f.nro_np === null)) {
+    resultado.avisos.push({
+      tipo: 'np_no_detectado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: 'No se detectó el número de NP/WK en la cabecera.',
     });
   }
 

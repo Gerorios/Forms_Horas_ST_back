@@ -373,9 +373,36 @@ describe('extraerMeta', () => {
     expect(meta.total_declarado).toBe(39072433.92);
   });
 
-  it('nro_np siempre null (el Python original no lo completa en PDF)', () => {
-    const meta = extraerMeta([w('NRO', 0, 0), w('DE', 20, 0), w('NP', 40, 0), w('55', 60, 0)]);
+  it('nro_np null si no hay etiqueta NP/WK', () => {
+    const meta = extraerMeta([w('CONTRATO', 0, 0), w('K12', 50, 0), w('NORTE', 100, 0)]);
     expect(meta.nro_np).toBeNull();
+  });
+});
+
+describe('extraerMeta (K11/K8 agosto 2026)', () => {
+  const words = (txt: string) => txt.split(' ').map((t, i) => w(t, i * 30, 10));
+
+  it('NP con etiqueta "NRO. WK"', () => {
+    expect(extraerMeta(words('CONTRATISTA SER&TEC NRO. WK 362000594 K K2')).nro_np).toBe(
+      '362000594',
+    );
+  });
+  it('NP con etiqueta "NRO. DE NP"', () => {
+    expect(extraerMeta(words('NRO. DE NP 362000594 PRESUP MES')).nro_np).toBe('362000594');
+  });
+  it('período a certificar', () => {
+    expect(extraerMeta(words('PERIODO A CERTIFICAR 1/8/2026 30/8/2026')).periodo_archivo).toEqual({
+      desde: '2026-08-01',
+      hasta: '2026-08-30',
+    });
+  });
+  it('total declarado sin centavos y con miles: "TOTAL MES $ - $ 22.535.210" -> 22535210', () => {
+    expect(extraerMeta(words('TOTAL MES $ - $ 22.535.210 SALDO')).total_declarado).toBe(22535210);
+  });
+  it('total declarado con centavos: "TOTAL MES $ 14.804.767,81"', () => {
+    expect(
+      extraerMeta(words('TOTAL MES $ 14.804.767,81 $ 14.804.767,81')).total_declarado,
+    ).toBeCloseTo(14804767.81, 2);
   });
 });
 
@@ -425,7 +452,7 @@ describe('procesarFila', () => {
     w('PROVINCIA', 200, 0),
     w('K', 300, 0),
   ]);
-  const meta = { k_gasnor: null, nro_np: null, total_declarado: null };
+  const meta = { k_gasnor: null, nro_np: null, total_declarado: null, periodo_archivo: null };
 
   it('limpia la provincia pegada al contratista', () => {
     const grupo = [
@@ -454,7 +481,7 @@ describe('procesarFila', () => {
   });
 
   it('contrato ausente cae al k_gasnor de la meta', () => {
-    const metaConK = { k_gasnor: 'K9', nro_np: null, total_declarado: null };
+    const metaConK = { k_gasnor: 'K9', nro_np: null, total_declarado: null, periodo_archivo: null };
     const grupo = [[w('A123', 0, 0), w('Constructora', 100, 0), w('Salta', 200, 0)]];
     const { fila } = procesarFila(grupo, colMap, 'archivo.pdf', 3, 2026, 8, metaConK);
     expect(fila.contrato).toBe('K9');
