@@ -7,11 +7,23 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/**
+ * Formato aceptado en los tres campos de dinero/cantidad (`cantidades`,
+ * `precio_unitario`, `total_mes`): entero con hasta 4 decimales, coma o
+ * punto como separador. Rechaza notación científica ('1e3'), 'Infinity',
+ * 'NaN', espacios y cualquier otra cosa que `Number()` aceptaría pero que
+ * no es una cifra que una persona haya tipeado. El service normaliza la
+ * coma a punto antes de guardar en la fila (ver CargaService.confirmar).
+ */
+const RE_CIFRA = /^\d+([.,]\d{1,4})?$/;
+const msgCifra = (campo: string) => `${campo} debe ser un número (hasta 4 decimales)`;
 
 /**
  * Body de /certificaciones/carga/preview (multipart, campos de texto junto
@@ -41,6 +53,14 @@ export class PreviewCargaDto {
  * service, además, nunca hace spread del DTO sobre la fila — solo lee
  * estos 8 campos explícitamente, así el whitelist no depende únicamente
  * de la config global.
+ *
+ * CONTRATO CON EL CLIENTE (idempotencia del confirmar): cada `confirmar`
+ * parte de los valores ORIGINALES del preview — el server resetea todas
+ * las filas de la sesión a como las produjo el preview antes de aplicar
+ * `ediciones`. Por eso el cliente manda TODAS las ediciones vigentes en
+ * cada intento, no solo las nuevas: omitir un campo (o una fila entera)
+ * significa "valor original", no "dejá lo del intento anterior". Así un
+ * reintento después de un 422 no arrastra estado de la llamada fallida.
  */
 export class EdicionFilaDto {
   @IsUUID()
@@ -48,18 +68,24 @@ export class EdicionFilaDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
   contrato?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   provincia?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('cantidades') })
   cantidades?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('total_mes') })
   total_mes?: string;
 
   @IsOptional()
@@ -68,10 +94,13 @@ export class EdicionFilaDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('precio_unitario') })
   precio_unitario?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
   item_codigo?: string;
 
   @IsOptional()
@@ -96,14 +125,17 @@ export class FilaManualDto {
 
   @IsString()
   @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('cantidades') })
   cantidades: string;
 
   @IsString()
   @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('precio_unitario') })
   precio_unitario: string;
 
   @IsString()
   @MaxLength(30)
+  @Matches(RE_CIFRA, { message: msgCifra('total_mes') })
   total_mes: string;
 
   @IsOptional()
