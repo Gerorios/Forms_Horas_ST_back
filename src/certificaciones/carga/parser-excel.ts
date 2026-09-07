@@ -12,11 +12,18 @@
  *     así headers duplicados no corrompen valores (toma la primera).
  *
  * Nota exceljs: una celda puede traer number, string, Date, {richText:[...]}
- * o {formula, result}. `valorCelda` normaliza todo a lo que produciría
+ * o {formula, result}. `rawDeCelda` normaliza todo a lo que produciría
  * `str(v)` en pandas para los fines de este parser. Para números elegimos
- * `String(numero)` simple (p.ej. 431 → "431", no "431.0"): tanto "431" como
- * "431.0" parsean igual en fmt_num/fmt_item, así que el resultado final no
- * cambia — documentado a pedido del brief.
+ * `String(numero)` simple (p.ej. 431 → "431", no "431.0").
+ *
+ * Regla de montos (fix crítico 2026-09-07, ver `./montos`): la regla es-AR
+ * de TEXTO (punto = miles, coma = decimal) SOLO aplica a celdas que eran
+ * texto en el Excel. Una celda NUMÉRICA real (o fórmula cuyo resultado es
+ * number) ya trae el valor correcto — ahí el punto es el separador decimal
+ * de JS, no de miles — así que `fmtNum`/`parsearMonto` la devuelven tal
+ * cual sin pasar por `parsearMontoTexto` (p.ej. 59164.8 no debe leerse
+ * como "591648"). `celdaEsNumerica` decide el origen antes de aplicar la
+ * regla de texto.
  */
 import * as ExcelJS from 'exceljs';
 import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
@@ -82,6 +89,21 @@ function rawDeCelda(cell: ExcelJS.Cell): string | null {
   return rawToStr(v);
 }
 
+/**
+ * true si el valor PLANO de la celda (tras resolver fórmula, igual que
+ * `rawDeCelda`) es un number de JS — no una celda de texto con dígitos.
+ * Distingue el origen para decidir si aplica la regla es-AR de montos en
+ * texto (`./montos`) o si el número real ya viene correcto.
+ */
+function celdaEsNumerica(cell: ExcelJS.Cell): boolean {
+  const v = cell.value;
+  if (v !== null && typeof v === 'object' && ('formula' in (v as any) || 'sharedFormula' in (v as any))) {
+    const res = cell.result;
+    return typeof valorCeldaPlano((res === undefined ? null : res) as ExcelJS.CellValue) === 'number';
+  }
+  return typeof valorCeldaPlano(v) === 'number';
+}
+
 /** Equivalente a `str(v)` de Python para los tipos que produce exceljs. */
 function rawToStr(v: ExcelJS.CellValue): string | null {
   const plano = valorCeldaPlano(v);
@@ -110,20 +132,29 @@ function extraerRegion(nombreHoja: string): string {
 }
 
 /**
- * '$ 39.072.433,92' | '39072433,92' → number, o null si no es un monto.
- * Regla única es-AR (ver `./montos`): punto = miles, coma = decimal, sin
- * heurística por forma. Aplica solo a celdas de TEXTO; las numéricas de
- * Excel no pasan por acá.
+ * '$ 39.072.433,92' (texto) | 39072433.92 (celda numérica real) → number,
+ * o null si no es un monto. Si `esNumero` es true la celda ya trae el
+ * valor correcto (el punto es decimal de JS, no separador de miles) y se
+ * devuelve tal cual; si no, se aplica la regla única es-AR de texto
+ * (`./montos`: punto = miles, coma = decimal, sin heurística por forma).
  */
-function parsearMonto(v: string): number | null {
+function parsearMonto(v: string, esNumero: boolean): number | null {
+  if (esNumero) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
   return montoANumero(v);
 }
 
 /**
- * fmt_num: normaliza es-AR con la regla única (`./montos`); devuelve
- * STRING normalizada o null si no parsea.
+ * fmt_num: si `esNumero` es true (celda numérica real de Excel) devuelve
+ * el valor tal cual (confirmando que parsea); si no, normaliza es-AR con
+ * la regla única de texto (`./montos`). Devuelve STRING normalizada o
+ * null si no parsea.
  */
-function fmtNum(v: string | null): string | null {
+function fmtNum(v: string | null, esNumero: boolean): string | null {
+  if (v === null) return null;
+  if (esNumero) return Number.isFinite(Number(v)) ? v : null;
   return parsearMontoTexto(v);
 }
 
@@ -199,33 +230,35 @@ function extraerMeta(
   const filasMeta = Math.min(13, worksheet.rowCount || 0);
   for (let r = 1; r <= filasMeta; r++) {
     const row = worksheet.getRow(r);
-    const vals: string[] = [];
+    const vals: Array<{ texto: string; esNumero: boolean }> = [];
     const colCount = Math.max(row.cellCount, worksheet.columnCount || 0);
     for (let c = 1; c <= colCount; c++) {
-      const raw = rawDeCelda(row.getCell(c));
+      const cell = row.getCell(c);
+      const raw = rawDeCelda(cell);
       if (raw === null) continue;
       const trimmed = raw.trim();
       if (trimmed === '' || trimmed.toLowerCase() === 'nan') continue;
-      vals.push(trimmed);
+      vals.push({ texto: trimmed, esNumero: celdaEsNumerica(cell) });
     }
 
     for (const v of vals) {
-      if (/^K\d+$/i.test(v) && !meta.k_gasnor) meta.k_gasnor = v.toUpperCase();
+      if (/^K\d+$/i.test(v.texto) && !meta.k_gasnor) meta.k_gasnor = v.texto.toUpperCase();
     }
 
-    const filaStr = vals.join(' ').toUpperCase();
+    const filaStr = vals.map((v) => v.texto).join(' ').toUpperCase();
     if ((filaStr.includes('NRO. DE NP') || filaStr.includes('NRO DE NP')) && !meta.nro_np) {
       for (let i = 0; i < vals.length; i++) {
-        if (vals[i].toUpperCase().includes('NP') && i + 1 < vals.length) {
-          meta.nro_np = vals[i + 1];
+        if (vals[i].texto.toUpperCase().includes('NP') && i + 1 < vals.length) {
+          meta.nro_np = vals[i + 1].texto;
         }
       }
     }
 
     if (meta.total_declarado === null) {
       for (let i = 0; i < vals.length; i++) {
-        if (vals[i].toUpperCase().includes('TOTAL MES') && i + 1 < vals.length) {
-          meta.total_declarado = parsearMonto(vals[i + 1]);
+        if (vals[i].texto.toUpperCase().includes('TOTAL MES') && i + 1 < vals.length) {
+          const siguiente = vals[i + 1];
+          meta.total_declarado = parsearMonto(siguiente.texto, siguiente.esNumero);
           break;
         }
       }
@@ -269,19 +302,26 @@ function procesarFila(
     return s && !LITERALES_NULOS.has(s.toUpperCase()) ? s : null;
   };
 
+  /** true si la celda del campo era numérica en el Excel (no texto). */
+  const esNumCampo = (campo: string): boolean => {
+    const col = colMap.get(campo);
+    if (col === undefined) return false;
+    return celdaEsNumerica(row.getCell(col));
+  };
+
   const itemCodigo = fmtItem(get('item_codigo'));
   const nombreContrato = get('nombre_contrato');
   const tarea = get('tarea');
   let contrato = (get('contrato') || '').trim().toUpperCase() || meta.k_gasnor || '';
   const unidadMedida = get('unidad_medida');
-  const ptosGasnor = fmtNum(get('ptos_gasnor'));
+  const ptosGasnor = fmtNum(get('ptos_gasnor'), esNumCampo('ptos_gasnor'));
   const tipo = get('tipo');
   const contratista = get('contratista');
   const provinciaTitulo = (get('provincia') || '').trim();
   const provincia = provinciaTitulo ? tituloEs(provinciaTitulo) : '';
-  const cantidades = fmtNum(get('cantidades'));
-  const precioUnitario = fmtNum(get('precio_unitario'));
-  const totalMes = fmtNum(get('total_mes'));
+  const cantidades = fmtNum(get('cantidades'), esNumCampo('cantidades'));
+  const precioUnitario = fmtNum(get('precio_unitario'), esNumCampo('precio_unitario'));
+  const totalMes = fmtNum(get('total_mes'), esNumCampo('total_mes'));
   const observaciones = get('observaciones');
 
   if (contrato && !contrato.startsWith('K')) {

@@ -65,6 +65,10 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
     expect(f.region).toBe('Norte');
     expect(f.unidad_medida).toBe('U');
     expect(f.fila_excel).toBe(6);
+    // Fix crítico (ronda 1): celdas NUMÉRICAS reales no pasan por la regla
+    // es-AR de texto — 59164.8 sigue siendo 59164.8, no "591648".
+    expect(f.precio_unitario).toBe('59164.8');
+    expect(f.total_mes).toBe('887472');
   });
 
   // Caso 2: números es-AR (total declarado, cantidades, total_mes).
@@ -80,6 +84,55 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
     expect(r.total_declarado).toBe(39072433.92);
     expect(r.filas[0].cantidades).toBe('3.5');
     expect(r.filas[0].total_mes).toBe('1234.56');
+  });
+
+  // Caso 2b (fix crítico ronda 1): celda NUMÉRICA real con fracción no se
+  // corrompe al pasar por la regla es-AR de texto (el punto es decimal de
+  // JS, no separador de miles). Antes del fix, 59164.8 → "591648" (10x).
+  it('celda numérica con fracción conserva el valor real (no aplica la regla de texto)', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K9', [
+      ['ÍTEMS', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 59164.8, 2827089.4219859],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.filas[0].precio_unitario).toBe('59164.8');
+    expect(r.filas[0].total_mes).toBe('2827089.4219859');
+  });
+
+  // Caso 2c (fix crítico ronda 1): celda de TEXTO en las mismas columnas sigue
+  // la regla es-AR (punto = miles, coma = decimal).
+  it('celda de TEXTO en $ TOTAL MES sigue la regla es-AR de miles/decimal', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K9', [
+      ['ÍTEMS', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', '133.337,26', '400.012'],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.filas[0].precio_unitario).toBe('133337.26');
+    expect(r.filas[0].total_mes).toBe('400012');
+  });
+
+  // Caso 2d (fix crítico ronda 1): TOTAL MES de cabecera (total_declarado)
+  // respeta el mismo criterio de origen — numérico real vs texto es-AR.
+  it('total_declarado: TOTAL MES numérico real vs TOTAL MES en texto es-AR', async () => {
+    const bufNumerico = await crearLibroUnaHoja('CERTIF K9', [
+      ['TOTAL MES', 22535209.93],
+      ['ÍTEMS'],
+      ['431'],
+    ]);
+    const rNumerico = await parsearExcel(bufNumerico, 'test.xlsx', 2025, 2);
+    expect(rNumerico.total_declarado).toBe(22535209.93);
+
+    const bufTexto = await crearLibroUnaHoja('CERTIF K9', [
+      ['TOTAL MES', '22.535.210'],
+      ['ÍTEMS'],
+      ['431'],
+    ]);
+    const rTexto = await parsearExcel(bufTexto, 'test.xlsx', 2025, 2);
+    expect(rTexto.total_declarado).toBe(22535210);
   });
 
   // Caso 3: fmt_item — float de celda, texto con coma, texto alfanumérico, celda vacía descartada.
