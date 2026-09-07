@@ -172,9 +172,11 @@ function tituloEs(s: string): string {
 
 /**
  * `_es_item_valido` del PDF: código de ítem = letra opcional + 1+ dígitos +
- * sufijo opcional separado por `-.,/` (p. ej. "5", "116-a", "A12"). Una
- * línea que matchea esto YA NO alcanza para ser fila: además debe traer
- * plata (ver `lineaTraePlata`) — si no, es un aviso de `linea_no_leida`.
+ * sufijo opcional separado por `-.,/` (p. ej. "5", "116-a", "A12"). Un
+ * código en la columna de ítem ABRE un grupo (fila lógica), traiga o no
+ * plata esa misma línea; el chequeo de plata es POR GRUPO —si ninguna de
+ * sus líneas trae cantidad ni total legibles, el grupo no es fila y se
+ * reporta como aviso `linea_no_leida` (ver `procesarPagina`).
  */
 const ITEM_RE = /^[A-Za-z]?\d+([-.,/][A-Za-z0-9]+)?$/;
 export function esItemValido(s: string | null | undefined): boolean {
@@ -303,11 +305,17 @@ export function construirCabecera(headerWs: PalabraPosicionada[]): Cabecera {
     // Match exacto de la frase completa: ver el comentario de HEADER_FRASES
     // (un fallback por primera palabra secuestraría la columna real).
     const campo = HEADER_FRASES[f.texto];
-    if (campo) {
-      if (!detectados.some(([, c]) => c === campo)) detectados.push([f.x0, campo]);
+    if (campo && !detectados.some(([, c]) => c === campo)) {
+      detectados.push([f.x0, campo]);
       continue;
     }
-    if (f.itemId === undefined && CONTINUACIONES.has(f.texto)) continue;
+    // Título reconocido que REPITE un campo ya detectado (la primera
+    // ocurrencia, la de x0 menor, se queda con el campo): se trata como
+    // columna ignorada —con su propio rango x y su aviso— igual que hace
+    // `mapearColumnas` en el Excel. Descartarlo en silencio dejaba su banda
+    // x absorbida por las columnas vecinas, así que los valores de esa
+    // columna repetida se cargaban como si fueran de la de al lado.
+    if (!campo && f.itemId === undefined && CONTINUACIONES.has(f.texto)) continue;
     ignoradas.push(f.texto);
     detectados.push([f.x0, `__ignorada_${nIgn++}`]);
   }
@@ -382,7 +390,12 @@ export function agruparPorLinea(words: PalabraPosicionada[]): Map<number, Palabr
 }
 
 /**
- * `_extraer_meta`, extendida (brief T5): k_gasnor por `\bK(\d+)\b` en el
+ * `_extraer_meta`, extendida (brief T5). `procesarPagina` la llama SOLO con
+ * las palabras del bloque de cabecera (arriba de la línea de ÍTEMS) para que
+ * ningún dato de la tabla pueda hacerse pasar por meta; la firma sigue
+ * aceptando cualquier conjunto de palabras.
+ *
+ * k_gasnor por `\bK(\d+)\b` en el
  * texto completo; `nro_np` por la etiqueta "NRO. [DE] NP|WK" seguida de 4+
  * dígitos (Naturgy usa las dos formas según el archivo — "NRO. DE NP" y
  * "NRO. WK" — según la certificación); `periodo_archivo` por "PERIODO A
@@ -577,10 +590,6 @@ export function procesarPagina(
   };
   if (words.length === 0) return resultado;
 
-  const meta = extraerMeta(words);
-  resultado.totalDeclarado = meta.total_declarado;
-  resultado.periodoArchivo = meta.periodo_archivo;
-
   const lineas = agruparPorLinea(words);
   const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
 
@@ -595,6 +604,18 @@ export function procesarPagina(
       break;
     }
   }
+
+  // La meta (total mes, NP, período, K) vive en el BLOQUE DE CABECERA, arriba
+  // de la línea de ÍTEMS: se le pasan solo esas palabras. Si se le pasara la
+  // página entera, un dato de la tabla podría hacerse pasar por meta — p. ej.
+  // el texto "TOTAL MES" en la tarea de una fila seguido, en orden de lectura,
+  // por el número de la última columna: `/TOTAL MES…/` capturaría ese número
+  // como total declarado. Si no se encontró la línea de ÍTEMS no hay bloque
+  // que recortar y se mantiene el comportamiento anterior (toda la página).
+  const palabrasMeta = headerTop === null ? words : words.filter((w) => w.top < headerTop!);
+  const meta = extraerMeta(palabrasMeta);
+  resultado.totalDeclarado = meta.total_declarado;
+  resultado.periodoArchivo = meta.periodo_archivo;
 
   if (headerTop === null || !cabecera || cabecera.colMap.size === 0) return resultado;
 
@@ -673,8 +694,9 @@ export function procesarPagina(
         fila: lineasNoLeidas,
         fuerte: false,
         mensaje:
-          `Una línea de la página empieza con "${codigo}" pero no trae ` +
-          `cantidad ni total legibles. Si es un ítem certificado, agregalo como fila manual.`,
+          `Un ítem de la página empieza con "${codigo}" pero no trae cantidad ` +
+          `ni total legibles en ninguna de sus líneas. Si es un ítem certificado, ` +
+          `agregalo como fila manual.`,
       });
       continue;
     }

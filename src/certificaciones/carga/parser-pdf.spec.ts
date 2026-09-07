@@ -149,13 +149,21 @@ describe('construirColMap (límites = punto medio entre x0 consecutivos + 5)', (
     expect(colMap.get('cantidades')).toEqual([(50 + 150) / 2 + 5, 99999]);
   });
 
-  it('no duplica campo repetido y la palabra desconocida queda como columna ignorada', () => {
+  it('el título repetido queda como columna ignorada con rango propio (no se descarta)', () => {
     const header = [w('ÍTEMS', 0, 0), w('RUIDO', 20, 0), w('ITEMS', 25, 0), w('TAREA', 50, 0)];
-    const colMap = construirColMap(header);
-    // item_codigo (primera ocurrencia) + tarea + la desconocida con rango propio
-    expect(colMap.size).toBe(3);
-    expect(colMap.get('item_codigo')![0]).toBe(0);
-    expect(colMap.has('__ignorada_0')).toBe(true);
+    const c = construirCabecera(header);
+    // item_codigo (PRIMERA ocurrencia) + tarea + la desconocida + el "ITEMS"
+    // repetido, ambas ignoradas con su propio rango x: si el repetido se
+    // descartaba en silencio, su banda x se la comían las vecinas.
+    expect(c.colMap.size).toBe(4);
+    expect(c.colMap.get('item_codigo')![0]).toBe(0);
+    expect(c.ignoradas).toEqual(['RUIDO', 'ITEMS']);
+    expect(c.colMap.has('__ignorada_0')).toBe(true);
+    // el repetido tiene su propia banda x, derivada de su x0 (25) y del
+    // vecino de la derecha (TAREA en 50)
+    expect(c.colMap.get('__ignorada_1')).toEqual([(20 + 25) / 2 + 5, (25 + 50) / 2 + 5]);
+    // sigue disponible el helper de compatibilidad
+    expect(construirColMap(header).size).toBe(4);
   });
 });
 
@@ -372,7 +380,15 @@ describe('procesarPagina: fila de ítem corto y línea sin plata', () => {
     const r = procesarPagina([...header, ...linea], 'k8.pdf', 2026, 8);
     expect(r.filas).toEqual([]);
     expect(r.avisos).toEqual([
-      expect.objectContaining({ tipo: 'linea_no_leida', fila: 1, fuerte: false }),
+      expect.objectContaining({
+        tipo: 'linea_no_leida',
+        fila: 1,
+        fuerte: false,
+        mensaje:
+          'Un ítem de la página empieza con "7" pero no trae cantidad ni total ' +
+          'legibles en ninguna de sus líneas. Si es un ítem certificado, ' +
+          'agregalo como fila manual.',
+      }),
     ]);
   });
 
@@ -395,6 +411,48 @@ describe('procesarPagina: fila de ítem corto y línea sin plata', () => {
     const r = procesarPagina([...header, ...fila, ...cont], 'k8.pdf', 2026, 8);
     expect(r.filas).toHaveLength(1);
     expect(r.filas[0].tarea).toBe('Instalación de servicio');
+  });
+});
+
+describe('procesarPagina: la meta se lee SOLO del bloque arriba de la cabecera', () => {
+  // Si `extraerMeta` recibiera la página entera, un "TOTAL MES" que aparece en
+  // el TEXTO de una fila de datos (tarea) seguido de un número en orden de
+  // lectura se cargaría como total declarado del archivo.
+  const header = [
+    w('ÍTEMS', 54, 134),
+    w('TAREA', 214, 134),
+    w('K', 357, 134),
+    w('PROVINCIA', 489, 134),
+    w('Cantidades', 521, 134),
+    w('Unitario', 557, 134),
+    w('Total', 595, 134),
+  ];
+  /** Fila de datos cuya TAREA dice, literalmente, "TOTAL MES 999". */
+  const filaTrampa = [
+    w('5', 57, 157),
+    w('TOTAL', 150, 157),
+    w('MES', 180, 157),
+    w('999', 210, 157),
+    w('k8', 363, 157),
+    w('Salta', 484, 157),
+    w('4', 544, 157),
+    w('15.151,96', 568, 157),
+    w('60.608', 606, 157),
+  ];
+
+  it('el total sigue viniendo del bloque de cabecera, no del "TOTAL MES 999" de la fila', () => {
+    const bloqueMeta = [w('TOTAL', 60, 50), w('MES', 90, 50), w('$', 120, 50), w('1.000.000', 140, 50)];
+    const r = procesarPagina([...bloqueMeta, ...header, ...filaTrampa], 'k8.pdf', 2026, 8);
+    expect(r.totalDeclarado).toBe(1000000);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].tarea).toBe('TOTAL MES 999');
+    expect(r.filas[0].total_mes).toBe('60608');
+  });
+
+  it('si el único "TOTAL MES" está DEBAJO de la cabecera, el total queda en null', () => {
+    const r = procesarPagina([...header, ...filaTrampa], 'k8.pdf', 2026, 8);
+    expect(r.totalDeclarado).toBeNull();
+    expect(r.filas).toHaveLength(1);
   });
 });
 
