@@ -47,9 +47,16 @@ export function avisoKNombre(kNombre: string | null, ksResueltos: string[], hoja
 }
 
 /**
- * Avisa (FUERTE) si el período que declara el archivo no incluye el mes/año
- * elegido por el usuario en la UI. `null` si el archivo no declara período,
- * o si el período elegido cae dentro del rango declarado (desde/hasta).
+ * Avisa (FUERTE) si el mes/año elegido por el usuario en la UI no coincide
+ * con NINGUNO de los dos EXTREMOS del período que declara el archivo.
+ *
+ * OJO: no es contención dentro del rango — se compara 'YYYY-MM' con
+ * `startsWith` contra `desde` y contra `hasta`, nada más. Un período
+ * 1/1/2026–31/12/2026 con el usuario eligiendo junio 2026 SÍ avisa, aunque
+ * junio caiga dentro del rango: los períodos reales son mensuales (o a lo
+ * sumo cruzan dos meses), así que un rango largo es de por sí sospechoso y
+ * conviene que la persona lo mire. `null` si el archivo no declara período
+ * o si el mes elegido es el de `desde` o el de `hasta`.
  */
 export function avisoPeriodo(
   p: PeriodoArchivo | null,
