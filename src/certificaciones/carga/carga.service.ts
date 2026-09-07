@@ -8,10 +8,11 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CertClaim } from '../accesos.service';
-import { ErrorParseo, FilaParseada } from './parser-tipos';
+import { AvisoParseo, ErrorParseo, FilaParseada, PeriodoArchivo } from './parser-tipos';
 import { parsearExcel } from './parser-excel';
 import { parsearPdf } from './parser-pdf';
 import { esFilaPlantilla, revalidarFila } from './validacion';
+import { avisoKNombre, avisoPeriodo } from './avisos';
 import { ResolucionService } from './resolucion.service';
 import { PreviewStore, PreviewSession, FilaPreview } from './preview-store';
 import { ConfirmarCargaDto } from '../dto/carga.dto';
@@ -32,6 +33,9 @@ const DETALLE_ERRORES_MAX = 2000;
 export interface ResumenPreview {
   total: number;
   con_error: number;
+  /** Alias de `con_error` (mismo número) bajo el nombre que consume el
+   * frontend nuevo — se mantiene `con_error` por compatibilidad. */
+  bloqueadas: number;
   total_mes: number;
   total_declarado: number | null;
 }
@@ -44,6 +48,10 @@ export interface RespuestaPreview {
   resumen: ResumenPreview;
   filas: FilaPreview[];
   errores: ErrorParseo[];
+  avisos: AvisoParseo[];
+  columnas_ignoradas: string[];
+  periodo_archivo: PeriodoArchivo | null;
+  k_nombre_archivo: string | null;
 }
 
 export interface ErrorConfirmar {
@@ -131,7 +139,7 @@ export class CargaService {
         null,
       );
       const filaResuelta: FilaParseada = { ...f, contrato: contrato ?? '' };
-      const { tieneError, detalle } = revalidarFila(filaResuelta, {
+      const { tieneError, detalle, cuadratura } = revalidarFila(filaResuelta, {
         itemExiste: itemEnMaestro,
         provinciasValidas,
       });
@@ -147,12 +155,24 @@ export class CargaService {
         contrato_fuente: fuente,
         contrato_del_maestro: fuente === 'maestro' ? contrato : null,
         excluida: false,
+        cuadratura,
+        confirmada: false,
+        origen: 'archivo',
       };
       filasMap.set(rowId, filaPreview);
 
       if (tieneError) conError++;
       else totalMes += num(filaPreview.total_mes);
     }
+
+    const ksResueltos = [
+      ...new Set(Array.from(filasMap.values()).map((f) => f.contrato).filter(Boolean)),
+    ];
+    const avisos = [...resultado.avisos];
+    const aK = avisoKNombre(resultado.k_nombre_archivo, ksResueltos, resultado.archivo);
+    if (aK) avisos.push(aK);
+    const aP = avisoPeriodo(resultado.periodo_archivo, anio, mes, resultado.archivo);
+    if (aP) avisos.push(aP);
 
     const previewId = randomUUID();
     const sesion: PreviewSession = {
@@ -163,6 +183,9 @@ export class CargaService {
       mes,
       filas: filasMap,
       creadaEn: Date.now(),
+      total_declarado: resultado.total_declarado,
+      k_nombre_archivo: resultado.k_nombre_archivo,
+      periodo_archivo: resultado.periodo_archivo,
     };
     this.store.guardar(sesion);
 
@@ -174,11 +197,16 @@ export class CargaService {
       resumen: {
         total: visibles.length,
         con_error: conError,
+        bloqueadas: conError,
         total_mes: totalMes,
         total_declarado: resultado.total_declarado,
       },
       filas: Array.from(filasMap.values()),
       errores: resultado.errores,
+      avisos,
+      columnas_ignoradas: resultado.columnas_ignoradas,
+      periodo_archivo: resultado.periodo_archivo,
+      k_nombre_archivo: resultado.k_nombre_archivo,
     };
   }
 

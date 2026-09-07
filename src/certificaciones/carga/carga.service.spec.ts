@@ -124,7 +124,13 @@ describe('CargaService.preview', () => {
     const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100, 300]]);
     const resp = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
 
-    expect(resp.resumen).toEqual({ total: 1, con_error: 0, total_mes: 300, total_declarado: null });
+    expect(resp.resumen).toEqual({
+      total: 1,
+      con_error: 0,
+      bloqueadas: 0,
+      total_mes: 300,
+      total_declarado: null,
+    });
     expect(resp.filas).toHaveLength(1);
     expect(resp.filas[0].item_en_maestro).toBe(true);
     expect(resp.filas[0].rowId).toBeTruthy();
@@ -155,6 +161,35 @@ describe('CargaService.preview', () => {
     ]);
     const resp = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     expect(resp.resumen.total).toBe(1);
+  });
+
+  it('avisos de negocio: K del nombre distinto del resuelto + período del archivo distinto del elegido (Task 11)', async () => {
+    const { prisma } = crearPrismaMock({
+      maestro: [{ itemCodigo: '431', codigoK: 'K2', idItem: 1, ptosGasnor: null, idContrato: 1 }],
+    });
+    const service = new CargaService(prisma as any, new ResolucionService(prisma as any), new PreviewStore());
+
+    // Archivo "K11..." pero la fila cuadra en K2 (maestro) + cabecera con
+    // "PERIODO A CERTIFICAR" de julio, mientras se elige agosto en la UI.
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CERTIF');
+    ws.addRow(['PERIODO A CERTIFICAR', '1/7/2026', '31/7/2026']);
+    ws.addRow(['ÍTEMS', 'TAREA', 'K', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', 'TOTAL']);
+    ws.addRow(['431', 'Tarea', 'K2', 'Salta', 3, 100, 300]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const resp = await service.preview(buf, 'K11 certificacion.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
+
+    expect(resp.resumen.bloqueadas).toBe(0);
+    expect(resp.k_nombre_archivo).toBe('K11');
+    expect(resp.periodo_archivo).toEqual({ desde: '2026-07-01', hasta: '2026-07-31' });
+    expect(resp.avisos).toContainEqual(
+      expect.objectContaining({ tipo: 'k_nombre_archivo', fuerte: false }),
+    );
+    expect(resp.avisos).toContainEqual(
+      expect.objectContaining({ tipo: 'periodo_archivo', fuerte: true }),
+    );
+    expect(resp.filas[0].cuadratura.cuadra).toBe(true);
   });
 });
 

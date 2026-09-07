@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { FilaParseada } from './parser-tipos';
+import { FilaParseada, PeriodoArchivo } from './parser-tipos';
+import { Cuadratura } from './validacion';
 
 /**
  * Cache preview→confirmar de certificaciones, portada de app/services/
@@ -35,6 +36,16 @@ export interface FilaPreview extends FilaParseada {
    * frontend (inventario §6) para que `confirmar` lo respete por fila —
    * es la contraparte natural de `EdicionFilaDto.excluida`. */
   excluida: boolean;
+  /** Cuadratura calculada en el preview (Task 7/11): cantidad×unitario vs
+   * total impreso, con tolerancia de $1. Se recalcula en `confirmar`. */
+  cuadratura: Cuadratura;
+  /** Siempre `false` en el preview inicial; `confirmar` la usa para levantar
+   * el bloqueo por cuadratura de una fila que el usuario confirmó a mano
+   * (Task 12 — no se toca acá salvo el tipo). */
+  confirmada: boolean;
+  /** 'archivo' para toda fila salida del parser; 'manual' para las que
+   * agrega el usuario a mano en el preview (Task 9/10, filasManuales). */
+  origen: 'archivo' | 'manual';
 }
 
 export interface PreviewSession {
@@ -45,6 +56,14 @@ export interface PreviewSession {
   mes: number;
   filas: Map<string, FilaPreview>;
   creadaEn: number;
+  /** Total declarado por el archivo (cabecera), para controlar la carga
+   * contra ese número; `null` si no se pudo leer. */
+  total_declarado: number | null;
+  /** K que menciona el nombre del archivo (p.ej. "K11.pdf" → "K11"); `null`
+   * si el nombre no trae ningún K. */
+  k_nombre_archivo: string | null;
+  /** Período que declara la cabecera del archivo; `null` si no se detectó. */
+  periodo_archivo: PeriodoArchivo | null;
 }
 
 @Injectable()

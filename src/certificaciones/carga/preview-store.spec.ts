@@ -29,6 +29,9 @@ function filaPreview(overrides: Partial<FilaPreview> = {}): FilaPreview {
     contrato_fuente: 'archivo',
     contrato_del_maestro: null,
     excluida: false,
+    cuadratura: { calculado: null, impreso: 100, diferencia: null, cuadra: false, sugerencia_cantidad: null },
+    confirmada: false,
+    origen: 'archivo',
     ...overrides,
   };
 }
@@ -43,6 +46,9 @@ function sesion(overrides: Partial<PreviewSession> = {}): PreviewSession {
     mes: 8,
     filas: new Map([[fila.rowId, fila]]),
     creadaEn: Date.now(),
+    total_declarado: null,
+    k_nombre_archivo: null,
+    periodo_archivo: null,
     ...overrides,
   };
 }
