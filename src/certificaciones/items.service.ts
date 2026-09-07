@@ -61,6 +61,32 @@ export class ItemsService {
     }));
   }
 
+  /**
+   * Ítems del maestro para armar filas manuales en la carga (Task 13):
+   * admin ve todos; carga ve solo los de sus K (`cert.ks`); otro nivel
+   * (o sin claim) → 403, misma regla que `CargaService.exigirNivelCarga`.
+   */
+  async listarParaCarga(cert: CertClaim | null): Promise<
+    { id_item: number; item_codigo: string; codigo_k: string; tarea: string; unidad_medida: string | null }[]
+  > {
+    if (!cert || (cert.nivel !== 'admin' && cert.nivel !== 'carga')) {
+      throw new ForbiddenException('Solo niveles admin y carga pueden cargar certificaciones.');
+    }
+    if (cert.nivel === 'carga' && cert.ks.length === 0) return [];
+    const where = cert.nivel === 'carga' ? Prisma.sql` WHERE dc.codigo_k IN (${Prisma.join(cert.ks)})` : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT di.id_item, di.item_codigo, dc.codigo_k, di.tarea, di.unidad_medida
+      FROM sth_cert_items di JOIN sth_cert_contratos dc ON di.id_contrato = dc.id_contrato${where}
+      ORDER BY dc.codigo_k, di.item_codigo + 0, di.item_codigo`);
+    return rows.map((r) => ({
+      id_item: Number(r.id_item),
+      item_codigo: r.item_codigo,
+      codigo_k: r.codigo_k,
+      tarea: r.tarea,
+      unidad_medida: r.unidad_medida ?? null,
+    }));
+  }
+
   private async resolverContrato(codigoK: string): Promise<{ id_contrato: number; codigo_k: string }> {
     const contrato = await this.prisma.certContratoErp.findFirst({
       where: { codigo_k: codigoK.toUpperCase() },

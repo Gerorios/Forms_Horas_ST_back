@@ -198,6 +198,14 @@ export class CertificacionesController {
   }
 
   // Sin @Roles: la autorización (niveles admin/carga) vive dentro del
+  // service. Ítems del maestro para armar filas manuales en la carga.
+  @UseGuards(JwtAuthGuard)
+  @Get('carga/items-maestro')
+  itemsMaestroCarga(@Req() req: any) {
+    return this.itemsService.listarParaCarga(req.user?.cert ?? null);
+  }
+
+  // Sin @Roles: la autorización (niveles admin/carga) vive dentro del
   // service. El límite de 20MB lo aplica multer; si se excede, el
   // MulterExceptionFilter global (main.ts) lo traduce a un 4xx legible en
   // vez del 500 pelado por defecto.

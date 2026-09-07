@@ -43,6 +43,38 @@ describe('ItemsService.listar', () => {
   });
 });
 
+describe('ItemsService.listarParaCarga', () => {
+  const prisma = { $queryRaw: jest.fn() } as any;
+  const service = new ItemsService(prisma);
+  beforeEach(() => prisma.$queryRaw.mockReset());
+
+  it('nivel carga solo ve ítems de sus K; lectura → 403', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ id_item: 1n, item_codigo: '5', codigo_k: 'K8', tarea: 'Adicional', unidad_medida: 'un' }]);
+    const r = await service.listarParaCarga({ nivel: 'carga', ks: ['K8'], inc: false });
+    expect(r).toEqual([{ id_item: 1, item_codigo: '5', codigo_k: 'K8', tarea: 'Adicional', unidad_medida: 'un' }]);
+    const sql = prisma.$queryRaw.mock.calls[0][0];
+    expect(sql.strings.join('')).toContain('dc.codigo_k IN');
+    await expect(service.listarParaCarga({ nivel: 'lectura', ks: [], inc: false })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('nivel admin ve todos (sin filtro de K)', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+    await service.listarParaCarga(admin);
+    const sql = prisma.$queryRaw.mock.calls[0][0];
+    expect(sql.strings.join('')).not.toContain('dc.codigo_k IN');
+  });
+
+  it('sin claim → 403', async () => {
+    await expect(service.listarParaCarga(null)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('nivel carga sin Ks devuelve vacío sin consultar', async () => {
+    const r = await service.listarParaCarga({ nivel: 'carga', ks: [], inc: false });
+    expect(r).toEqual([]);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
 describe('ItemsService.crear', () => {
   const prisma = { $queryRaw: jest.fn(), certItem: { create: jest.fn() }, certContratoErp: { findFirst: jest.fn() } } as any;
   const service = new ItemsService(prisma);
