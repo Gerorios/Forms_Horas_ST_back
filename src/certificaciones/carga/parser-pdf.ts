@@ -48,8 +48,17 @@ export interface PalabraPosicionada {
 
 /**
  * FRASES completas de cabecera (UPPER, espacios normalizados) → nombre
- * canónico del campo. Se busca primero la frase entera y, si no está, la
- * primera palabra: así "K GASNOR" y "K" suelto caen los dos en `contrato`.
+ * canónico del campo. El match es EXACTO sobre la frase entera: por eso la
+ * tabla lista tanto "K GASNOR" como "K" suelto, tanto "$ TOTAL MES" como
+ * "TOTAL".
+ *
+ * Deliberadamente NO hay fallback "por primera palabra" para frases de varias
+ * palabras: si lo hubiera, un título desconocido como "Total acumulado" caería
+ * en `total_mes`, y si estuviera a la izquierda del "$ Total mes" real se
+ * quedaría con el campo (gana el primer x0) descartando la columna verdadera
+ * como duplicada — sin ignorada, sin aviso y sin faltante, o sea cargando el
+ * acumulado como total del mes en silencio. Un título de varias palabras que
+ * no esté acá se trata como columna ignorada, que es visible para el usuario.
  */
 const HEADER_FRASES: Record<string, string> = {
   ÍTEMS: 'item_codigo',
@@ -98,10 +107,16 @@ export const COLUMNAS_REQUERIDAS = [
 ] as const;
 
 /**
- * Palabras que son CONTINUACIÓN de un título y no una columna nueva cuando
- * llegan sueltas (sin `itemId`): "NOMBRE CONTRATO" partido en dos items,
- * "K GASNOR", "$ Total mes". Sin esta lista cada una inventaría una columna
- * ignorada fantasma que se comería el rango x de la columna real.
+ * Palabras que son CONTINUACIÓN de un título y no una columna nueva: "NOMBRE
+ * CONTRATO", "K GASNOR", "$ Total mes" partidos. Sin esta lista cada una
+ * inventaría una columna ignorada fantasma que se comería el rango x de la
+ * columna real.
+ *
+ * Solo aplica a frases SIN `itemId` (extractor tipo pdfplumber, o datos
+ * sintéticos): ahí no hay forma de saber que la palabra venía pegada al
+ * título anterior. Cuando la palabra trae `itemId`, el agrupado por item ya
+ * rearmó las frases reales, así que un item suelto titulado "MES" es una
+ * columna desconocida como cualquier otra y va a `ignoradas`.
  */
 const CONTINUACIONES = new Set(['CONTRATO', 'GASNOR', 'MES', '$']);
 
@@ -205,21 +220,42 @@ export interface Cabecera {
 /**
  * Agrupa las palabras de la línea de cabecera en FRASES: mismo `itemId` =
  * misma frase; sin `itemId`, cada palabra es su propia frase (pdfplumber).
+ *
+ * El agrupado es POR `itemId`, no por adyacencia: los x0 de las palabras se
+ * estiman por proporción de caracteres (ver `dividirEnPalabras`), así que las
+ * palabras de dos títulos vecinos pueden intercalarse al ordenar por x0
+ * ("mes" de "$ Unitario mes" cayendo después del "$" de "$ Total mes"). Cada
+ * frase se queda con el x0 mínimo de su item y las frases se ordenan por ese x0.
  */
-function frasesDeCabecera(headerWs: PalabraPosicionada[]): { texto: string; x0: number }[] {
-  const ordenadas = [...headerWs].sort((a, b) => a.x0 - b.x0);
+function frasesDeCabecera(
+  headerWs: PalabraPosicionada[],
+): { texto: string; x0: number; itemId?: number }[] {
+  const porItem = new Map<number, PalabraPosicionada[]>();
   const frases: { texto: string; x0: number; itemId?: number }[] = [];
-  for (const w of ordenadas) {
-    const ultima = frases[frases.length - 1];
-    if (ultima && w.itemId !== undefined && ultima.itemId === w.itemId) {
-      ultima.texto += ' ' + w.text.trim();
-    } else {
-      frases.push({ texto: w.text.trim(), x0: w.x0, itemId: w.itemId });
+
+  for (const w of headerWs) {
+    if (w.itemId === undefined) {
+      frases.push({ texto: w.text.trim(), x0: w.x0, itemId: undefined });
+      continue;
     }
+    if (!porItem.has(w.itemId)) porItem.set(w.itemId, []);
+    porItem.get(w.itemId)!.push(w);
   }
+
+  for (const [itemId, ws] of porItem) {
+    const ordenadas = [...ws].sort((a, b) => a.x0 - b.x0);
+    frases.push({
+      texto: ordenadas.map((x) => x.text.trim()).join(' '),
+      x0: ordenadas[0].x0,
+      itemId,
+    });
+  }
+
+  frases.sort((a, b) => a.x0 - b.x0);
   return frases.map((f) => ({
     texto: f.texto.replace(/\s+/g, ' ').trim().toUpperCase(),
     x0: f.x0,
+    itemId: f.itemId,
   }));
 }
 
@@ -243,12 +279,14 @@ export function construirCabecera(headerWs: PalabraPosicionada[]): Cabecera {
 
   for (const f of frases) {
     if (f.texto === '') continue;
-    const campo = HEADER_FRASES[f.texto] ?? HEADER_FRASES[f.texto.split(' ')[0]];
+    // Match exacto de la frase completa: ver el comentario de HEADER_FRASES
+    // (un fallback por primera palabra secuestraría la columna real).
+    const campo = HEADER_FRASES[f.texto];
     if (campo) {
       if (!detectados.some(([, c]) => c === campo)) detectados.push([f.x0, campo]);
       continue;
     }
-    if (CONTINUACIONES.has(f.texto)) continue;
+    if (f.itemId === undefined && CONTINUACIONES.has(f.texto)) continue;
     ignoradas.push(f.texto);
     detectados.push([f.x0, `__ignorada_${nIgn++}`]);
   }

@@ -183,6 +183,47 @@ describe('construirCabecera (frases por itemId, requeridas e ignoradas)', () => 
     expect(c.ignoradas).toEqual([]);
   });
 
+  /** Header mínimo por frases (con itemId) que trae todas las requeridas. */
+  function headerMinimo(): PalabraPosicionada[] {
+    return [
+      ...frase('ÍTEMS', 58, 245, 0),
+      ...frase('K GASNOR', 281, 245, 1),
+      ...frase('PROVINCIA', 466, 245, 2),
+      ...frase('Cantidades', 500, 245, 3),
+      ...frase('$ Unitario mes', 530, 245, 4),
+      ...frase('$ Total mes', 622, 245, 5),
+    ];
+  }
+
+  it('un título desconocido de varias palabras NO secuestra el campo por su primera palabra', () => {
+    // "Total acumulado" está a la IZQUIERDA del "$ Total mes" real: con
+    // fallback por primera palabra se quedaría con total_mes (gana el primer
+    // x0) y el total del mes verdadero se descartaría como duplicado.
+    const c = construirCabecera([...headerMinimo(), ...frase('Total acumulado', 560, 245, 9)]);
+    expect(c.ignoradas).toEqual(['TOTAL ACUMULADO']);
+    expect(c.faltantes).toEqual([]);
+    const [totalIni] = c.colMap.get('total_mes')!;
+    expect(totalIni).toBe((560 + 622) / 2 + 5); // límite derivado del 622 real
+  });
+
+  it('con itemId, un item suelto "MES" es columna ignorada; sin itemId sigue siendo continuación', () => {
+    const conItemId = construirCabecera([...headerMinimo(), ...frase('MES', 350, 245, 9)]);
+    expect(conItemId.ignoradas).toEqual(['MES']);
+    expect(conItemId.faltantes).toEqual([]);
+
+    const sinItemId = construirCabecera([
+      w('ÍTEMS', 58, 10),
+      w('K', 281, 10),
+      w('GASNOR', 300, 10),
+      w('PROVINCIA', 466, 10),
+      w('Cantidades', 537, 10),
+      w('Unitario', 574, 10),
+      w('Total', 622, 10),
+    ]);
+    expect(sinItemId.ignoradas).toEqual([]);
+    expect(sinItemId.faltantes).toEqual([]);
+  });
+
   it('reporta faltantes si no hay columna de total', () => {
     const c = construirCabecera([
       w('ÍTEMS', 58, 10),
