@@ -35,25 +35,75 @@ export interface PalabraPosicionada {
   x0: number;
   top: number;
   width: number;
+  /**
+   * Índice del item de texto de pdfjs del que salió la palabra: las palabras
+   * con el mismo `itemId` forman UNA frase de cabecera ("NOMBRE CONTRATO",
+   * "K GASNOR", "$ Total mes"), porque pdfjs devuelve el título multipalabra
+   * como un único item. Opcional: los datos sintéticos de los tests y un
+   * extractor tipo pdfplumber (una palabra = un item) lo dejan sin definir, y
+   * entonces cada palabra es su propia frase.
+   */
+  itemId?: number;
 }
 
-/** Palabras del header → nombre canónico del campo. */
-const HEADER_PALABRAS: Record<string, string> = {
+/**
+ * FRASES completas de cabecera (UPPER, espacios normalizados) → nombre
+ * canónico del campo. Se busca primero la frase entera y, si no está, la
+ * primera palabra: así "K GASNOR" y "K" suelto caen los dos en `contrato`.
+ */
+const HEADER_FRASES: Record<string, string> = {
   ÍTEMS: 'item_codigo',
   ITEMS: 'item_codigo',
+  ÍTEM: 'item_codigo',
+  ITEM: 'item_codigo',
+  'NOMBRE CONTRATO': 'nombre_contrato',
   NOMBRE: 'nombre_contrato',
   TAREA: 'tarea',
+  DESCRIPCION: 'tarea',
+  DESCRIPCIÓN: 'tarea',
+  'K GASNOR': 'contrato',
   K: 'contrato',
   UM: 'unidad_medida',
+  'PTOS. GASNOR': 'ptos_gasnor',
+  'PTOS GASNOR': 'ptos_gasnor',
   'PTOS.': 'ptos_gasnor',
   TIPO: 'tipo',
   CONTRATISTA: 'contratista',
   PROVINCIA: 'provincia',
   CANTIDADES: 'cantidades',
+  CANTIDAD: 'cantidades',
+  '$ UNITARIO MES': 'precio_unitario',
+  'UNITARIO MES': 'precio_unitario',
+  '$ UNITARIO': 'precio_unitario',
   UNITARIO: 'precio_unitario',
+  '$ TOTAL MES': 'total_mes',
+  'TOTAL MES': 'total_mes',
+  '$ TOTAL': 'total_mes',
   TOTAL: 'total_mes',
   OBSERVACIONES: 'observaciones',
 };
+
+/**
+ * Columnas sin las cuales la página no se puede leer: si falta alguna, no se
+ * procesa ninguna fila y se emite un error de `header` (mejor no cargar nada
+ * que cargar valores corridos de columna).
+ */
+export const COLUMNAS_REQUERIDAS = [
+  'item_codigo',
+  'contrato',
+  'provincia',
+  'cantidades',
+  'precio_unitario',
+  'total_mes',
+] as const;
+
+/**
+ * Palabras que son CONTINUACIÓN de un título y no una columna nueva cuando
+ * llegan sueltas (sin `itemId`): "NOMBRE CONTRATO" partido en dos items,
+ * "K GASNOR", "$ Total mes". Sin esta lista cada una inventaría una columna
+ * ignorada fantasma que se comería el rango x de la columna real.
+ */
+const CONTINUACIONES = new Set(['CONTRATO', 'GASNOR', 'MES', '$']);
 
 /** Al detectar cualquiera de estas palabras, terminó la zona de datos de la página. */
 const FOOTER_PALABRAS = [
@@ -74,7 +124,7 @@ const PROVINCIAS: Record<string, string> = {
   catamarca: 'Catamarca',
 };
 
-type ColMap = Map<string, [number, number]>;
+export type ColMap = Map<string, [number, number]>;
 
 interface Meta {
   k_gasnor: string | null;
@@ -142,20 +192,67 @@ export function pegarPalabras(ws: PalabraPosicionada[]): string {
   return resultado.join(' ').trim();
 }
 
+/** Resultado de leer la línea de cabecera de una página. */
+export interface Cabecera {
+  /** {campo: [xIni, xFin]}, incluidas las columnas ignoradas como `__ignorada_N`. */
+  colMap: ColMap;
+  /** Títulos de cabecera que no reconocemos (p. ej. "CUENTA"), en orden de x0. */
+  ignoradas: string[];
+  /** Columnas de `COLUMNAS_REQUERIDAS` que no aparecieron. */
+  faltantes: string[];
+}
+
 /**
- * `_construir_col_map`: {campo: [xIni, xFin]} usando los x0 reales del
- * header; los límites son el punto medio entre header consecutivos + 5.
+ * Agrupa las palabras de la línea de cabecera en FRASES: mismo `itemId` =
+ * misma frase; sin `itemId`, cada palabra es su propia frase (pdfplumber).
  */
-export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
-  const ordenados = [...headerWs].sort((a, b) => a.x0 - b.x0);
-  const detectados: [number, string][] = [];
-  for (const w of ordenados) {
-    const texto = w.text.trim().toUpperCase();
-    const campo = HEADER_PALABRAS[texto];
-    if (campo && !detectados.some(([, c]) => c === campo)) {
-      detectados.push([w.x0, campo]);
+function frasesDeCabecera(headerWs: PalabraPosicionada[]): { texto: string; x0: number }[] {
+  const ordenadas = [...headerWs].sort((a, b) => a.x0 - b.x0);
+  const frases: { texto: string; x0: number; itemId?: number }[] = [];
+  for (const w of ordenadas) {
+    const ultima = frases[frases.length - 1];
+    if (ultima && w.itemId !== undefined && ultima.itemId === w.itemId) {
+      ultima.texto += ' ' + w.text.trim();
+    } else {
+      frases.push({ texto: w.text.trim(), x0: w.x0, itemId: w.itemId });
     }
   }
+  return frases.map((f) => ({
+    texto: f.texto.replace(/\s+/g, ' ').trim().toUpperCase(),
+    x0: f.x0,
+  }));
+}
+
+/**
+ * `_construir_col_map` + lectura de cabecera: {campo: [xIni, xFin]} usando
+ * los x0 reales del header; los límites son el punto medio entre header
+ * consecutivos + 5.
+ *
+ * Diferencia con el Python original: los títulos DESCONOCIDOS ya no se
+ * descartan — se registran como `__ignorada_N` y se quedan con su propio
+ * rango x. Sin eso, cuando Naturgy agregó "CUENTA" entre PROVINCIA y
+ * Cantidades (agosto 2026), el número de cuenta (922) caía dentro del rango
+ * de `cantidades` y se cargaba como cantidad certificada en lugar del 221
+ * real. Las ignoradas se informan al usuario como avisos de lectura.
+ */
+export function construirCabecera(headerWs: PalabraPosicionada[]): Cabecera {
+  const frases = frasesDeCabecera(headerWs);
+  const detectados: [number, string][] = [];
+  const ignoradas: string[] = [];
+  let nIgn = 0;
+
+  for (const f of frases) {
+    if (f.texto === '') continue;
+    const campo = HEADER_FRASES[f.texto] ?? HEADER_FRASES[f.texto.split(' ')[0]];
+    if (campo) {
+      if (!detectados.some(([, c]) => c === campo)) detectados.push([f.x0, campo]);
+      continue;
+    }
+    if (CONTINUACIONES.has(f.texto)) continue;
+    ignoradas.push(f.texto);
+    detectados.push([f.x0, `__ignorada_${nIgn++}`]);
+  }
+  detectados.sort((a, b) => a[0] - b[0]);
 
   const colMap: ColMap = new Map();
   const n = detectados.length;
@@ -165,7 +262,14 @@ export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
     const xIni = i > 0 ? (detectados[i - 1][0] + x0) / 2 + 5 : 0;
     colMap.set(campo, [xIni, xFin]);
   }
-  return colMap;
+
+  const faltantes = COLUMNAS_REQUERIDAS.filter((c) => !colMap.has(c));
+  return { colMap, ignoradas, faltantes: [...faltantes] };
+}
+
+/** Compatibilidad: el colMap suelto que consumen los specs y el resto del módulo. */
+export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
+  return construirCabecera(headerWs).colMap;
 }
 
 /** `_get_texto`: extrae y pega palabras de un campo según su rango x (una línea). */
@@ -336,6 +440,8 @@ export interface ResultadoPagina {
   filas: FilaParseada[];
   errores: ErrorParseo[];
   totalDeclarado: number | null;
+  /** Títulos de cabecera de esta página que no reconocimos. */
+  columnasIgnoradas: string[];
 }
 
 /**
@@ -348,7 +454,12 @@ export function procesarPagina(
   anio: number,
   mes: number,
 ): ResultadoPagina {
-  const resultado: ResultadoPagina = { filas: [], errores: [], totalDeclarado: null };
+  const resultado: ResultadoPagina = {
+    filas: [],
+    errores: [],
+    totalDeclarado: null,
+    columnasIgnoradas: [],
+  };
   if (words.length === 0) return resultado;
 
   const meta = extraerMeta(words);
@@ -358,18 +469,35 @@ export function procesarPagina(
   const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
 
   let headerTop: number | null = null;
-  let colMap: ColMap | null = null;
+  let cabecera: Cabecera | null = null;
   for (const top of tops) {
     const ws = [...lineas.get(top)!].sort((a, b) => a.x0 - b.x0);
     const textos = ws.map((w) => w.text.trim().toUpperCase());
     if (textos.includes('ÍTEMS') || textos.includes('ITEMS')) {
       headerTop = top;
-      colMap = construirColMap(ws);
+      cabecera = construirCabecera(ws);
       break;
     }
   }
 
-  if (headerTop === null || !colMap || colMap.size === 0) return resultado;
+  if (headerTop === null || !cabecera || cabecera.colMap.size === 0) return resultado;
+
+  // Falta una columna requerida: leer las filas daría valores corridos de
+  // columna, así que no se procesa nada y se avisa qué falta.
+  if (cabecera.faltantes.length > 0) {
+    resultado.errores.push({
+      hoja: nombreArchivo,
+      fila: 0,
+      campo: 'header',
+      mensaje:
+        `Faltan columnas requeridas en la cabecera: ${cabecera.faltantes.join(', ')}. ` +
+        `Se ignoraron: ${cabecera.ignoradas.join(', ') || 'ninguna'}.`,
+    });
+    return resultado;
+  }
+
+  resultado.columnasIgnoradas = cabecera.ignoradas;
+  const colMap = cabecera.colMap;
 
   const itemXMax = (colMap.get('item_codigo') || [0, 384])[1];
 
@@ -397,7 +525,7 @@ export function procesarPagina(
 
   grupos.forEach((grupo, idx) => {
     const numFila = idx + 1;
-    const { fila, errores } = procesarFila(grupo, colMap as ColMap, nombreArchivo, numFila, anio, mes, meta);
+    const { fila, errores } = procesarFila(grupo, colMap, nombreArchivo, numFila, anio, mes, meta);
     resultado.filas.push(fila);
     resultado.errores.push(...errores);
   });
@@ -438,6 +566,7 @@ export function dividirEnPalabras(
   x0: number,
   top: number,
   width: number,
+  itemId?: number,
 ): PalabraPosicionada[] {
   const total = texto.length;
   if (total === 0) return [];
@@ -450,13 +579,14 @@ export function dividirEnPalabras(
   }
   if (tokens.length === 0) return [];
   if (tokens.length === 1) {
-    return [{ text: tokens[0].text, x0, top, width }];
+    return [{ text: tokens[0].text, x0, top, width, itemId }];
   }
   return tokens.map(({ text, start }) => ({
     text,
     x0: x0 + (width * start) / total,
     top,
     width: (width * text.length) / total,
+    itemId,
   }));
 }
 
@@ -475,14 +605,20 @@ async function extraerPalabrasPorPagina(contenido: Buffer): Promise<PalabraPosic
       const content = await page.getTextContent();
       const palabras: PalabraPosicionada[] = [];
 
-      for (const item of content.items as any[]) {
+      // El índice del item se propaga como `itemId`: pdfjs entrega los
+      // títulos multipalabra de la cabecera ("NOMBRE CONTRATO", "$ Total
+      // mes") en UN solo item, y ese id es lo que después le permite a
+      // `construirCabecera` volver a armar la frase completa.
+      const items = content.items as any[];
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
         const texto: string | undefined = item.str;
         if (!texto || !texto.trim()) continue;
         const x0 = item.transform[4];
         const y = item.transform[5];
         const top = alturaPagina - y; // pdfjs: y crece hacia arriba → invertir para calcar pdfplumber
         const width = item.width ?? 0;
-        palabras.push(...dividirEnPalabras(texto, x0, top, width));
+        palabras.push(...dividirEnPalabras(texto, x0, top, width, idx));
       }
       paginas.push(palabras);
     }
@@ -535,6 +671,21 @@ export async function parsearPdf(
     resultado.filas.push(...pagina.filas);
     resultado.errores.push(...pagina.errores);
     if (resultado.total_declarado === null) resultado.total_declarado = pagina.totalDeclarado;
+    for (const columna of pagina.columnasIgnoradas) {
+      if (!resultado.columnas_ignoradas.includes(columna)) {
+        resultado.columnas_ignoradas.push(columna);
+      }
+    }
+  }
+
+  for (const columna of resultado.columnas_ignoradas) {
+    resultado.avisos.push({
+      tipo: 'columna_ignorada',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: `Columna ignorada: ${columna}. Sus valores no se asignaron a ninguna columna.`,
+    });
   }
 
   return resultado;

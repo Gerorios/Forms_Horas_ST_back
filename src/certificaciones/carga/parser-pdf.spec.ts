@@ -5,8 +5,10 @@
  */
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
+  COLUMNAS_REQUERIDAS,
   PalabraPosicionada,
   agruparPorLinea,
+  construirCabecera,
   construirColMap,
   dividirEnPalabras,
   esItemValido,
@@ -24,6 +26,50 @@ import {
 function w(text: string, x0: number, top: number, width = text.length * 5): PalabraPosicionada {
   return { text, x0, top, width };
 }
+
+/**
+ * Simula lo que produce `dividirEnPalabras` con UN item de pdfjs: reparte el
+ * ancho por caracteres y marca todas las palabras con el mismo `itemId`
+ * (o sea: son partes de una misma frase, como "NOMBRE CONTRATO").
+ */
+function frase(texto: string, x0: number, top: number, itemId: number): PalabraPosicionada[] {
+  const tokens = texto.split(' ');
+  const width = texto.length * 5;
+  let cursor = 0;
+  return tokens.map((t) => {
+    const palabra: PalabraPosicionada = {
+      text: t,
+      x0: x0 + (width * cursor) / texto.length,
+      top,
+      width: (width * t.length) / texto.length,
+      itemId,
+    };
+    cursor += t.length + 1;
+    return palabra;
+  });
+}
+
+/**
+ * Cabecera real de una certificación Naturgy de agosto 2026 (K11): Naturgy
+ * agregó la columna "CUENTA" entre PROVINCIA y Cantidades. Compartida por
+ * los describes de `construirCabecera` y de `procesarPagina`.
+ */
+const HEADER_NATURGY: PalabraPosicionada[] = [
+  ...frase('ÍTEMS', 58, 245, 0),
+  ...frase('NOMBRE CONTRATO', 87, 245, 1),
+  ...frase('TAREA', 195, 245, 2),
+  ...frase('K GASNOR', 281, 245, 3),
+  ...frase('UM', 324, 245, 4),
+  ...frase('PTOS. GASNOR', 349, 245, 5),
+  ...frase('TIPO', 383, 245, 6),
+  ...frase('CONTRATISTA', 425, 245, 7),
+  ...frase('PROVINCIA', 466, 245, 8),
+  ...frase('CUENTA', 505, 245, 9),
+  ...frase('Cantidades', 537, 245, 10),
+  ...frase('$ Unitario mes', 574, 245, 11),
+  ...frase('$ Total mes', 622, 245, 12),
+  ...frase('Observaciones', 681, 245, 13),
+];
 
 describe('esItemValido (PDF, más estricto que Excel)', () => {
   it('acepta código con letra opcional + 3+ dígitos', () => {
@@ -95,11 +141,99 @@ describe('construirColMap (límites = punto medio entre x0 consecutivos + 5)', (
     expect(colMap.get('cantidades')).toEqual([(50 + 150) / 2 + 5, 99999]);
   });
 
-  it('ignora palabras que no están en HEADER_PALABRAS y no duplica campo repetido', () => {
+  it('no duplica campo repetido y la palabra desconocida queda como columna ignorada', () => {
     const header = [w('ÍTEMS', 0, 0), w('RUIDO', 20, 0), w('ITEMS', 25, 0), w('TAREA', 50, 0)];
     const colMap = construirColMap(header);
-    expect(colMap.size).toBe(2); // item_codigo (primera ocurrencia) + tarea
+    // item_codigo (primera ocurrencia) + tarea + la desconocida con rango propio
+    expect(colMap.size).toBe(3);
     expect(colMap.get('item_codigo')![0]).toBe(0);
+    expect(colMap.has('__ignorada_0')).toBe(true);
+  });
+});
+
+describe('construirCabecera (frases por itemId, requeridas e ignoradas)', () => {
+  it('reconoce todas las requeridas y lista CUENTA como ignorada', () => {
+    const c = construirCabecera(HEADER_NATURGY);
+    expect(c.faltantes).toEqual([]);
+    expect(c.ignoradas).toEqual(['CUENTA']);
+    for (const req of COLUMNAS_REQUERIDAS) expect(c.colMap.has(req)).toBe(true);
+  });
+
+  it('la columna ignorada ocupa su propio rango: 922 en x=509 NO cae en cantidades', () => {
+    const c = construirCabecera(HEADER_NATURGY);
+    const [cantIni] = c.colMap.get('cantidades')!;
+    expect(509).toBeLessThan(cantIni);
+    const [ignIni, ignFin] = c.colMap.get('__ignorada_0')!;
+    expect(509).toBeGreaterThanOrEqual(ignIni);
+    expect(509).toBeLessThan(ignFin);
+  });
+
+  it('sin itemId (palabras sueltas estilo pdfplumber) sigue mapeando por primera palabra', () => {
+    const suelto = [
+      w('ÍTEMS', 58, 10),
+      w('TAREA', 195, 10),
+      w('K', 281, 10),
+      w('PROVINCIA', 466, 10),
+      w('Cantidades', 537, 10),
+      w('Unitario', 574, 10),
+      w('Total', 622, 10),
+    ];
+    const c = construirCabecera(suelto);
+    expect(c.faltantes).toEqual([]);
+    expect(c.ignoradas).toEqual([]);
+  });
+
+  it('reporta faltantes si no hay columna de total', () => {
+    const c = construirCabecera([
+      w('ÍTEMS', 58, 10),
+      w('K', 281, 10),
+      w('PROVINCIA', 466, 10),
+      w('Cantidades', 537, 10),
+      w('Unitario', 574, 10),
+    ]);
+    expect(c.faltantes).toEqual(['total_mes']);
+  });
+});
+
+describe('procesarPagina con columna ignorada (caso real K11 agosto 2026)', () => {
+  it('cantidad = 221 (no 922) y la página registra la columna ignorada', () => {
+    const fila = [
+      ...frase('132', 60, 256, 20),
+      ...frase('INSPECCIÓN ADECUACIÓN', 135, 256, 21),
+      ...frase('K2', 288, 256, 22),
+      ...frase('N°', 325, 256, 23),
+      ...frase('52,76', 358, 256, 24),
+      ...frase('CAPEX', 396, 256, 25),
+      ...frase('SER&TEC', 419, 256, 26),
+      ...frase('Tucumán', 467, 256, 27),
+      ...frase('922', 509, 256, 28),
+      ...frase('221', 555, 256, 29),
+      ...frase('$', 565, 256, 30),
+      ...frase('66.989,90', 586, 256, 31),
+      ...frase('$', 610, 256, 32),
+      ...frase('14.804.768', 633, 256, 33),
+      ...frase('PR, CS, RE Aprobada', 657, 256, 34),
+    ];
+    const r = procesarPagina([...HEADER_NATURGY, ...fila], 'k11.pdf', 2026, 8);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].cantidades).toBe('221');
+    expect(r.filas[0].precio_unitario).toBe('66989.90');
+    expect(r.filas[0].total_mes).toBe('14804768');
+    expect(r.columnasIgnoradas).toEqual(['CUENTA']);
+  });
+
+  it('sin columna requerida: no procesa filas y emite error de header con las faltantes', () => {
+    const header = [
+      w('ÍTEMS', 58, 10),
+      w('K', 281, 10),
+      w('PROVINCIA', 466, 10),
+      w('Cantidades', 537, 10),
+      w('Unitario', 574, 10),
+    ];
+    const r = procesarPagina([...header, w('436', 56, 30), w('16', 542, 30)], 'x.pdf', 2026, 8);
+    expect(r.filas).toEqual([]);
+    expect(r.errores[0].campo).toBe('header');
+    expect(r.errores[0].mensaje).toContain('total_mes');
   });
 });
 
@@ -220,6 +354,8 @@ describe('procesarFila', () => {
 });
 
 describe('procesarPagina (fila multilínea, footer corta la página)', () => {
+  // Incluye UNITARIO y TOTAL: son columnas requeridas, sin ellas la página
+  // se rechaza con error de header.
   const header = [
     w('ÍTEMS', 0, 0),
     w('TAREA', 60, 0),
@@ -227,6 +363,8 @@ describe('procesarPagina (fila multilínea, footer corta la página)', () => {
     w('PROVINCIA', 250, 0),
     w('K', 350, 0),
     w('CANTIDADES', 400, 0),
+    w('UNITARIO', 450, 0),
+    w('TOTAL', 500, 0),
   ];
 
   function linea(words: PalabraPosicionada[], top: number): PalabraPosicionada[] {
@@ -296,7 +434,7 @@ describe('dividirEnPalabras (aproximación de palabras dentro de un item de pdfj
 describe('parsearPdf (integración con pdfjs-dist real, PDF generado con pdf-lib)', () => {
   async function generarPdfSimple(): Promise<Buffer> {
     const doc = await PDFDocument.create();
-    const page = doc.addPage([600, 400]);
+    const page = doc.addPage([800, 400]);
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const alto = 400;
 
@@ -309,6 +447,8 @@ describe('parsearPdf (integración con pdfjs-dist real, PDF generado con pdf-lib
     draw('PROVINCIA', 380, 350);
     draw('K', 480, 350);
     draw('CANTIDADES', 520, 350);
+    draw('UNITARIO', 620, 350);
+    draw('TOTAL', 720, 350);
 
     // Fila de datos
     draw('A100', 30, 330);
@@ -317,6 +457,8 @@ describe('parsearPdf (integración con pdfjs-dist real, PDF generado con pdf-lib
     draw('Salta', 380, 330);
     draw('K12', 480, 330);
     draw('5', 520, 330);
+    draw('100,50', 620, 330);
+    draw('502,50', 720, 330);
 
     void alto;
     return Buffer.from(await doc.save());
