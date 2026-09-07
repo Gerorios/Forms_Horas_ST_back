@@ -65,7 +65,16 @@ export interface RespuestaConfirmar {
   mensaje: string;
   insertadas: number;
   omitidas: number;
+  /** Cuántas de las insertadas son filas manuales (`origen = 'manual'`). */
+  manuales: number;
   errores: ErrorConfirmar[];
+}
+
+/** Fila que quedó bloqueada al confirmar (rechazo 422, spec §2.9). */
+export interface FilaBloqueada {
+  rowId: string;
+  item_codigo: string;
+  detalle: string;
 }
 
 function pad2(n: number): string {
@@ -229,7 +238,7 @@ export class CargaService {
 
     this.exigirNivelCarga(cert);
 
-    // 3) aplicar ediciones — SOLO los 5 campos del DTO, whitelist real (el
+    // 3) aplicar ediciones — SOLO los 8 campos del DTO, whitelist real (el
     // service nunca hace spread del DTO sobre la fila).
     for (const edicion of dto.ediciones) {
       const fila = sesion.filas.get(edicion.rowId);
@@ -243,6 +252,9 @@ export class CargaService {
       if (edicion.cantidades !== undefined) fila.cantidades = edicion.cantidades;
       if (edicion.total_mes !== undefined) fila.total_mes = edicion.total_mes;
       if (edicion.excluida !== undefined) fila.excluida = edicion.excluida;
+      if (edicion.precio_unitario !== undefined) fila.precio_unitario = edicion.precio_unitario;
+      if (edicion.item_codigo !== undefined) fila.item_codigo = edicion.item_codigo.trim();
+      if (edicion.confirmada !== undefined) fila.confirmada = edicion.confirmada;
     }
 
     // 4) duplicado por archivo_nombre (global, sin período — paridad con
@@ -283,36 +295,96 @@ export class CargaService {
       fila.contrato_fuente = fuente;
       fila.item_en_maestro = mapa.existe(fila.item_codigo);
 
-      const { tieneError, detalle } = revalidarFila(fila, {
+      const { tieneError, detalle, cuadratura } = revalidarFila(fila, {
         itemExiste: fila.item_en_maestro,
         provinciasValidas,
+        confirmada: fila.confirmada,
       });
       fila.tiene_error = tieneError;
       fila.error_detalle = detalle;
+      fila.cuadratura = cuadratura;
     }
 
-    // 7) filtrar cargables: descarta excluida (silencioso, es una elección
-    // del usuario) + revalidación (ignora el tiene_error que trajera el
-    // cliente — acá siempre es el recalculado server-side de arriba). Las
-    // filas con error de revalidación (ítem/contrato/provincia/cantidad/
-    // total) NO se descartan en silencio: se acumulan en `errores` con
-    // contexto real (fixes B2+B5), igual que las que fallen más adelante
-    // al resolver ids.
-    const errores: ErrorConfirmar[] = [];
-    const cargables: FilaPreview[] = [];
-    for (const f of filas) {
-      if (f.excluida) continue;
-      if (f.tiene_error) {
-        errores.push({
-          hoja: f.hoja_origen,
-          fila: f.fila_excel,
-          item_codigo: f.item_codigo,
-          mensaje: f.error_detalle ?? 'Fila inválida',
-        });
-        continue;
+    // 6b) filas manuales (spec §2.8): el body solo trae id de ítem +
+    // cifras; TODO el resto del ítem sale del maestro, así el navegador no
+    // puede inventar código/K/tarea. Se validan con las mismas reglas que
+    // las del archivo (`confirmada` levanta solo la cuadratura).
+    const manualesDto = dto.manuales ?? [];
+    const itemsPorId = await this.resolucion.cargarItemsPorId(manualesDto.map((m) => m.id_item));
+    const manuales: FilaPreview[] = [];
+    for (const m of manualesDto) {
+      const it = itemsPorId.get(m.id_item);
+      if (!it) throw new BadRequestException(`Ítem del maestro inexistente: ${m.id_item}`);
+      if (cert!.nivel === 'carga' && !cert!.ks.includes(it.codigo_k)) {
+        throw new ForbiddenException(`No tenés acceso al contrato ${it.codigo_k}`);
       }
-      cargables.push(f);
+
+      const base: FilaParseada = {
+        hoja_origen: 'manual',
+        archivo_origen: sesion.archivo,
+        item_codigo: it.item_codigo,
+        nombre_contrato: null,
+        tarea: it.tarea,
+        contrato: it.codigo_k,
+        unidad_medida: it.unidad_medida,
+        ptos_gasnor: it.ptos_gasnor,
+        tipo: it.tipo,
+        contratista: it.contratista,
+        provincia: m.provincia.trim(),
+        region: '',
+        cantidades: m.cantidades.trim(),
+        precio_unitario: m.precio_unitario.trim(),
+        total_mes: m.total_mes.trim(),
+        observaciones: m.observaciones?.trim() || null,
+        fecha: `${sesion.anio}-${pad2(sesion.mes)}-01`,
+        nro_np: null,
+        tiene_error: false,
+        fila_excel: 0,
+      };
+      const { tieneError, detalle, cuadratura } = revalidarFila(base, {
+        itemExiste: true,
+        provinciasValidas,
+        confirmada: !!m.confirmada,
+      });
+      manuales.push({
+        ...base,
+        rowId: `manual-${manuales.length + 1}`,
+        item_en_maestro: true,
+        error_detalle: detalle,
+        tiene_error: tieneError,
+        contrato_archivo: it.codigo_k,
+        contrato_fuente: 'maestro',
+        contrato_del_maestro: it.codigo_k,
+        excluida: false,
+        cuadratura,
+        confirmada: !!m.confirmada,
+        origen: 'manual',
+      });
     }
+
+    // 7) bloqueadas RECHAZAN la carga entera (spec §2.9): cualquier fila no
+    // excluida —del archivo o manual— con error server-side devuelve 422 con
+    // la lista de rowIds, en vez de omitirse en silencio. La exclusión sigue
+    // siendo silenciosa: es una elección explícita del usuario.
+    const todas = [...filas, ...manuales];
+    const bloqueadas: FilaBloqueada[] = todas
+      .filter((f) => !f.excluida && f.tiene_error)
+      .map((f) => ({
+        rowId: f.rowId,
+        item_codigo: f.item_codigo,
+        detalle: f.error_detalle ?? 'Fila inválida',
+      }));
+    if (bloqueadas.length > 0) {
+      throw new UnprocessableEntityException({
+        message: `Hay ${bloqueadas.length} ${bloqueadas.length === 1 ? 'fila bloqueada' : 'filas bloqueadas'}. Corregilas, confirmalas o excluilas antes de cargar.`,
+        bloqueadas,
+      });
+    }
+
+    // `errores` queda solo para los fallos de resolución de ids (paso 9),
+    // que siguen omitiendo la fila y marcando la carga como 'parcial'.
+    const errores: ErrorConfirmar[] = [];
+    const cargables: FilaPreview[] = todas.filter((f) => !f.excluida);
 
     // 8) permisos nivel carga: los Ks resueltos deben ser ⊆ cert.ks, ANTES
     // de insertar nada (fail-closed).
@@ -325,11 +397,14 @@ export class CargaService {
       }
     }
 
-    if (cargables.length === 0 && errores.length === 0) {
+    if (cargables.length === 0) {
       throw new UnprocessableEntityException('No hay filas válidas para cargar');
     }
 
-    // 9) resolver ids en batch.
+    // 9) resolver ids en batch — las manuales pasan por el MISMO
+    // `resolverIds`: su ítem se resuelve por código+K igual que las del
+    // archivo (el id elegido en la UI ya se validó contra el maestro en 6b),
+    // así hay un solo camino de resolución y una sola query batch.
     const idsPorIndice =
       cargables.length > 0
         ? await this.resolucion.resolverIds(
@@ -388,17 +463,18 @@ export class CargaService {
 
     // 10) UNA transacción: multi-INSERT raw + create del log.
     const valores = paraInsertar.map(({ fila, idItem, idContrato, idProvincia, ptosGasnor }) =>
-      Prisma.sql`(${idItem}, ${fila.nombre_contrato}, ${fila.tarea}, ${idContrato}, ${fila.unidad_medida}, ${ptosGasnor}, ${fila.tipo}, ${fila.contratista}, ${idProvincia}, ${fila.region}, ${fila.cantidades}, ${fila.precio_unitario}, ${fila.total_mes}, ${fila.observaciones}, ${fila.fecha}, ${fila.hoja_origen}, ${fila.archivo_origen}, ${nombre})`,
+      Prisma.sql`(${idItem}, ${fila.nombre_contrato}, ${fila.tarea}, ${idContrato}, ${fila.unidad_medida}, ${ptosGasnor}, ${fila.tipo}, ${fila.contratista}, ${idProvincia}, ${fila.region}, ${fila.cantidades}, ${fila.precio_unitario}, ${fila.total_mes}, ${fila.observaciones}, ${fila.fecha}, ${fila.hoja_origen}, ${fila.archivo_origen}, ${nombre}, ${fila.origen})`,
     );
     const insertSql = Prisma.sql`
       INSERT INTO sth_cert_certificaciones
         (id_item, nombre_contrato, tarea, id_contrato, unidad_medida, ptos_gasnor, tipo, contratista,
          id_provincia, region, cantidades, precio_unitario, total_mes, observaciones, fecha,
-         hoja_origen, archivo_origen, cargado_por)
+         hoja_origen, archivo_origen, cargado_por, origen)
       VALUES ${Prisma.join(valores)}
     `;
 
     const ksInsertados = [...new Set(paraInsertar.map((p) => p.fila.contrato))];
+    const filasManuales = paraInsertar.filter((p) => p.fila.origen === 'manual').length;
     const estado = errores.length > 0 ? 'parcial' : 'ok';
     const periodo = `${sesion.anio}-${pad2(sesion.mes)}`;
     const detalleErrores = errores.length > 0 ? JSON.stringify(errores).slice(0, DETALLE_ERRORES_MAX) : null;
@@ -414,6 +490,7 @@ export class CargaService {
           periodo,
           filasCargadas: paraInsertar.length,
           filasError: errores.length,
+          filasManuales,
           estado,
           detalleErrores,
         },
@@ -427,6 +504,7 @@ export class CargaService {
       mensaje: `${paraInsertar.length} filas cargadas correctamente`,
       insertadas: paraInsertar.length,
       omitidas: errores.length,
+      manuales: filasManuales,
       errores,
     };
   }

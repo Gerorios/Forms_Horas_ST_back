@@ -25,6 +25,22 @@ export interface MapaMaestro {
   existe(codigo: string): boolean;
 }
 
+/** Ítem del maestro tal como lo necesita una fila manual (Task 12): el
+ * usuario elige el ítem por `id_item` en la UI, y el server toma de acá TODO
+ * lo demás (código, K, tarea, unidad, ptos, tipo, contratista) — el body
+ * nunca es fuente de verdad de esos campos. */
+export interface ItemMaestro {
+  id_item: number;
+  item_codigo: string;
+  codigo_k: string;
+  id_contrato: number;
+  tarea: string;
+  unidad_medida: string | null;
+  ptos_gasnor: string | null;
+  tipo: string | null;
+  contratista: string | null;
+}
+
 interface IdsResueltos {
   idItem: number | null;
   idContrato: number | null;
@@ -66,6 +82,52 @@ export class ResolucionService {
         return !!lista && lista.length > 0;
       },
     };
+  }
+
+  /**
+   * Carga en 1 sola query los ítems del maestro por `id_item` (filas
+   * manuales, Task 12). Devuelve un Map por id para que `confirmar` pueda
+   * distinguir "id inexistente" (→ 400) sin queries por fila.
+   */
+  async cargarItemsPorId(ids: number[]): Promise<Map<number, ItemMaestro>> {
+    const mapa = new Map<number, ItemMaestro>();
+    const unicos = [...new Set(ids.filter((id) => Number.isInteger(id)))];
+    if (unicos.length === 0) return mapa;
+
+    const rows = await this.prisma.$queryRaw<
+      {
+        id_item: number | bigint;
+        item_codigo: string;
+        codigo_k: string;
+        id_contrato: number | bigint;
+        tarea: string | null;
+        unidad_medida: string | null;
+        ptos_gasnor: unknown;
+        tipo: string | null;
+        contratista: string | null;
+      }[]
+    >(Prisma.sql`
+      SELECT di.id_item, di.item_codigo, dc.codigo_k, dc.id_contrato,
+             di.tarea, di.unidad_medida, di.ptos_gasnor, di.tipo, di.contratista
+      FROM sth_cert_items di
+      JOIN sth_cert_contratos dc ON di.id_contrato = dc.id_contrato
+      WHERE di.id_item IN (${Prisma.join(unicos)})
+    `);
+
+    for (const r of rows) {
+      mapa.set(Number(r.id_item), {
+        id_item: Number(r.id_item),
+        item_codigo: String(r.item_codigo ?? ''),
+        codigo_k: String(r.codigo_k ?? ''),
+        id_contrato: Number(r.id_contrato),
+        tarea: r.tarea ?? '',
+        unidad_medida: r.unidad_medida ?? null,
+        ptos_gasnor: r.ptos_gasnor === null || r.ptos_gasnor === undefined ? null : String(r.ptos_gasnor),
+        tipo: r.tipo ?? null,
+        contratista: r.contratista ?? null,
+      });
+    }
+    return mapa;
   }
 
   /**
