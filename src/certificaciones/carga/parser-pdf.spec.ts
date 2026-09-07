@@ -71,20 +71,28 @@ const HEADER_NATURGY: PalabraPosicionada[] = [
   ...frase('Observaciones', 681, 245, 13),
 ];
 
-describe('esItemValido (PDF, más estricto que Excel)', () => {
-  it('acepta código con letra opcional + 3+ dígitos', () => {
-    expect(esItemValido('A123')).toBe(true);
-    expect(esItemValido('123')).toBe(true);
-    expect(esItemValido('B4567')).toBe(true);
+describe('esItemValido (1+ dígitos, letra opcional, sufijo opcional)', () => {
+  it.each([
+    ['5', true],
+    ['132', true],
+    ['116-a', true],
+    ['A12', true],
+    ['ÍTEMS', false],
+    ['', false],
+    ['Firma', false],
+    ['12 servicios', false],
+  ])('%s -> %s', (s, esperado) => {
+    expect(esItemValido(s)).toBe(esperado);
   });
 
-  it('rechaza menos de 3 dígitos, headers y footer-like', () => {
-    expect(esItemValido('12')).toBe(false);
+  it('rechaza dos letras iniciales, headers y footer-like', () => {
+    // Actualizado: la regla vieja exigía 3+ dígitos ("12" se rechazaba); la
+    // nueva acepta 1+ dígitos, así que "12" ahora ES válido. Lo que sigue
+    // rechazado: dos letras al inicio, headers y texto sin dígitos.
+    expect(esItemValido('12')).toBe(true);
     expect(esItemValido('AB123')).toBe(false);
-    expect(esItemValido('ÍTEMS')).toBe(false);
     expect(esItemValido('ITEMS')).toBe(false);
     expect(esItemValido('TOTAL:')).toBe(false);
-    expect(esItemValido('')).toBe(false);
     expect(esItemValido(null)).toBe(false);
   });
 });
@@ -275,6 +283,65 @@ describe('procesarPagina con columna ignorada (caso real K11 agosto 2026)', () =
     expect(r.filas).toEqual([]);
     expect(r.errores[0].campo).toBe('header');
     expect(r.errores[0].mensaje).toContain('total_mes');
+  });
+});
+
+describe('procesarPagina: fila de ítem corto y línea sin plata', () => {
+  const header = [
+    w('ÍTEMS', 54, 134),
+    w('TAREA', 214, 134),
+    w('K', 357, 134),
+    w('PROVINCIA', 489, 134),
+    w('Cantidades', 521, 134),
+    w('Unitario', 557, 134),
+    w('Total', 595, 134),
+  ];
+
+  it('el ítem "5" con cantidad y total ES una fila', () => {
+    const fila = [
+      w('5', 57, 157),
+      w('Adicional largos', 108, 157),
+      w('k8', 363, 157),
+      w('Salta', 484, 157),
+      w('4', 544, 157),
+      w('15.151,96', 568, 157),
+      w('60.608', 606, 157),
+    ];
+    const r = procesarPagina([...header, ...fila], 'k8.pdf', 2026, 8);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].item_codigo).toBe('5');
+    expect(r.filas[0].total_mes).toBe('60608');
+    expect(r.filas[0].contrato).toBe('K8');
+  });
+
+  it('una línea que parece código pero no trae plata se reporta como aviso y no es fila', () => {
+    const linea = [w('7', 57, 157), w('texto suelto', 108, 157)];
+    const r = procesarPagina([...header, ...linea], 'k8.pdf', 2026, 8);
+    expect(r.filas).toEqual([]);
+    expect(r.avisos).toEqual([
+      expect.objectContaining({ tipo: 'linea_no_leida', fila: 1, fuerte: false }),
+    ]);
+  });
+
+  it('las líneas de continuación (sin código) siguen pegándose a la fila anterior', () => {
+    // Nota: "Instalación"/"de servicio" van a x0=150 (no 108 como en el
+    // brief) porque con el header de este describe la columna item_codigo
+    // llega hasta x=139 (midpoint 54/214 + 5): a 108 la palabra caería
+    // dentro de item_codigo, no de tarea, y el aserto de abajo no podría
+    // cumplirse. 150 cae ya dentro del rango de tarea [139, 290.5).
+    const fila = [
+      w('436', 56, 141),
+      w('Instalación', 150, 141),
+      w('k8', 363, 141),
+      w('Salta', 484, 141),
+      w('16', 542, 141),
+      w('240.007,08', 566, 141),
+      w('3.840.113', 601, 141),
+    ];
+    const cont = [w('de servicio', 150, 145)];
+    const r = procesarPagina([...header, ...fila, ...cont], 'k8.pdf', 2026, 8);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].tarea).toBe('Instalación de servicio');
   });
 });
 

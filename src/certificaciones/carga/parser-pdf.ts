@@ -25,7 +25,7 @@
  * (mismo comportamiento, incluida la duplicación de números entre páginas
  * si el PDF tiene más de una).
  */
-import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import { AvisoParseo, ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
 import { parsearMontoTexto } from './montos';
 import { extraerKDeNombre } from './nombre-archivo';
 
@@ -162,14 +162,27 @@ function tituloEs(s: string): string {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
-/** `_es_item_valido` del PDF: más estricto que el de Excel — `^[A-Za-z]?\d{3,}`. */
+/**
+ * `_es_item_valido` del PDF: código de ítem = letra opcional + 1+ dígitos +
+ * sufijo opcional separado por `-.,/` (p. ej. "5", "116-a", "A12"). Una
+ * línea que matchea esto YA NO alcanza para ser fila: además debe traer
+ * plata (ver `lineaTraePlata`) — si no, es un aviso de `linea_no_leida`.
+ */
+const ITEM_RE = /^[A-Za-z]?\d+([-.,/][A-Za-z0-9]+)?$/;
 export function esItemValido(s: string | null | undefined): boolean {
   if (!s) return false;
-  const su = s.toUpperCase();
-  if (su === 'ÍTEMS' || su === 'ITEMS' || su === 'ÍTEM' || su === 'ITEM' || su === '') {
-    return false;
-  }
-  return /^[A-Za-z]?\d{3,}/.test(s);
+  const t = s.trim();
+  const su = t.toUpperCase();
+  if (su === 'ÍTEMS' || su === 'ITEMS' || su === 'ÍTEM' || su === 'ITEM') return false;
+  return ITEM_RE.test(t);
+}
+
+/** true si en el rango de `cantidades` o `total_mes` de la línea hay un número parseable. */
+export function lineaTraePlata(ws: PalabraPosicionada[], colMap: ColMap): boolean {
+  return (
+    limpiarNum(obtenerTexto(ws, colMap, 'cantidades')) !== null ||
+    limpiarNum(obtenerTexto(ws, colMap, 'total_mes')) !== null
+  );
 }
 
 /**
@@ -480,6 +493,8 @@ export interface ResultadoPagina {
   totalDeclarado: number | null;
   /** Títulos de cabecera de esta página que no reconocimos. */
   columnasIgnoradas: string[];
+  /** Avisos de lectura de esta página (columna ignorada, línea no leída, etc.). */
+  avisos: AvisoParseo[];
 }
 
 /**
@@ -497,6 +512,7 @@ export function procesarPagina(
     errores: [],
     totalDeclarado: null,
     columnasIgnoradas: [],
+    avisos: [],
   };
   if (words.length === 0) return resultado;
 
@@ -541,6 +557,7 @@ export function procesarPagina(
 
   const grupos: PalabraPosicionada[][][] = [];
   let grupoActual: PalabraPosicionada[][] | null = null;
+  let lineasNoLeidas = 0;
 
   for (const top of tops.filter((t) => t > (headerTop as number))) {
     const ws = [...lineas.get(top)!].sort((a, b) => a.x0 - b.x0);
@@ -550,11 +567,25 @@ export function procesarPagina(
     if (FOOTER_PALABRAS.some((p) => textoLinea.includes(p))) break;
 
     const primer = ws[0];
-    const esItem = esItemValido(primer.text.trim()) && primer.x0 < itemXMax;
+    const pareceCodigo = esItemValido(primer.text.trim()) && primer.x0 < itemXMax;
 
-    if (esItem) {
+    if (pareceCodigo && lineaTraePlata(ws, colMap)) {
       grupoActual = [ws];
       grupos.push(grupoActual);
+    } else if (pareceCodigo && grupoActual === null) {
+      // Parece fila pero no trae plata y no hay fila abierta: aviso, no se
+      // pierde en silencio. Si hay grupo abierto, se pega como continuación
+      // (ej. "25 mm , sobre cañería…" que arranca con un número).
+      lineasNoLeidas += 1;
+      resultado.avisos.push({
+        tipo: 'linea_no_leida',
+        hoja: nombreArchivo,
+        fila: lineasNoLeidas,
+        fuerte: false,
+        mensaje:
+          `Una línea de la página empieza con "${primer.text.trim()}" pero no trae ` +
+          `cantidad ni total legibles. Si es un ítem certificado, agregalo como fila manual.`,
+      });
     } else if (grupoActual !== null) {
       grupoActual.push(ws);
     }
@@ -708,6 +739,7 @@ export async function parsearPdf(
     const pagina = procesarPagina(words, nombreArchivo, anio, mes);
     resultado.filas.push(...pagina.filas);
     resultado.errores.push(...pagina.errores);
+    resultado.avisos.push(...pagina.avisos);
     if (resultado.total_declarado === null) resultado.total_declarado = pagina.totalDeclarado;
     for (const columna of pagina.columnasIgnoradas) {
       if (!resultado.columnas_ignoradas.includes(columna)) {
