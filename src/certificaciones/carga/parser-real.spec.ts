@@ -28,7 +28,12 @@ d('PDFs reales agosto 2026', () => {
     expect(vis).toHaveLength(8);
     expect(vis.map((f) => f.item_codigo)).toContain('5');
     for (const f of vis) expect(cuadraturaFila(f).cuadra).toBe(true);
-    expect(r.total_declarado).toBeCloseTo(22535209.93, 2);
+    // Naturgy imprime "TOTAL MES" redondeado sin centavos (22.535.210); el
+    // total neto con centavos (22.535.209,93) es OTRO campo del header ("TOTAL
+    // A CERTIFICAR NETO") — la brecha de 7 centavos la absorbe la tolerancia
+    // de $1 de la cuadratura a nivel carga (ver ruling del controller, T8 fix
+    // round 2).
+    expect(r.total_declarado).toBe(22535210);
     expect(Math.abs(suma(vis) - r.total_declarado!)).toBeLessThanOrEqual(1);
     expect(r.k_nombre_archivo).toBe('K8');
     expect(r.periodo_archivo).toEqual({ desde: '2026-08-01', hasta: '2026-08-30' });
