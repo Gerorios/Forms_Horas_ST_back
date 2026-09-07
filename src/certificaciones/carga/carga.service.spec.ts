@@ -547,6 +547,33 @@ describe('CargaService.confirmar — bloqueadas, confirmada y filas manuales (Ta
     expect(insertCall.values).toContain('archivo');
   });
 
+  it('editar item_codigo a un código ausente del maestro → 422 con el ítem en bloqueadas y sin transacción', async () => {
+    const { service, preview, rowA, rowB, transaction } = await armarPreviewDosFilas();
+    await expect(
+      service.confirmar(
+        {
+          previewId: preview.previewId,
+          ediciones: [
+            { rowId: rowB, excluida: true } as any,
+            { rowId: rowA, item_codigo: '888' } as any,
+          ],
+        },
+        CERT_ADMIN,
+        CUIL,
+        'Nombre',
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        bloqueadas: [
+          expect.objectContaining({
+            detalle: expect.stringContaining('Ítem 888 no encontrado en el maestro'),
+          }),
+        ],
+      },
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it('filas manuales: valida ítem por id, K dentro del claim carga, cuadratura, y las inserta con origen manual', async () => {
     const { service, preview, cargarItemsPorId, executeRaw, certCargaLogCreate, rowB } =
       await armarPreviewDosFilas(CERT_CARGA_K12_K8);
@@ -570,11 +597,65 @@ describe('CargaService.confirmar — bloqueadas, confirmada y filas manuales (Ta
     expect(r.insertadas).toBe(2);
     const insertCall = executeRaw.mock.calls[0][0];
     expect(String(insertCall.strings.join(''))).toContain('origen');
-    expect(insertCall.values).toContain('manual'); // origen + hoja_origen
+    // 'manual' aparece dos veces en la tupla: hoja_origen Y origen (columna
+    // final) — pinnear ambigüedad: exactamente 2 ocurrencias, y la ÚLTIMA
+    // (columna `origen`) es 'manual'.
+    expect(insertCall.values.filter((v: unknown) => v === 'manual')).toHaveLength(2);
+    expect(insertCall.values[insertCall.values.length - 1]).toBe('manual');
     expect(insertCall.values).toContain('60607.84');
     expect(certCargaLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ filasManuales: 1 }) }),
     );
+  });
+
+  it('fila manual inserta el id_item/id_contrato del ítem elegido en la UI (cargarItemsPorId), no el que resolverIds resolvería por código+K', async () => {
+    const mock = crearPrismaMock({
+      maestro: [{ itemCodigo: '5', codigoK: 'K8', idItem: 60, ptosGasnor: null, idContrato: 9 }],
+    });
+    const resolucion = new ResolucionService(mock.prisma as any);
+    jest.spyOn(resolucion, 'cargarItemsPorId').mockResolvedValue(
+      new Map([
+        [
+          77,
+          {
+            id_item: 77,
+            item_codigo: '5',
+            codigo_k: 'K8',
+            id_contrato: 3,
+            tarea: 'Adicional',
+            unidad_medida: 'un',
+            ptos_gasnor: null,
+            tipo: null,
+            contratista: null,
+          },
+        ],
+      ]),
+    );
+    const store = new PreviewStore();
+    const service = new CargaService(mock.prisma as any, resolucion, store);
+    const cert: CertClaim = { nivel: 'carga', ks: ['K8'], inc: false };
+    const buf = await armarExcel([]);
+    const preview = await service.preview(buf, 'manual.xlsx', 2026, 8, 'excel', cert, CUIL);
+
+    const r = await service.confirmar(
+      {
+        previewId: preview.previewId,
+        ediciones: [],
+        manuales: [
+          { id_item: 77, provincia: 'Salta', cantidades: '4', precio_unitario: '15151.96', total_mes: '60607.84' },
+        ],
+      },
+      cert,
+      CUIL,
+      'Nombre',
+    );
+
+    expect(r.manuales).toBe(1);
+    const insertCall = mock.executeRaw.mock.calls[0][0];
+    // (id_item, nombre_contrato, tarea, id_contrato, ...): el id_item va en
+    // values[0] y el id_contrato en values[3].
+    expect(insertCall.values[0]).toBe(77);
+    expect(insertCall.values[3]).toBe(3);
   });
 
   it('fila manual con id_item inexistente en el maestro → 400', async () => {

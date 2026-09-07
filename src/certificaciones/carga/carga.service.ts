@@ -312,6 +312,13 @@ export class CargaService {
     const manualesDto = dto.manuales ?? [];
     const itemsPorId = await this.resolucion.cargarItemsPorId(manualesDto.map((m) => m.id_item));
     const manuales: FilaPreview[] = [];
+    // rowId de la manual -> id_item/id_contrato EXACTOS que eligió el usuario
+    // en la UI (`cargarItemsPorId`). Se usan en el INSERT en vez de lo que
+    // `resolverIds` elegiría por código+K, porque un código puede estar
+    // duplicado dentro de un mismo K (ver P1 del review de Task 12): el
+    // usuario ya vio y eligió un `id_item` puntual, y ese es el que se debe
+    // guardar, no "cualquiera que matchee código+K".
+    const idsManualesPorRowId = new Map<string, { idItem: number; idContrato: number }>();
     for (const m of manualesDto) {
       const it = itemsPorId.get(m.id_item);
       if (!it) throw new BadRequestException(`Ítem del maestro inexistente: ${m.id_item}`);
@@ -346,9 +353,10 @@ export class CargaService {
         provinciasValidas,
         confirmada: !!m.confirmada,
       });
+      const rowId = `manual-${manuales.length + 1}`;
       manuales.push({
         ...base,
-        rowId: `manual-${manuales.length + 1}`,
+        rowId,
         item_en_maestro: true,
         error_detalle: detalle,
         tiene_error: tieneError,
@@ -360,6 +368,7 @@ export class CargaService {
         confirmada: !!m.confirmada,
         origen: 'manual',
       });
+      idsManualesPorRowId.set(rowId, { idItem: it.id_item, idContrato: it.id_contrato });
     }
 
     // 7) bloqueadas RECHAZAN la carga entera (spec §2.9): cualquier fila no
@@ -402,9 +411,13 @@ export class CargaService {
     }
 
     // 9) resolver ids en batch — las manuales pasan por el MISMO
-    // `resolverIds`: su ítem se resuelve por código+K igual que las del
-    // archivo (el id elegido en la UI ya se validó contra el maestro en 6b),
-    // así hay un solo camino de resolución y una sola query batch.
+    // `resolverIds` (una sola query batch para archivo+manuales) para
+    // resolver id_provincia y ptos_gasnor, PERO su id_item/id_contrato para
+    // el INSERT vienen de `idsManualesPorRowId` (el ítem exacto que eligió
+    // el usuario en la UI, vía `cargarItemsPorId`), NO de lo que
+    // `resolverIds` matchee por código+K — un código puede estar duplicado
+    // dentro de un mismo K, y en ese caso "por código+K" podría elegir un
+    // id_item distinto al que la persona realmente seleccionó.
     const idsPorIndice =
       cargables.length > 0
         ? await this.resolucion.resolverIds(
@@ -421,7 +434,13 @@ export class CargaService {
 
     cargables.forEach((fila, i) => {
       const ids = idsPorIndice.get(i);
-      if (!ids || ids.idContrato === null) {
+      if (!ids) return; // resolverIds siempre devuelve una entrada por índice
+
+      const idsManual = fila.origen === 'manual' ? idsManualesPorRowId.get(fila.rowId) : undefined;
+      const idContrato = idsManual ? idsManual.idContrato : ids.idContrato;
+      const idItem = idsManual ? idsManual.idItem : ids.idItem;
+
+      if (idContrato === null) {
         errores.push({
           hoja: fila.hoja_origen,
           fila: fila.fila_excel,
@@ -430,7 +449,7 @@ export class CargaService {
         });
         return;
       }
-      if (ids.idItem === null) {
+      if (idItem === null) {
         errores.push({
           hoja: fila.hoja_origen,
           fila: fila.fila_excel,
@@ -450,8 +469,8 @@ export class CargaService {
       }
       paraInsertar.push({
         fila,
-        idItem: ids.idItem,
-        idContrato: ids.idContrato,
+        idItem,
+        idContrato,
         idProvincia: ids.idProvincia,
         ptosGasnor: ids.ptosGasnor,
       });
