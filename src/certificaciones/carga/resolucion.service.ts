@@ -131,6 +131,24 @@ export class ResolucionService {
   }
 
   /**
+   * Devuelve, en 1 sola query, cuáles de los códigos K pedidos existen en
+   * el maestro de contratos. Lo usa `confirmar` (paso 6) para bloquear con
+   * 422 una fila cuyo K quedó apuntando a un contrato inexistente (típico:
+   * el usuario tipeó mal el K en el preview) en vez de dejarla llegar al
+   * paso 9 y terminar en una carga 'parcial' con la fila silenciosamente
+   * omitida. Lista vacía → Set vacío, sin consultar la BD.
+   */
+  async contratosExistentes(ks: string[]): Promise<Set<string>> {
+    const unicos = [...new Set(ks.filter((k) => !!k && k.trim() !== ''))];
+    if (unicos.length === 0) return new Set<string>();
+
+    const rows = await this.prisma.$queryRaw<{ codigo_k: string }[]>(
+      Prisma.sql`SELECT codigo_k FROM sth_cert_contratos WHERE codigo_k IN (${Prisma.join(unicos)})`,
+    );
+    return new Set(rows.map((r) => String(r.codigo_k)));
+  }
+
+  /**
    * Regla única de resolución de contrato (preview y carga usan ESTA
    * función):
    * 1. editado por el usuario en el preview → gana siempre

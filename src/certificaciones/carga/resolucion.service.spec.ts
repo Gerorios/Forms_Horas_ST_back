@@ -93,6 +93,112 @@ describe('ResolucionService.cargarMaestro', () => {
   });
 });
 
+describe('ResolucionService.cargarItemsPorId', () => {
+  const ROW = {
+    id_item: 77n,
+    item_codigo: '5',
+    codigo_k: 'K8',
+    id_contrato: 2n,
+    tarea: 'Adicional servicios > 3 m',
+    unidad_medida: 'un',
+    ptos_gasnor: null as unknown,
+    tipo: null,
+    contratista: null,
+  };
+
+  it('consulta el maestro por id_item con un IN de los ids pedidos (items + contratos)', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([ROW]);
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+
+    await service.cargarItemsPorId([77, 78]);
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const query = queryRaw.mock.calls[0][0];
+    const sql = query.strings.join('?');
+    expect(sql).toContain('sth_cert_items');
+    expect(sql).toContain('dc.codigo_k');
+    expect(sql).toContain('dc.id_contrato');
+    expect(sql).toContain('di.id_item IN (');
+    expect(query.values).toEqual([77, 78]);
+  });
+
+  it('normaliza los BigInt de id_item/id_contrato a number', async () => {
+    const service = new ResolucionService({ $queryRaw: jest.fn().mockResolvedValue([ROW]) } as any);
+    const mapa = await service.cargarItemsPorId([77]);
+    const it = mapa.get(77)!;
+    expect(it).toBeDefined();
+    expect(typeof it.id_item).toBe('number');
+    expect(it.id_item).toBe(77);
+    expect(typeof it.id_contrato).toBe('number');
+    expect(it.id_contrato).toBe(2);
+  });
+
+  it('ptos_gasnor Decimal/desconocido sale como string; null sigue null', async () => {
+    const decimal = { toString: () => '12.3400' }; // como lo devuelve el driver para DECIMAL
+    const service = new ResolucionService({
+      $queryRaw: jest.fn().mockResolvedValue([
+        { ...ROW, ptos_gasnor: decimal },
+        { ...ROW, id_item: 78n, ptos_gasnor: null },
+        { ...ROW, id_item: 79n, ptos_gasnor: undefined },
+      ]),
+    } as any);
+
+    const mapa = await service.cargarItemsPorId([77, 78, 79]);
+    expect(mapa.get(77)!.ptos_gasnor).toBe('12.3400');
+    expect(typeof mapa.get(77)!.ptos_gasnor).toBe('string');
+    expect(mapa.get(78)!.ptos_gasnor).toBeNull();
+    expect(mapa.get(79)!.ptos_gasnor).toBeNull();
+  });
+
+  it('lista vacía no consulta la BD y devuelve un Map vacío', async () => {
+    const queryRaw = jest.fn();
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+    const mapa = await service.cargarItemsPorId([]);
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(mapa.size).toBe(0);
+  });
+
+  it('filtra ids no enteros (NaN, decimales) y deduplica antes de consultar', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([]);
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+    await service.cargarItemsPorId([77, 77, 1.5, NaN, Infinity, 78]);
+    expect(queryRaw.mock.calls[0][0].values).toEqual([77, 78]);
+  });
+
+  it('si TODOS los ids son no enteros no consulta la BD', async () => {
+    const queryRaw = jest.fn();
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+    const mapa = await service.cargarItemsPorId([1.5, NaN]);
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(mapa.size).toBe(0);
+  });
+});
+
+describe('ResolucionService.contratosExistentes', () => {
+  it('devuelve el Set de Ks que existen en el maestro (1 sola query batch)', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([{ codigo_k: 'K12' }, { codigo_k: 'K8' }]);
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+
+    const set = await service.contratosExistentes(['K12', 'K8', 'KZZ', 'K12']);
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const query = queryRaw.mock.calls[0][0];
+    expect(query.strings.join('?')).toContain('sth_cert_contratos');
+    expect(query.values).toEqual(['K12', 'K8', 'KZZ']); // deduplicado
+    expect(set.has('K12')).toBe(true);
+    expect(set.has('K8')).toBe(true);
+    expect(set.has('KZZ')).toBe(false);
+  });
+
+  it('lista vacía (o solo vacíos) → Set vacío sin consultar la BD', async () => {
+    const queryRaw = jest.fn();
+    const service = new ResolucionService({ $queryRaw: queryRaw } as any);
+    expect((await service.contratosExistentes([])).size).toBe(0);
+    expect((await service.contratosExistentes(['', '   '])).size).toBe(0);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+});
+
 describe('ResolucionService.resolverIds', () => {
   it('resuelve id_item por código+K, id_contrato por K, id_provincia por UPPER y ptos_gasnor del archivo', async () => {
     const prisma = {
