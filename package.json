@@ -8,7 +8,8 @@
     "start:prod": "node dist/src/main",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:pdf-integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/certificaciones/carga/parser-pdf.spec.ts"
+    "test:pdf-integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/certificaciones/carga/parser-pdf.spec.ts",
+    "test:cert-real": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/certificaciones/carga/parser-real.spec.ts"
   },
   "jest": {
     "moduleFileExtensions": [

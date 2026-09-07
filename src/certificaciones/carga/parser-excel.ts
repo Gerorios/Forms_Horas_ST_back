@@ -12,14 +12,39 @@
  *     así headers duplicados no corrompen valores (toma la primera).
  *
  * Nota exceljs: una celda puede traer number, string, Date, {richText:[...]}
- * o {formula, result}. `valorCelda` normaliza todo a lo que produciría
+ * o {formula, result}. `rawDeCelda` normaliza todo a lo que produciría
  * `str(v)` en pandas para los fines de este parser. Para números elegimos
- * `String(numero)` simple (p.ej. 431 → "431", no "431.0"): tanto "431" como
- * "431.0" parsean igual en fmt_num/fmt_item, así que el resultado final no
- * cambia — documentado a pedido del brief.
+ * `String(numero)` simple (p.ej. 431 → "431", no "431.0").
+ *
+ * Regla de montos (fix crítico 2026-09-07, ver `./montos`): la regla es-AR
+ * de TEXTO (punto = miles, coma = decimal) SOLO aplica a celdas que eran
+ * texto en el Excel. Una celda NUMÉRICA real (o fórmula cuyo resultado es
+ * number) ya trae el valor correcto — ahí el punto es el separador decimal
+ * de JS, no de miles — así que `fmtNum`/`parsearMonto` la devuelven tal
+ * cual sin pasar por `parsearMontoTexto` (p.ej. 59164.8 no debe leerse
+ * como "591648"). `celdaEsNumerica` decide el origen antes de aplicar la
+ * regla de texto.
  */
 import * as ExcelJS from 'exceljs';
-import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import { ErrorParseo, FilaParseada, PeriodoArchivo, ResultadoParseo } from './parser-tipos';
+import { montoANumero, parsearMontoTexto } from './montos';
+import { extraerKDeNombre } from './nombre-archivo';
+import { fechaISODeCelda } from './fechas';
+
+/**
+ * Columnas sin las cuales la hoja no se puede leer: si falta alguna, no se
+ * procesa ninguna fila y se emite un error de `header` (mejor no cargar
+ * nada que cargar valores corridos de columna). Paridad con
+ * `COLUMNAS_REQUERIDAS` del parser PDF.
+ */
+const COLUMNAS_REQUERIDAS_XLS = [
+  'item_codigo',
+  'contrato',
+  'provincia',
+  'cantidades',
+  'precio_unitario',
+  'total_mes',
+];
 
 /** Mapeo flexible: nombre canónico → variantes posibles en el header (orden = prioridad). */
 const COL_ALIAS: Record<string, string[]> = {
@@ -81,6 +106,21 @@ function rawDeCelda(cell: ExcelJS.Cell): string | null {
   return rawToStr(v);
 }
 
+/**
+ * true si el valor PLANO de la celda (tras resolver fórmula, igual que
+ * `rawDeCelda`) es un number de JS — no una celda de texto con dígitos.
+ * Distingue el origen para decidir si aplica la regla es-AR de montos en
+ * texto (`./montos`) o si el número real ya viene correcto.
+ */
+function celdaEsNumerica(cell: ExcelJS.Cell): boolean {
+  const v = cell.value;
+  if (v !== null && typeof v === 'object' && ('formula' in (v as any) || 'sharedFormula' in (v as any))) {
+    const res = cell.result;
+    return typeof valorCeldaPlano((res === undefined ? null : res) as ExcelJS.CellValue) === 'number';
+  }
+  return typeof valorCeldaPlano(v) === 'number';
+}
+
 /** Equivalente a `str(v)` de Python para los tipos que produce exceljs. */
 function rawToStr(v: ExcelJS.CellValue): string | null {
   const plano = valorCeldaPlano(v);
@@ -108,28 +148,31 @@ function extraerRegion(nombreHoja: string): string {
   return '';
 }
 
-/** '$ 39.072.433,92' | '39072433.92' → number, o null si no es un monto. */
-function parsearMonto(v: string): number | null {
-  let s = v.replace(/[$\s]/g, '');
-  if (!s) return null;
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(/,/g, '.');
-  } else if (s.includes(',')) {
-    s = s.replace(/,/g, '.');
+/**
+ * '$ 39.072.433,92' (texto) | 39072433.92 (celda numérica real) → number,
+ * o null si no es un monto. Si `esNumero` es true la celda ya trae el
+ * valor correcto (el punto es decimal de JS, no separador de miles) y se
+ * devuelve tal cual; si no, se aplica la regla única es-AR de texto
+ * (`./montos`: punto = miles, coma = decimal, sin heurística por forma).
+ */
+function parsearMonto(v: string, esNumero: boolean): number | null {
+  if (esNumero) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
   }
-  return parseFloatEstricto(s);
+  return montoANumero(v);
 }
 
-/** fmt_num: normaliza es-AR; devuelve STRING normalizada o null si no parsea. */
-function fmtNum(v: string | null): string | null {
+/**
+ * fmt_num: si `esNumero` es true (celda numérica real de Excel) devuelve
+ * el valor tal cual (confirmando que parsea); si no, normaliza es-AR con
+ * la regla única de texto (`./montos`). Devuelve STRING normalizada o
+ * null si no parsea.
+ */
+function fmtNum(v: string | null, esNumero: boolean): string | null {
   if (v === null) return null;
-  let s = v.replace(/[$\s]/g, '');
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(/,/g, '.');
-  } else if (s.includes(',')) {
-    s = s.replace(/,/g, '.');
-  }
-  return parseFloatEstricto(s) === null ? null : s;
+  if (esNumero) return Number.isFinite(Number(v)) ? v : null;
+  return parsearMontoTexto(v);
 }
 
 /** fmt_item: numérico → entero o 4 decimales; texto tal cual; null → "". */
@@ -153,29 +196,38 @@ function esItemValido(raw: string | null): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9\s\-_,.]*$/.test(s);
 }
 
-/** Dado el header en UPPER (índice 1-based → texto), resuelve {canon: índice de columna}. */
-function mapearColumnas(headerUpper: Map<number, string>): Map<string, number> {
+/**
+ * Dado el header en UPPER (índice 1-based → texto), resuelve
+ * {canon: índice de columna}, más las columnas de header que no matchean
+ * ningún alias conocido (`ignoradas`) y las requeridas que no aparecieron
+ * (`faltantes`). Paridad con `construirCabecera` del parser PDF.
+ */
+function mapearColumnas(
+  headerUpper: Map<number, string>,
+): { mapa: Map<string, number>; ignoradas: string[]; faltantes: string[] } {
   const headerNorm = new Map<number, string>();
   for (const [idx, h] of headerUpper) headerNorm.set(idx, normalizarEspacios(h));
 
   const mapa = new Map<string, number>();
+  const usadas = new Set<number>();
   for (const [canon, aliases] of Object.entries(COL_ALIAS)) {
     for (const alias of aliases) {
       const aliasNorm = normalizarEspacios(alias);
-      let encontrado: number | undefined;
-      for (const [idx, h] of headerNorm) {
-        if (h === aliasNorm) {
-          encontrado = idx;
-          break;
-        }
-      }
-      if (encontrado !== undefined) {
-        mapa.set(canon, encontrado);
+      const idx = [...headerNorm.entries()].find(([, h]) => h === aliasNorm)?.[0];
+      if (idx !== undefined) {
+        mapa.set(canon, idx);
+        usadas.add(idx);
         break;
       }
     }
   }
-  return mapa;
+
+  const ignoradas = [...headerNorm.entries()]
+    .filter(([idx, h]) => h !== '' && !usadas.has(idx))
+    .map(([, h]) => h);
+  const faltantes = COLUMNAS_REQUERIDAS_XLS.filter((c) => !mapa.has(c));
+
+  return { mapa, ignoradas, faltantes };
 }
 
 interface Meta {
@@ -183,6 +235,7 @@ interface Meta {
   nro_np: string | null;
   fecha: string;
   total_declarado: number | null;
+  periodo_archivo: PeriodoArchivo | null;
 }
 
 function extraerMeta(
@@ -196,6 +249,7 @@ function extraerMeta(
     nro_np: null,
     fecha: `${anio}-${pad2(mes)}-01`,
     total_declarado: null,
+    periodo_archivo: null,
   };
 
   const mSheet = nombreHoja.toUpperCase().match(/K\d+/);
@@ -204,33 +258,54 @@ function extraerMeta(
   const filasMeta = Math.min(13, worksheet.rowCount || 0);
   for (let r = 1; r <= filasMeta; r++) {
     const row = worksheet.getRow(r);
-    const vals: string[] = [];
+    const vals: Array<{ texto: string; esNumero: boolean }> = [];
     const colCount = Math.max(row.cellCount, worksheet.columnCount || 0);
     for (let c = 1; c <= colCount; c++) {
-      const raw = rawDeCelda(row.getCell(c));
+      const cell = row.getCell(c);
+      const raw = rawDeCelda(cell);
       if (raw === null) continue;
       const trimmed = raw.trim();
       if (trimmed === '' || trimmed.toLowerCase() === 'nan') continue;
-      vals.push(trimmed);
+      vals.push({ texto: trimmed, esNumero: celdaEsNumerica(cell) });
     }
 
     for (const v of vals) {
-      if (/^K\d+$/i.test(v) && !meta.k_gasnor) meta.k_gasnor = v.toUpperCase();
+      if (/^K\d+$/i.test(v.texto) && !meta.k_gasnor) meta.k_gasnor = v.texto.toUpperCase();
     }
 
-    const filaStr = vals.join(' ').toUpperCase();
+    const filaStr = vals.map((v) => v.texto).join(' ').toUpperCase();
     if ((filaStr.includes('NRO. DE NP') || filaStr.includes('NRO DE NP')) && !meta.nro_np) {
       for (let i = 0; i < vals.length; i++) {
-        if (vals[i].toUpperCase().includes('NP') && i + 1 < vals.length) {
-          meta.nro_np = vals[i + 1];
+        if (vals[i].texto.toUpperCase().includes('NP') && i + 1 < vals.length) {
+          meta.nro_np = vals[i + 1].texto;
         }
       }
     }
 
+    if ((filaStr.includes('NRO. WK') || filaStr.includes('NRO WK')) && !meta.nro_np) {
+      for (let i = 0; i < vals.length; i++) {
+        if (
+          vals[i].texto.toUpperCase().includes('WK') &&
+          i + 1 < vals.length &&
+          /^\d{4,}$/.test(vals[i + 1].texto)
+        ) {
+          meta.nro_np = vals[i + 1].texto;
+        }
+      }
+    }
+
+    if (filaStr.includes('PERIODO A CERTIFICAR') && !meta.periodo_archivo) {
+      const fechas = vals
+        .map((v) => fechaISODeCelda(v.texto))
+        .filter((f): f is string => f !== null);
+      if (fechas.length >= 2) meta.periodo_archivo = { desde: fechas[0], hasta: fechas[1] };
+    }
+
     if (meta.total_declarado === null) {
       for (let i = 0; i < vals.length; i++) {
-        if (vals[i].toUpperCase().includes('TOTAL MES') && i + 1 < vals.length) {
-          meta.total_declarado = parsearMonto(vals[i + 1]);
+        if (vals[i].texto.toUpperCase().includes('TOTAL MES') && i + 1 < vals.length) {
+          const siguiente = vals[i + 1];
+          meta.total_declarado = parsearMonto(siguiente.texto, siguiente.esNumero);
           break;
         }
       }
@@ -274,19 +349,26 @@ function procesarFila(
     return s && !LITERALES_NULOS.has(s.toUpperCase()) ? s : null;
   };
 
+  /** true si la celda del campo era numérica en el Excel (no texto). */
+  const esNumCampo = (campo: string): boolean => {
+    const col = colMap.get(campo);
+    if (col === undefined) return false;
+    return celdaEsNumerica(row.getCell(col));
+  };
+
   const itemCodigo = fmtItem(get('item_codigo'));
   const nombreContrato = get('nombre_contrato');
   const tarea = get('tarea');
   let contrato = (get('contrato') || '').trim().toUpperCase() || meta.k_gasnor || '';
   const unidadMedida = get('unidad_medida');
-  const ptosGasnor = fmtNum(get('ptos_gasnor'));
+  const ptosGasnor = fmtNum(get('ptos_gasnor'), esNumCampo('ptos_gasnor'));
   const tipo = get('tipo');
   const contratista = get('contratista');
   const provinciaTitulo = (get('provincia') || '').trim();
   const provincia = provinciaTitulo ? tituloEs(provinciaTitulo) : '';
-  const cantidades = fmtNum(get('cantidades'));
-  const precioUnitario = fmtNum(get('precio_unitario'));
-  const totalMes = fmtNum(get('total_mes'));
+  const cantidades = fmtNum(get('cantidades'), esNumCampo('cantidades'));
+  const precioUnitario = fmtNum(get('precio_unitario'), esNumCampo('precio_unitario'));
+  const totalMes = fmtNum(get('total_mes'), esNumCampo('total_mes'));
   const observaciones = get('observaciones');
 
   if (contrato && !contrato.startsWith('K')) {
@@ -352,6 +434,9 @@ function procesarHoja(
   if (resultado.total_declarado === null) {
     resultado.total_declarado = meta.total_declarado;
   }
+  if (resultado.periodo_archivo === null && meta.periodo_archivo) {
+    resultado.periodo_archivo = meta.periodo_archivo;
+  }
 
   const headerRow = worksheet.getRow(headerIdx);
   const colCount = Math.max(headerRow.cellCount, worksheet.columnCount || 0);
@@ -361,17 +446,32 @@ function procesarHoja(
     headerUpper.set(c, raw !== null ? raw.trim().toUpperCase() : '');
   }
 
-  const colMap = mapearColumnas(headerUpper);
+  const { mapa: colMap, ignoradas, faltantes } = mapearColumnas(headerUpper);
 
-  if (!colMap.has('item_codigo')) {
+  if (faltantes.length > 0) {
     const primeros12 = Array.from(headerUpper.values()).slice(0, 12);
     resultado.errores.push({
       hoja: nombreHoja,
       fila: 0,
       campo: 'header',
-      mensaje: `Columna ÍTEMS no encontrada. Header: ${JSON.stringify(primeros12)}`,
+      mensaje:
+        `Faltan columnas requeridas en la hoja: ${faltantes.join(', ')}. ` +
+        `Header: ${JSON.stringify(primeros12)}`,
     });
     return;
+  }
+
+  for (const columna of ignoradas) {
+    if (!resultado.columnas_ignoradas.includes(columna)) {
+      resultado.columnas_ignoradas.push(columna);
+    }
+    resultado.avisos.push({
+      tipo: 'columna_ignorada',
+      hoja: nombreHoja,
+      fila: 0,
+      fuerte: false,
+      mensaje: `Columna ignorada: ${columna}. Sus valores no se asignaron a ninguna columna.`,
+    });
   }
 
   const colItem = colMap.get('item_codigo')!;
@@ -400,6 +500,10 @@ export async function parsearExcel(
     errores: [],
     periodo: `${anio}-${pad2(mes)}`,
     total_declarado: null,
+    avisos: [],
+    columnas_ignoradas: [],
+    periodo_archivo: null,
+    k_nombre_archivo: extraerKDeNombre(nombreArchivo),
   };
 
   const workbook = new ExcelJS.Workbook();
@@ -425,6 +529,30 @@ export async function parsearExcel(
 
   for (const ws of hojasCert) {
     procesarHoja(ws, nombreArchivo, anio, mes, resultado);
+  }
+
+  if (resultado.total_declarado === null || resultado.total_declarado === 0) {
+    resultado.avisos.push({
+      tipo: 'sin_total_declarado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: true,
+      mensaje:
+        'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
+    });
+  }
+
+  // Paridad con el parser PDF (ver final de `parsearPdf`): si se leyeron
+  // filas pero ninguna trae NP/WK, la certificación queda sin número de
+  // referencia y hay que avisarlo (aviso débil: la carga sigue siendo válida).
+  if (resultado.filas.length > 0 && resultado.filas.every((f) => f.nro_np === null)) {
+    resultado.avisos.push({
+      tipo: 'np_no_detectado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: 'No se detectó el número de NP/WK en la cabecera.',
+    });
   }
 
   return resultado;

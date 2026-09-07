@@ -25,7 +25,16 @@
  * (mismo comportamiento, incluida la duplicación de números entre páginas
  * si el PDF tiene más de una).
  */
-import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import {
+  AvisoParseo,
+  ErrorParseo,
+  FilaParseada,
+  PeriodoArchivo,
+  ResultadoParseo,
+} from './parser-tipos';
+import { montoANumero, parsearMontoTexto } from './montos';
+import { extraerKDeNombre } from './nombre-archivo';
+import { parsearFechaDMA } from './fechas';
 
 /** Palabra con posición, equivalente al dict que devuelve `page.extract_words()` de pdfplumber. */
 export interface PalabraPosicionada {
@@ -33,25 +42,90 @@ export interface PalabraPosicionada {
   x0: number;
   top: number;
   width: number;
+  /**
+   * Índice del item de texto de pdfjs del que salió la palabra: las palabras
+   * con el mismo `itemId` forman UNA frase de cabecera ("NOMBRE CONTRATO",
+   * "K GASNOR", "$ Total mes"), porque pdfjs devuelve el título multipalabra
+   * como un único item. Opcional: los datos sintéticos de los tests y un
+   * extractor tipo pdfplumber (una palabra = un item) lo dejan sin definir, y
+   * entonces cada palabra es su propia frase.
+   */
+  itemId?: number;
 }
 
-/** Palabras del header → nombre canónico del campo. */
-const HEADER_PALABRAS: Record<string, string> = {
+/**
+ * FRASES completas de cabecera (UPPER, espacios normalizados) → nombre
+ * canónico del campo. El match es EXACTO sobre la frase entera: por eso la
+ * tabla lista tanto "K GASNOR" como "K" suelto, tanto "$ TOTAL MES" como
+ * "TOTAL".
+ *
+ * Deliberadamente NO hay fallback "por primera palabra" para frases de varias
+ * palabras: si lo hubiera, un título desconocido como "Total acumulado" caería
+ * en `total_mes`, y si estuviera a la izquierda del "$ Total mes" real se
+ * quedaría con el campo (gana el primer x0) descartando la columna verdadera
+ * como duplicada — sin ignorada, sin aviso y sin faltante, o sea cargando el
+ * acumulado como total del mes en silencio. Un título de varias palabras que
+ * no esté acá se trata como columna ignorada, que es visible para el usuario.
+ */
+const HEADER_FRASES: Record<string, string> = {
   ÍTEMS: 'item_codigo',
   ITEMS: 'item_codigo',
+  ÍTEM: 'item_codigo',
+  ITEM: 'item_codigo',
+  'NOMBRE CONTRATO': 'nombre_contrato',
   NOMBRE: 'nombre_contrato',
   TAREA: 'tarea',
+  DESCRIPCION: 'tarea',
+  DESCRIPCIÓN: 'tarea',
+  'K GASNOR': 'contrato',
   K: 'contrato',
   UM: 'unidad_medida',
+  'PTOS. GASNOR': 'ptos_gasnor',
+  'PTOS GASNOR': 'ptos_gasnor',
   'PTOS.': 'ptos_gasnor',
   TIPO: 'tipo',
   CONTRATISTA: 'contratista',
   PROVINCIA: 'provincia',
   CANTIDADES: 'cantidades',
+  CANTIDAD: 'cantidades',
+  '$ UNITARIO MES': 'precio_unitario',
+  'UNITARIO MES': 'precio_unitario',
+  '$ UNITARIO': 'precio_unitario',
   UNITARIO: 'precio_unitario',
+  '$ TOTAL MES': 'total_mes',
+  'TOTAL MES': 'total_mes',
+  '$ TOTAL': 'total_mes',
   TOTAL: 'total_mes',
   OBSERVACIONES: 'observaciones',
 };
+
+/**
+ * Columnas sin las cuales la página no se puede leer: si falta alguna, no se
+ * procesa ninguna fila y se emite un error de `header` (mejor no cargar nada
+ * que cargar valores corridos de columna).
+ */
+export const COLUMNAS_REQUERIDAS = [
+  'item_codigo',
+  'contrato',
+  'provincia',
+  'cantidades',
+  'precio_unitario',
+  'total_mes',
+] as const;
+
+/**
+ * Palabras que son CONTINUACIÓN de un título y no una columna nueva: "NOMBRE
+ * CONTRATO", "K GASNOR", "$ Total mes" partidos. Sin esta lista cada una
+ * inventaría una columna ignorada fantasma que se comería el rango x de la
+ * columna real.
+ *
+ * Solo aplica a frases SIN `itemId` (extractor tipo pdfplumber, o datos
+ * sintéticos): ahí no hay forma de saber que la palabra venía pegada al
+ * título anterior. Cuando la palabra trae `itemId`, el agrupado por item ya
+ * rearmó las frases reales, así que un item suelto titulado "MES" es una
+ * columna desconocida como cualquier otra y va a `ignoradas`.
+ */
+const CONTINUACIONES = new Set(['CONTRATO', 'GASNOR', 'MES', '$']);
 
 /** Al detectar cualquiera de estas palabras, terminó la zona de datos de la página. */
 const FOOTER_PALABRAS = [
@@ -72,12 +146,13 @@ const PROVINCIAS: Record<string, string> = {
   catamarca: 'Catamarca',
 };
 
-type ColMap = Map<string, [number, number]>;
+export type ColMap = Map<string, [number, number]>;
 
 interface Meta {
   k_gasnor: string | null;
   nro_np: string | null;
   total_declarado: number | null;
+  periodo_archivo: PeriodoArchivo | null;
 }
 
 function pad2(n: number): string {
@@ -95,35 +170,40 @@ function tituloEs(s: string): string {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
-const FLOAT_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
-
-/** `_es_item_valido` del PDF: más estricto que el de Excel — `^[A-Za-z]?\d{3,}`. */
+/**
+ * `_es_item_valido` del PDF: código de ítem = letra opcional + 1+ dígitos +
+ * sufijo opcional separado por `-.,/` (p. ej. "5", "116-a", "A12"). Un
+ * código en la columna de ítem ABRE un grupo (fila lógica), traiga o no
+ * plata esa misma línea; el chequeo de plata es POR GRUPO —si ninguna de
+ * sus líneas trae cantidad ni total legibles, el grupo no es fila y se
+ * reporta como aviso `linea_no_leida` (ver `procesarPagina`).
+ */
+const ITEM_RE = /^[A-Za-z]?\d+([-.,/][A-Za-z0-9]+)?$/;
 export function esItemValido(s: string | null | undefined): boolean {
   if (!s) return false;
-  const su = s.toUpperCase();
-  if (su === 'ÍTEMS' || su === 'ITEMS' || su === 'ÍTEM' || su === 'ITEM' || su === '') {
-    return false;
-  }
-  return /^[A-Za-z]?\d{3,}/.test(s);
+  const t = s.trim();
+  const su = t.toUpperCase();
+  if (su === 'ÍTEMS' || su === 'ITEMS' || su === 'ÍTEM' || su === 'ITEM') return false;
+  return ITEM_RE.test(t);
+}
+
+/** true si en el rango de `cantidades` o `total_mes` de la línea hay un número parseable. */
+export function lineaTraePlata(ws: PalabraPosicionada[], colMap: ColMap): boolean {
+  return (
+    limpiarNum(obtenerTexto(ws, colMap, 'cantidades')) !== null ||
+    limpiarNum(obtenerTexto(ws, colMap, 'total_mes')) !== null
+  );
 }
 
 /**
- * `_limpiar_num`: toma solo el PRIMER bloque `^[\d.,]+` (tras quitar $),
- * hace strip(".,") de ambos extremos y aplica la regla es-AR coma/punto.
- * Devuelve la STRING normalizada o null si no parsea como float.
+ * `_limpiar_num`: toma solo el PRIMER bloque numérico (tras quitar $) y
+ * normaliza con la regla única es-AR (ver `./montos`: punto = miles,
+ * coma = decimal, sin heurística por forma). Devuelve la STRING
+ * normalizada o null si no parsea como float. Wrapper delgado — la lógica
+ * vive en `parsearMontoTexto` para compartirla con Excel.
  */
 export function limpiarNum(s: string | null | undefined): string | null {
-  if (!s) return null;
-  let str = s.replace(/\$/g, '').trim();
-  const m = str.match(/^[\d.,]+/);
-  if (!m) return null;
-  str = m[0].replace(/^[.,]+/, '').replace(/[.,]+$/, '');
-  if (str.includes(',') && str.includes('.')) {
-    str = str.replace(/\./g, '').replace(/,/g, '.');
-  } else if (str.includes(',')) {
-    str = str.replace(/,/g, '.');
-  }
-  return FLOAT_RE.test(str) ? str : null;
+  return parsearMontoTexto(s);
 }
 
 /**
@@ -150,20 +230,96 @@ export function pegarPalabras(ws: PalabraPosicionada[]): string {
   return resultado.join(' ').trim();
 }
 
+/** Resultado de leer la línea de cabecera de una página. */
+export interface Cabecera {
+  /** {campo: [xIni, xFin]}, incluidas las columnas ignoradas como `__ignorada_N`. */
+  colMap: ColMap;
+  /** Títulos de cabecera que no reconocemos (p. ej. "CUENTA"), en orden de x0. */
+  ignoradas: string[];
+  /** Columnas de `COLUMNAS_REQUERIDAS` que no aparecieron. */
+  faltantes: string[];
+}
+
 /**
- * `_construir_col_map`: {campo: [xIni, xFin]} usando los x0 reales del
- * header; los límites son el punto medio entre header consecutivos + 5.
+ * Agrupa las palabras de la línea de cabecera en FRASES: mismo `itemId` =
+ * misma frase; sin `itemId`, cada palabra es su propia frase (pdfplumber).
+ *
+ * El agrupado es POR `itemId`, no por adyacencia: los x0 de las palabras se
+ * estiman por proporción de caracteres (ver `dividirEnPalabras`), así que las
+ * palabras de dos títulos vecinos pueden intercalarse al ordenar por x0
+ * ("mes" de "$ Unitario mes" cayendo después del "$" de "$ Total mes"). Cada
+ * frase se queda con el x0 mínimo de su item y las frases se ordenan por ese x0.
  */
-export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
-  const ordenados = [...headerWs].sort((a, b) => a.x0 - b.x0);
-  const detectados: [number, string][] = [];
-  for (const w of ordenados) {
-    const texto = w.text.trim().toUpperCase();
-    const campo = HEADER_PALABRAS[texto];
-    if (campo && !detectados.some(([, c]) => c === campo)) {
-      detectados.push([w.x0, campo]);
+function frasesDeCabecera(
+  headerWs: PalabraPosicionada[],
+): { texto: string; x0: number; itemId?: number }[] {
+  const porItem = new Map<number, PalabraPosicionada[]>();
+  const frases: { texto: string; x0: number; itemId?: number }[] = [];
+
+  for (const w of headerWs) {
+    if (w.itemId === undefined) {
+      frases.push({ texto: w.text.trim(), x0: w.x0, itemId: undefined });
+      continue;
     }
+    if (!porItem.has(w.itemId)) porItem.set(w.itemId, []);
+    porItem.get(w.itemId)!.push(w);
   }
+
+  for (const [itemId, ws] of porItem) {
+    const ordenadas = [...ws].sort((a, b) => a.x0 - b.x0);
+    frases.push({
+      texto: ordenadas.map((x) => x.text.trim()).join(' '),
+      x0: ordenadas[0].x0,
+      itemId,
+    });
+  }
+
+  frases.sort((a, b) => a.x0 - b.x0);
+  return frases.map((f) => ({
+    texto: f.texto.replace(/\s+/g, ' ').trim().toUpperCase(),
+    x0: f.x0,
+    itemId: f.itemId,
+  }));
+}
+
+/**
+ * `_construir_col_map` + lectura de cabecera: {campo: [xIni, xFin]} usando
+ * los x0 reales del header; los límites son el punto medio entre header
+ * consecutivos + 5.
+ *
+ * Diferencia con el Python original: los títulos DESCONOCIDOS ya no se
+ * descartan — se registran como `__ignorada_N` y se quedan con su propio
+ * rango x. Sin eso, cuando Naturgy agregó "CUENTA" entre PROVINCIA y
+ * Cantidades (agosto 2026), el número de cuenta (922) caía dentro del rango
+ * de `cantidades` y se cargaba como cantidad certificada en lugar del 221
+ * real. Las ignoradas se informan al usuario como avisos de lectura.
+ */
+export function construirCabecera(headerWs: PalabraPosicionada[]): Cabecera {
+  const frases = frasesDeCabecera(headerWs);
+  const detectados: [number, string][] = [];
+  const ignoradas: string[] = [];
+  let nIgn = 0;
+
+  for (const f of frases) {
+    if (f.texto === '') continue;
+    // Match exacto de la frase completa: ver el comentario de HEADER_FRASES
+    // (un fallback por primera palabra secuestraría la columna real).
+    const campo = HEADER_FRASES[f.texto];
+    if (campo && !detectados.some(([, c]) => c === campo)) {
+      detectados.push([f.x0, campo]);
+      continue;
+    }
+    // Título reconocido que REPITE un campo ya detectado (la primera
+    // ocurrencia, la de x0 menor, se queda con el campo): se trata como
+    // columna ignorada —con su propio rango x y su aviso— igual que hace
+    // `mapearColumnas` en el Excel. Descartarlo en silencio dejaba su banda
+    // x absorbida por las columnas vecinas, así que los valores de esa
+    // columna repetida se cargaban como si fueran de la de al lado.
+    if (!campo && f.itemId === undefined && CONTINUACIONES.has(f.texto)) continue;
+    ignoradas.push(f.texto);
+    detectados.push([f.x0, `__ignorada_${nIgn++}`]);
+  }
+  detectados.sort((a, b) => a[0] - b[0]);
 
   const colMap: ColMap = new Map();
   const n = detectados.length;
@@ -173,7 +329,14 @@ export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
     const xIni = i > 0 ? (detectados[i - 1][0] + x0) / 2 + 5 : 0;
     colMap.set(campo, [xIni, xFin]);
   }
-  return colMap;
+
+  const faltantes = COLUMNAS_REQUERIDAS.filter((c) => !colMap.has(c));
+  return { colMap, ignoradas, faltantes: [...faltantes] };
+}
+
+/** Compatibilidad: el colMap suelto que consumen los specs y el resto del módulo. */
+export function construirColMap(headerWs: PalabraPosicionada[]): ColMap {
+  return construirCabecera(headerWs).colMap;
 }
 
 /** `_get_texto`: extrae y pega palabras de un campo según su rango x (una línea). */
@@ -227,22 +390,77 @@ export function agruparPorLinea(words: PalabraPosicionada[]): Map<number, Palabr
 }
 
 /**
- * `_extraer_meta`: k_gasnor por `\bK(\d+)\b` en el texto completo;
- * total_declarado por `TOTAL MES \$? ((?:[\d.,]+\s*)+)` (monto que puede
- * venir partido en varias palabras). `nro_np` nunca se completa en el PDF
- * (el Python original no lo busca acá) — queda siempre null.
+ * `_extraer_meta`, extendida (brief T5). `procesarPagina` la llama SOLO con
+ * las palabras del bloque de cabecera (arriba de la línea de ÍTEMS) para que
+ * ningún dato de la tabla pueda hacerse pasar por meta; la firma sigue
+ * aceptando cualquier conjunto de palabras.
+ *
+ * k_gasnor por `\bK(\d+)\b` en el
+ * texto completo; `nro_np` por la etiqueta "NRO. [DE] NP|WK" seguida de 4+
+ * dígitos (Naturgy usa las dos formas según el archivo — "NRO. DE NP" y
+ * "NRO. WK" — según la certificación); `periodo_archivo` por "PERIODO A
+ * CERTIFICAR d/m/aaaa d/m/aaaa"; `total_declarado` por el primer monto REAL
+ * después de "TOTAL MES", saltando tokens "$"/"-" sueltos (columna de saldo
+ * vacía antes del total real) y volviendo a pegar el monto si el extractor
+ * lo partió en varios tokens numéricos consecutivos (ver test "monto
+ * partido en varias palabras").
+ *
+ * El texto completo (`full`) se arma en ORDEN VISUAL, no en el orden crudo
+ * en que pdfjs devuelve `content.items` (Task 8, fix round 3): el header de
+ * las certificaciones reales de Naturgy tiene varias cajas de info en
+ * columnas x distintas, y pdfjs entrega esos items intercalados según su
+ * orden interno (que no coincide con "de arriba a abajo, de izquierda a
+ * derecha"). Concatenar `words` tal cual venían podía dejar, p. ej., la
+ * etiqueta "PERIODO A CERTIFICAR" pegada al texto de OTRA caja del header en
+ * vez de a sus propias fechas, que sí están en la misma línea visual pero en
+ * otra posición del array. Se reutiliza `agruparPorLinea` (misma
+ * cuantización `round(top/4)*4` que usa el resto del parser) para agrupar
+ * por línea, se recorren las líneas por `top` ascendente y, dentro de cada
+ * línea, las palabras por `x0` ascendente — el mismo criterio de lectura
+ * humana que ya usa `procesarPagina` para las filas de datos.
  */
 export function extraerMeta(words: PalabraPosicionada[]): Meta {
-  const meta: Meta = { k_gasnor: null, nro_np: null, total_declarado: null };
-  const full = words.map((w) => w.text).join(' ').toUpperCase();
+  const meta: Meta = {
+    k_gasnor: null,
+    nro_np: null,
+    total_declarado: null,
+    periodo_archivo: null,
+  };
+  const lineas = agruparPorLinea(words);
+  const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
+  const full = tops
+    .map((top) =>
+      [...lineas.get(top)!]
+        .sort((a, b) => a.x0 - b.x0)
+        .map((w) => w.text)
+        .join(' '),
+    )
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 
   const mK = full.match(/\bK(\d+)\b/);
   if (mK) meta.k_gasnor = 'K' + mK[1];
 
-  const mTotal = full.match(/TOTAL MES\s*\$?\s*((?:[\d.,]+\s*)+)/);
+  const mNp = full.match(/NRO\.?\s*(?:DE\s+)?(?:NP|WK)\s+(\d{4,})/);
+  if (mNp) meta.nro_np = mNp[1];
+
+  const mPer = full.match(
+    /PERIODO A CERTIFICAR\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}\/\d{1,2}\/\d{4})/,
+  );
+  if (mPer) {
+    const desde = parsearFechaDMA(mPer[1]);
+    const hasta = parsearFechaDMA(mPer[2]);
+    if (desde && hasta) meta.periodo_archivo = { desde, hasta };
+  }
+
+  // Salta tokens "$"/"-" sueltos (p. ej. "TOTAL MES $ - $ 22.535.210": la
+  // primera columna de saldo viene vacía) y después pega los tokens
+  // numéricos consecutivos que hayan quedado partidos por el extractor.
+  const mTotal = full.match(/TOTAL MES(?:\s+[$-])*\s+([\d.,]+(?:\s[\d.,]+)*)/);
   if (mTotal) {
-    const n = limpiarNum(mTotal[1].replace(/\s+/g, ''));
-    if (n !== null) meta.total_declarado = Number(n);
+    const n = montoANumero(mTotal[1].replace(/\s+/g, ''));
+    if (n !== null && n > 0) meta.total_declarado = n;
   }
   return meta;
 }
@@ -344,6 +562,12 @@ export interface ResultadoPagina {
   filas: FilaParseada[];
   errores: ErrorParseo[];
   totalDeclarado: number | null;
+  /** Títulos de cabecera de esta página que no reconocimos. */
+  columnasIgnoradas: string[];
+  /** Avisos de lectura de esta página (columna ignorada, línea no leída, etc.). */
+  avisos: AvisoParseo[];
+  /** Período a certificar declarado en la cabecera de esta página, si lo trae. */
+  periodoArchivo: PeriodoArchivo | null;
 }
 
 /**
@@ -356,28 +580,61 @@ export function procesarPagina(
   anio: number,
   mes: number,
 ): ResultadoPagina {
-  const resultado: ResultadoPagina = { filas: [], errores: [], totalDeclarado: null };
+  const resultado: ResultadoPagina = {
+    filas: [],
+    errores: [],
+    totalDeclarado: null,
+    columnasIgnoradas: [],
+    avisos: [],
+    periodoArchivo: null,
+  };
   if (words.length === 0) return resultado;
-
-  const meta = extraerMeta(words);
-  resultado.totalDeclarado = meta.total_declarado;
 
   const lineas = agruparPorLinea(words);
   const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
 
   let headerTop: number | null = null;
-  let colMap: ColMap | null = null;
+  let cabecera: Cabecera | null = null;
   for (const top of tops) {
     const ws = [...lineas.get(top)!].sort((a, b) => a.x0 - b.x0);
     const textos = ws.map((w) => w.text.trim().toUpperCase());
     if (textos.includes('ÍTEMS') || textos.includes('ITEMS')) {
       headerTop = top;
-      colMap = construirColMap(ws);
+      cabecera = construirCabecera(ws);
       break;
     }
   }
 
-  if (headerTop === null || !colMap || colMap.size === 0) return resultado;
+  // La meta (total mes, NP, período, K) vive en el BLOQUE DE CABECERA, arriba
+  // de la línea de ÍTEMS: se le pasan solo esas palabras. Si se le pasara la
+  // página entera, un dato de la tabla podría hacerse pasar por meta — p. ej.
+  // el texto "TOTAL MES" en la tarea de una fila seguido, en orden de lectura,
+  // por el número de la última columna: `/TOTAL MES…/` capturaría ese número
+  // como total declarado. Si no se encontró la línea de ÍTEMS no hay bloque
+  // que recortar y se mantiene el comportamiento anterior (toda la página).
+  const palabrasMeta = headerTop === null ? words : words.filter((w) => w.top < headerTop!);
+  const meta = extraerMeta(palabrasMeta);
+  resultado.totalDeclarado = meta.total_declarado;
+  resultado.periodoArchivo = meta.periodo_archivo;
+
+  if (headerTop === null || !cabecera || cabecera.colMap.size === 0) return resultado;
+
+  // Falta una columna requerida: leer las filas daría valores corridos de
+  // columna, así que no se procesa nada y se avisa qué falta.
+  if (cabecera.faltantes.length > 0) {
+    resultado.errores.push({
+      hoja: nombreArchivo,
+      fila: 0,
+      campo: 'header',
+      mensaje:
+        `Faltan columnas requeridas en la cabecera: ${cabecera.faltantes.join(', ')}. ` +
+        `Se ignoraron: ${cabecera.ignoradas.join(', ') || 'ninguna'}.`,
+    });
+    return resultado;
+  }
+
+  resultado.columnasIgnoradas = cabecera.ignoradas;
+  const colMap = cabecera.colMap;
 
   const itemXMax = (colMap.get('item_codigo') || [0, 384])[1];
 
@@ -392,9 +649,23 @@ export function procesarPagina(
     if (FOOTER_PALABRAS.some((p) => textoLinea.includes(p))) break;
 
     const primer = ws[0];
-    const esItem = esItemValido(primer.text.trim()) && primer.x0 < itemXMax;
+    const pareceCodigo = esItemValido(primer.text.trim()) && primer.x0 < itemXMax;
 
-    if (esItem) {
+    if (pareceCodigo) {
+      // §2.5 reinterpretado a nivel de GRUPO (Task 8, fix round 1, reemplaza
+      // la regla por línea de Task 4): cualquier línea cuyo primer token es
+      // un código de ítem válido Y cae en la columna de ítem ABRE grupo
+      // nuevo, TRAIGA O NO plata esa misma línea. Una fila real puede llegar
+      // partida en dos líneas visuales del PDF: el código junto con algún
+      // dato posicional (p. ej. ptos_gasnor/provincia) en una línea, y la
+      // cantidad/unitario/total recién en la siguiente. Exigir plata en la
+      // MISMA línea para abrir grupo fusionaba esa fila con el grupo
+      // anterior en silencio, perdiendo sus valores reales (bug detectado
+      // con el PDF real de K8 Capex agosto 2026: ítem 437 de la sección
+      // Jujuy). El guard de x0 (`primer.x0 < itemXMax`) ya excluye el texto
+      // libre de tarea que por azar arranca con un dígito ("25 mm , sobre
+      // cañería…"): esa palabra cae en la columna TAREA, no en la de ítem,
+      // así que no hace falta ningún chequeo de plata acá para protegerla.
       grupoActual = [ws];
       grupos.push(grupoActual);
     } else if (grupoActual !== null) {
@@ -403,12 +674,37 @@ export function procesarPagina(
     // líneas antes de la primera fila con ítem: ruido, se ignoran
   }
 
-  grupos.forEach((grupo, idx) => {
-    const numFila = idx + 1;
-    const { fila, errores } = procesarFila(grupo, colMap as ColMap, nombreArchivo, numFila, anio, mes, meta);
+  // La plata se exige a nivel de GRUPO, no de línea: un grupo donde NINGUNA
+  // línea trae cantidad ni total legibles (`lineaTraePlata`) no es una fila
+  // real — puede ser ruido o un código sin certificar — y se reporta como
+  // aviso `linea_no_leida` en vez de colarse como fila con valores vacíos.
+  // Los grupos con plata en al menos una línea siguen yendo a `procesarFila`
+  // como antes (que ya sabe leer el valor "primero" válido entre las líneas
+  // del grupo).
+  let numFila = 0;
+  let lineasNoLeidas = 0;
+  for (const grupo of grupos) {
+    const tienePlata = grupo.some((ws) => lineaTraePlata(ws, colMap));
+    if (!tienePlata) {
+      lineasNoLeidas += 1;
+      const codigo = grupo[0][0].text.trim();
+      resultado.avisos.push({
+        tipo: 'linea_no_leida',
+        hoja: nombreArchivo,
+        fila: lineasNoLeidas,
+        fuerte: false,
+        mensaje:
+          `Un ítem de la página empieza con "${codigo}" pero no trae cantidad ` +
+          `ni total legibles en ninguna de sus líneas. Si es un ítem certificado, ` +
+          `agregalo como fila manual.`,
+      });
+      continue;
+    }
+    numFila += 1;
+    const { fila, errores } = procesarFila(grupo, colMap, nombreArchivo, numFila, anio, mes, meta);
     resultado.filas.push(fila);
     resultado.errores.push(...errores);
-  });
+  }
 
   return resultado;
 }
@@ -446,6 +742,7 @@ export function dividirEnPalabras(
   x0: number,
   top: number,
   width: number,
+  itemId?: number,
 ): PalabraPosicionada[] {
   const total = texto.length;
   if (total === 0) return [];
@@ -458,13 +755,14 @@ export function dividirEnPalabras(
   }
   if (tokens.length === 0) return [];
   if (tokens.length === 1) {
-    return [{ text: tokens[0].text, x0, top, width }];
+    return [{ text: tokens[0].text, x0, top, width, itemId }];
   }
   return tokens.map(({ text, start }) => ({
     text,
     x0: x0 + (width * start) / total,
     top,
     width: (width * text.length) / total,
+    itemId,
   }));
 }
 
@@ -483,14 +781,20 @@ async function extraerPalabrasPorPagina(contenido: Buffer): Promise<PalabraPosic
       const content = await page.getTextContent();
       const palabras: PalabraPosicionada[] = [];
 
-      for (const item of content.items as any[]) {
+      // El índice del item se propaga como `itemId`: pdfjs entrega los
+      // títulos multipalabra de la cabecera ("NOMBRE CONTRATO", "$ Total
+      // mes") en UN solo item, y ese id es lo que después le permite a
+      // `construirCabecera` volver a armar la frase completa.
+      const items = content.items as any[];
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
         const texto: string | undefined = item.str;
         if (!texto || !texto.trim()) continue;
         const x0 = item.transform[4];
         const y = item.transform[5];
         const top = alturaPagina - y; // pdfjs: y crece hacia arriba → invertir para calcar pdfplumber
         const width = item.width ?? 0;
-        palabras.push(...dividirEnPalabras(texto, x0, top, width));
+        palabras.push(...dividirEnPalabras(texto, x0, top, width, idx));
       }
       paginas.push(palabras);
     }
@@ -518,6 +822,10 @@ export async function parsearPdf(
     errores: [],
     periodo: `${anio}-${pad2(mes)}`,
     total_declarado: null,
+    avisos: [],
+    columnas_ignoradas: [],
+    periodo_archivo: null,
+    k_nombre_archivo: extraerKDeNombre(nombreArchivo),
   };
 
   let paginas: PalabraPosicionada[][];
@@ -538,7 +846,45 @@ export async function parsearPdf(
     const pagina = procesarPagina(words, nombreArchivo, anio, mes);
     resultado.filas.push(...pagina.filas);
     resultado.errores.push(...pagina.errores);
+    resultado.avisos.push(...pagina.avisos);
     if (resultado.total_declarado === null) resultado.total_declarado = pagina.totalDeclarado;
+    if (resultado.periodo_archivo === null) resultado.periodo_archivo = pagina.periodoArchivo;
+    for (const columna of pagina.columnasIgnoradas) {
+      if (!resultado.columnas_ignoradas.includes(columna)) {
+        resultado.columnas_ignoradas.push(columna);
+      }
+    }
+  }
+
+  for (const columna of resultado.columnas_ignoradas) {
+    resultado.avisos.push({
+      tipo: 'columna_ignorada',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: `Columna ignorada: ${columna}. Sus valores no se asignaron a ninguna columna.`,
+    });
+  }
+
+  if (resultado.total_declarado === null) {
+    resultado.avisos.push({
+      tipo: 'sin_total_declarado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: true,
+      mensaje:
+        'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
+    });
+  }
+
+  if (resultado.filas.length > 0 && resultado.filas.every((f) => f.nro_np === null)) {
+    resultado.avisos.push({
+      tipo: 'np_no_detectado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: 'No se detectó el número de NP/WK en la cabecera.',
+    });
   }
 
   return resultado;

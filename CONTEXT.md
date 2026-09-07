@@ -151,3 +151,63 @@ forma discreta junto al total ("incluye N hs en otros contratos", tooltip del
 ranking) para que el jefe sepa de dónde sale la diferencia. Las filas
 pendientes de revisar sí se cuentan solo sobre mis contratos: las ajenas las
 aprueba otro jefe.
+
+### Carga de certificaciones (Naturgy)
+
+**Certificación** (de Naturgy):
+Documento mensual (Excel o PDF) que Naturgy emite por contrato K con las
+filas de ítems certificados y un **total declarado**. Es un documento firmado:
+lo cargado debe reflejarlo. Naturgy es poco prolija en el formato (columnas
+que aparecen o cambian de nombre, montos sin centavos, etiquetas distintas
+cada mes), por eso la carga es una lectura controlada y no una copia ciega.
+
+**Total declarado** (de una certificación):
+El "TOTAL MES" que Naturgy imprime en la cabecera del documento. Es la
+referencia para la **cuadratura de la carga**: la suma de las filas cargables
+más las filas manuales debe coincidir con él. Si no coincide, se muestra la
+diferencia en pesos con un aviso fuerte, pero la carga se puede confirmar.
+Cuando no viene o viene en cero (Excel agrupados de varias hojas), se avisa
+que la carga no pudo controlarse.
+
+**Fila que cuadra** (2026-09-07):
+Fila cuya cantidad × precio unitario coincide con su total impreso, con
+tolerancia de 1 peso porque Naturgy imprime sin centavos. Ninguna de las tres
+cifras manda sola: si no cuadran, la fila queda **bloqueada** hasta que la
+persona la corrija o la confirme a mano en el preview.
+_Avoid_: recalcular el total (oculta un unitario mal leído), "lo impreso
+manda" (deja pasar cantidades corridas de columna).
+
+**Fila bloqueada** (del preview):
+Fila que no puede cargarse tal como está: no cuadra, su ítem no está en el
+maestro, su provincia no es válida o le falta cantidad o total. La carga no se
+confirma mientras haya filas bloqueadas: la persona corrige o **excluye** cada
+una explícitamente. Nunca se descartan en silencio ni en bloque.
+
+**Fila manual** (2026-09-07):
+Fila que la persona agrega en el preview porque el parser no la reconoció en
+el documento. El ítem se elige del maestro, limitado a los contratos a los que
+la persona tiene acceso; trae contrato y tarea; la persona completa provincia,
+cantidad y unitario, y el total propuesto es cantidad × unitario. Queda
+marcada con origen manual en el preview, en la base y en el historial. Suma en
+la cuadratura de la carga. Solo existe si el documento se pudo leer.
+_Avoid_: carga manual completa sin documento (no es una fila manual, es otra
+cosa que no existe hoy).
+
+**Columna ignorada** (de una cabecera):
+Columna del documento cuyo título el parser no reconoce (ej. "CUENTA"). Se
+lista en el preview como aviso y sus valores no se asignan a ninguna otra
+columna. El parser exige reconocer todas las columnas necesarias (ítem, K,
+provincia, cantidad, unitario, total) para procesar la hoja o página.
+
+**Contrato K resuelto** (de una fila):
+El K que se carga: lo elige el maestro de ítems, después el contenido del
+documento, y la persona puede cambiarlo a mano en el preview. El nombre del
+archivo no decide nada: cuando la persona renombra el archivo para indicar a
+qué contrato va la plata (ej. certificación K2 que se contabiliza en K11), el
+sistema solo avisa que el nombre trae otro K y la persona edita el contrato.
+
+**Regla de montos en texto** (2026-09-07):
+En cualquier cifra leída como texto (PDF o celda de texto de Excel) el punto
+es siempre separador de miles y la coma siempre decimal, sin adivinar por la
+forma del número. "400.012" son cuatrocientos mil doce pesos. Si algún día
+viniera al estilo inglés, la fila no cuadra y la persona lo ve.

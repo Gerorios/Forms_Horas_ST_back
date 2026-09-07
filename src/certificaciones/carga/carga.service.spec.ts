@@ -83,7 +83,7 @@ function crearPrismaMock(opts: {
 
 import * as ExcelJS from 'exceljs';
 
-async function armarExcel(filas: (string | number)[][], headers = ['ÍTEMS', 'TAREA', 'K', 'PROVINCIA', 'CANTIDADES', 'TOTAL']): Promise<Buffer> {
+async function armarExcel(filas: (string | number)[][], headers = ['ÍTEMS', 'TAREA', 'K', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', 'TOTAL']): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('CERTIF K12');
   ws.addRow(headers);
@@ -121,10 +121,10 @@ describe('CargaService.preview', () => {
     const store = new PreviewStore();
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), store);
 
-    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100]]);
+    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100, 300]]);
     const resp = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
 
-    expect(resp.resumen).toEqual({ total: 1, con_error: 0, total_mes: 100, total_declarado: null });
+    expect(resp.resumen).toEqual({ total: 1, con_error: 0, total_mes: 300, total_declarado: null });
     expect(resp.filas).toHaveLength(1);
     expect(resp.filas[0].item_en_maestro).toBe(true);
     expect(resp.filas[0].rowId).toBeTruthy();
@@ -137,7 +137,7 @@ describe('CargaService.preview', () => {
   it('marca con_error una fila con ítem fuera del maestro (item_en_maestro=false)', async () => {
     const { prisma } = crearPrismaMock({ maestro: [] });
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), new PreviewStore());
-    const buf = await armarExcel([['999', 'Tarea', 'K12', 'Salta', 3, 100]]);
+    const buf = await armarExcel([['999', 'Tarea', 'K12', 'Salta', 3, 100, 300]]);
     const resp = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     expect(resp.resumen.con_error).toBe(1);
     expect(resp.filas[0].item_en_maestro).toBe(false);
@@ -150,8 +150,8 @@ describe('CargaService.preview', () => {
     });
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), new PreviewStore());
     const buf = await armarExcel([
-      ['431', 'Tarea', 'K12', 'Salta', 0, 0],
-      ['431', 'Tarea', 'K12', 'Salta', 3, 100],
+      ['431', 'Tarea', 'K12', 'Salta', 0, 10, 0],
+      ['431', 'Tarea', 'K12', 'Salta', 3, 100, 300],
     ]);
     const resp = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     expect(resp.resumen.total).toBe(1);
@@ -168,7 +168,7 @@ describe('CargaService.confirmar', () => {
   async function armarPreview(prisma: any, cert: CertClaim, cuil = CUIL) {
     const store = new PreviewStore();
     const service = new CargaService(prisma, new ResolucionService(prisma), store);
-    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100]]);
+    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Salta', 3, 100, 300]]);
     const preview = await service.preview(buf, 'archivo.xlsx', 2026, 8, 'excel', cert, cuil);
     return { service, store, preview };
   }
@@ -201,17 +201,24 @@ describe('CargaService.confirmar', () => {
     await expect(service.confirmar(dto, CERT_ADMIN, CUIL, 'Juan')).rejects.toThrow(BadRequestException);
   });
 
-  it('edición solo toca los 5 campos del DTO (whitelist): un rowId válido con SOLO cantidades editada no toca contrato', async () => {
+  it('edición solo toca los 5 campos del DTO (whitelist): cantidades+total_mes editadas (cuadratura) no tocan contrato', async () => {
     const { prisma } = fixtureBase();
     const { service, store, preview } = await armarPreview(prisma, CERT_ADMIN);
     const rowId = preview.filas[0].rowId;
-    const dto: ConfirmarCargaDto = { previewId: preview.previewId, ediciones: [{ rowId, cantidades: '7' } as any] };
+    // cantidades editada sola (7 × unitario 100 = 700) rompería la cuadratura
+    // y bloquearía la fila (Task 7); se edita también total_mes en línea
+    // para que la fila resultante siga cuadrando y probar igual el whitelist.
+    const dto: ConfirmarCargaDto = {
+      previewId: preview.previewId,
+      ediciones: [{ rowId, cantidades: '7', total_mes: '700' } as any],
+    };
     // no debe tirar y el contrato debe seguir siendo el resuelto original
     await service.confirmar(dto, CERT_ADMIN, CUIL, 'Juan');
     // la sesión ya se limpió tras confirmar, así que verificamos vía la
     // llamada al INSERT (las cantidades editadas SÍ deben viajar).
     const insertCall = (prisma as any).$executeRaw.mock.calls[0][0];
     expect(insertCall.values).toContain('7');
+    expect(insertCall.values).toContain('700');
   });
 
   it('duplicado por archivo_nombre: mensaje EXACTO del portal, distinto para admin y no-admin', async () => {
@@ -254,8 +261,8 @@ describe('CargaService.confirmar', () => {
     const store = new PreviewStore();
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), store);
     const buf = await armarExcel([
-      ['111', 'Tarea', 'K12', 'Salta', 3, 100],
-      ['999', 'Tarea', 'K12', 'Salta', 3, 100], // no está en el maestro
+      ['111', 'Tarea', 'K12', 'Salta', 3, 100, 300],
+      ['999', 'Tarea', 'K12', 'Salta', 3, 100, 300], // no está en el maestro
     ]);
     const preview = await service.preview(buf, 'archivo.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     const resp = await service.confirmar({ previewId: preview.previewId, ediciones: [] }, CERT_ADMIN, CUIL, 'Juan');
@@ -331,8 +338,8 @@ describe('CargaService.confirmar', () => {
     const store = new PreviewStore();
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), store);
     const buf = await armarExcel([
-      ['431', 'Tarea', 'K12', 'Salta', 3, 100],
-      ['777', 'Tarea', 'K12', 'Salta', 3, 100], // ítem no está en el maestro (B2 lo omite)
+      ['431', 'Tarea', 'K12', 'Salta', 3, 100, 300],
+      ['777', 'Tarea', 'K12', 'Salta', 3, 100, 300], // ítem no está en el maestro (B2 lo omite)
     ]);
     const preview = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     // la fila 777 ya viene con error en el preview, pero igual la mandamos
@@ -356,8 +363,8 @@ describe('CargaService.confirmar', () => {
     const store = new PreviewStore();
     const service = new CargaService(prisma as any, new ResolucionService(prisma as any), store);
     const buf = await armarExcel([
-      ['431', 'Tarea', 'K12', 'Salta', 0, 0], // plantilla
-      ['431', 'Tarea', 'K12', 'Salta', 3, 100],
+      ['431', 'Tarea', 'K12', 'Salta', 0, 10, 0], // plantilla
+      ['431', 'Tarea', 'K12', 'Salta', 3, 100, 300],
     ]);
     const preview = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
     expect(preview.filas).toHaveLength(1); // la plantilla nunca entró a la sesión
