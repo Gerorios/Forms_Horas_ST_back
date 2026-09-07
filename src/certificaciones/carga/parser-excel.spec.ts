@@ -469,4 +469,35 @@ describe('parsearExcel: columnas requeridas e ignoradas', () => {
       'El archivo no declara un total mes legible: la carga no se pudo controlar contra el total declarado.',
     );
   });
+
+  // Paridad con el parser PDF: el aviso np_no_detectado faltaba en el Excel.
+  it('sin fila de NP/WK: aviso débil np_no_detectado', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K1', [
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K1', 'Salta', 1, 10, 10],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.filas[0].nro_np).toBeNull();
+    const aviso = r.avisos.find((a) => a.tipo === 'np_no_detectado');
+    expect(aviso).toBeDefined();
+    expect(aviso?.fuerte).toBe(false);
+    expect(aviso?.fila).toBe(0);
+    expect(aviso?.hoja).toBe('test.xlsx');
+    expect(aviso?.mensaje).toBe('No se detectó el número de NP/WK en la cabecera.');
+  });
+
+  it('con "NRO. WK 362000594" en la cabecera: sin aviso np_no_detectado', async () => {
+    const buf = await crearLibroUnaHoja('CERTIF K1', [
+      ['NRO. WK', '362000594'],
+      ['ÍTEMS', 'K GASNOR', 'PROVINCIA', 'CANTIDADES', '$ UNITARIO MES', '$ TOTAL MES'],
+      ['431', 'K1', 'Salta', 1, 10, 10],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2025, 2);
+
+    expect(r.filas[0].nro_np).toBe('362000594');
+    expect(r.avisos.some((a) => a.tipo === 'np_no_detectado')).toBe(false);
+  });
 });

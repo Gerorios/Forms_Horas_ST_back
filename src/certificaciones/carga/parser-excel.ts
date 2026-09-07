@@ -542,5 +542,18 @@ export async function parsearExcel(
     });
   }
 
+  // Paridad con el parser PDF (ver final de `parsearPdf`): si se leyeron
+  // filas pero ninguna trae NP/WK, la certificación queda sin número de
+  // referencia y hay que avisarlo (aviso débil: la carga sigue siendo válida).
+  if (resultado.filas.length > 0 && resultado.filas.every((f) => f.nro_np === null)) {
+    resultado.avisos.push({
+      tipo: 'np_no_detectado',
+      hoja: nombreArchivo,
+      fila: 0,
+      fuerte: false,
+      mensaje: 'No se detectó el número de NP/WK en la cabecera.',
+    });
+  }
+
   return resultado;
 }
