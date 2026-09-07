@@ -26,6 +26,7 @@
  * si el PDF tiene más de una).
  */
 import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import { parsearMontoTexto } from './montos';
 
 /** Palabra con posición, equivalente al dict que devuelve `page.extract_words()` de pdfplumber. */
 export interface PalabraPosicionada {
@@ -95,8 +96,6 @@ function tituloEs(s: string): string {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
-const FLOAT_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
-
 /** `_es_item_valido` del PDF: más estricto que el de Excel — `^[A-Za-z]?\d{3,}`. */
 export function esItemValido(s: string | null | undefined): boolean {
   if (!s) return false;
@@ -108,22 +107,14 @@ export function esItemValido(s: string | null | undefined): boolean {
 }
 
 /**
- * `_limpiar_num`: toma solo el PRIMER bloque `^[\d.,]+` (tras quitar $),
- * hace strip(".,") de ambos extremos y aplica la regla es-AR coma/punto.
- * Devuelve la STRING normalizada o null si no parsea como float.
+ * `_limpiar_num`: toma solo el PRIMER bloque numérico (tras quitar $) y
+ * normaliza con la regla única es-AR (ver `./montos`: punto = miles,
+ * coma = decimal, sin heurística por forma). Devuelve la STRING
+ * normalizada o null si no parsea como float. Wrapper delgado — la lógica
+ * vive en `parsearMontoTexto` para compartirla con Excel.
  */
 export function limpiarNum(s: string | null | undefined): string | null {
-  if (!s) return null;
-  let str = s.replace(/\$/g, '').trim();
-  const m = str.match(/^[\d.,]+/);
-  if (!m) return null;
-  str = m[0].replace(/^[.,]+/, '').replace(/[.,]+$/, '');
-  if (str.includes(',') && str.includes('.')) {
-    str = str.replace(/\./g, '').replace(/,/g, '.');
-  } else if (str.includes(',')) {
-    str = str.replace(/,/g, '.');
-  }
-  return FLOAT_RE.test(str) ? str : null;
+  return parsearMontoTexto(s);
 }
 
 /**

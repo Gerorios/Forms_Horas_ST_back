@@ -20,6 +20,7 @@
  */
 import * as ExcelJS from 'exceljs';
 import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
+import { montoANumero, parsearMontoTexto } from './montos';
 
 /** Mapeo flexible: nombre canónico → variantes posibles en el header (orden = prioridad). */
 const COL_ALIAS: Record<string, string[]> = {
@@ -108,28 +109,22 @@ function extraerRegion(nombreHoja: string): string {
   return '';
 }
 
-/** '$ 39.072.433,92' | '39072433.92' → number, o null si no es un monto. */
+/**
+ * '$ 39.072.433,92' | '39072433,92' → number, o null si no es un monto.
+ * Regla única es-AR (ver `./montos`): punto = miles, coma = decimal, sin
+ * heurística por forma. Aplica solo a celdas de TEXTO; las numéricas de
+ * Excel no pasan por acá.
+ */
 function parsearMonto(v: string): number | null {
-  let s = v.replace(/[$\s]/g, '');
-  if (!s) return null;
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(/,/g, '.');
-  } else if (s.includes(',')) {
-    s = s.replace(/,/g, '.');
-  }
-  return parseFloatEstricto(s);
+  return montoANumero(v);
 }
 
-/** fmt_num: normaliza es-AR; devuelve STRING normalizada o null si no parsea. */
+/**
+ * fmt_num: normaliza es-AR con la regla única (`./montos`); devuelve
+ * STRING normalizada o null si no parsea.
+ */
 function fmtNum(v: string | null): string | null {
-  if (v === null) return null;
-  let s = v.replace(/[$\s]/g, '');
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(/,/g, '.');
-  } else if (s.includes(',')) {
-    s = s.replace(/,/g, '.');
-  }
-  return parseFloatEstricto(s) === null ? null : s;
+  return parsearMontoTexto(v);
 }
 
 /** fmt_item: numérico → entero o 4 decimales; texto tal cual; null → "". */
