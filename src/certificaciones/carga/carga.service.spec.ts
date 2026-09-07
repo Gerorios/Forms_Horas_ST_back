@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { CargaService } from './carga.service';
 import { ResolucionService } from './resolucion.service';
 import { PreviewStore } from './preview-store';
