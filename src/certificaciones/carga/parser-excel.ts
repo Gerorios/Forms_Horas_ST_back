@@ -28,6 +28,7 @@
 import * as ExcelJS from 'exceljs';
 import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
 import { montoANumero, parsearMontoTexto } from './montos';
+import { extraerKDeNombre } from './nombre-archivo';
 
 /** Mapeo flexible: nombre canónico → variantes posibles en el header (orden = prioridad). */
 const COL_ALIAS: Record<string, string[]> = {
@@ -435,6 +436,10 @@ export async function parsearExcel(
     errores: [],
     periodo: `${anio}-${pad2(mes)}`,
     total_declarado: null,
+    avisos: [],
+    columnas_ignoradas: [],
+    periodo_archivo: null,
+    k_nombre_archivo: extraerKDeNombre(nombreArchivo),
   };
 
   const workbook = new ExcelJS.Workbook();

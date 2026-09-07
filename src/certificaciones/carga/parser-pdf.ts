@@ -27,6 +27,7 @@
  */
 import { ErrorParseo, FilaParseada, ResultadoParseo } from './parser-tipos';
 import { parsearMontoTexto } from './montos';
+import { extraerKDeNombre } from './nombre-archivo';
 
 /** Palabra con posición, equivalente al dict que devuelve `page.extract_words()` de pdfplumber. */
 export interface PalabraPosicionada {
@@ -509,6 +510,10 @@ export async function parsearPdf(
     errores: [],
     periodo: `${anio}-${pad2(mes)}`,
     total_declarado: null,
+    avisos: [],
+    columnas_ignoradas: [],
+    periodo_archivo: null,
+    k_nombre_archivo: extraerKDeNombre(nombreArchivo),
   };
 
   let paginas: PalabraPosicionada[][];

@@ -35,6 +35,29 @@ export interface ErrorParseo {
   mensaje: string;
 }
 
+export type TipoAviso =
+  | 'columna_ignorada'
+  | 'linea_no_leida'
+  | 'sin_total_declarado'
+  | 'periodo_archivo'
+  | 'k_nombre_archivo'
+  | 'np_no_detectado';
+
+/** Aviso de lectura: `fuerte` = cartel rojo (período distinto, sin total);
+ * no fuerte = panel ámbar de "avisos de lectura". Nunca bloquea una fila. */
+export interface AvisoParseo {
+  tipo: TipoAviso;
+  hoja: string;
+  fila: number; // 0 si no aplica
+  mensaje: string;
+  fuerte: boolean;
+}
+
+export interface PeriodoArchivo {
+  desde: string; // 'YYYY-MM-DD'
+  hasta: string; // 'YYYY-MM-DD'
+}
+
 export interface ResultadoParseo {
   archivo: string;
   hojas: string[];
@@ -42,4 +65,8 @@ export interface ResultadoParseo {
   errores: ErrorParseo[];
   periodo: string;
   total_declarado: number | null;
+  avisos: AvisoParseo[];
+  columnas_ignoradas: string[];
+  periodo_archivo: PeriodoArchivo | null;
+  k_nombre_archivo: string | null;
 }
