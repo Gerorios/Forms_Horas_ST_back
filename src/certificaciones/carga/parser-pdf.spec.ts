@@ -459,6 +459,40 @@ describe('extraerMeta (K11/K8 agosto 2026)', () => {
   });
 });
 
+describe('extraerMeta arma el texto completo en orden VISUAL (Task 8, fix round 3)', () => {
+  // pdfjs no garantiza que `content.items` venga en orden de lectura: en el
+  // header real de Naturgy quedó demostrado que un item de otra caja del
+  // header podía intercalarse crudo entre una etiqueta y su valor. Estos
+  // tests arman `words` deliberadamente con el ORDEN DEL ARRAY distinto del
+  // orden visual (x0 dentro de la misma línea, líneas por `top`) para
+  // probar que `extraerMeta` ya no depende del orden crudo.
+
+  it('período: las dos fechas vienen ANTES que la etiqueta en el array, pero a su derecha visualmente', () => {
+    const shuffled: PalabraPosicionada[] = [
+      w('30/8/2026', 200, 10), // date2: 4° en el array, pero el más a la derecha (x0=200)
+      w('1/8/2026', 150, 10), // date1: 2° en el array, x0=150
+      w('PERIODO', 0, 10),
+      w('A', 50, 10),
+      w('CERTIFICAR', 100, 10),
+    ];
+    expect(extraerMeta(shuffled).periodo_archivo).toEqual({
+      desde: '2026-08-01',
+      hasta: '2026-08-30',
+    });
+  });
+
+  it('total: el número de OTRA línea aparece antes en el array que el monto real de "TOTAL MES"', () => {
+    const shuffled: PalabraPosicionada[] = [
+      w('TOTAL', 0, 50), // línea real (top=50), 1° en el array
+      w('MES', 30, 50),
+      w('999999', 0, 10), // OTRA línea (top=10, "PRESUP" por ej.), se cuela crudo entre "MES" y "$"
+      w('$', 60, 50), // sigue siendo la línea real (top=50)
+      w('22.535.210', 90, 50),
+    ];
+    expect(extraerMeta(shuffled).total_declarado).toBe(22535210);
+  });
+});
+
 describe('normalizarProvincia', () => {
   it('matchea por substring sin tildes contra el dict cerrado', () => {
     expect(normalizarProvincia('tucuman')).toBe('Tucumán');

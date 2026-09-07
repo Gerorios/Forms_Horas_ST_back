@@ -391,6 +391,20 @@ export function agruparPorLinea(words: PalabraPosicionada[]): Map<number, Palabr
  * vacía antes del total real) y volviendo a pegar el monto si el extractor
  * lo partió en varios tokens numéricos consecutivos (ver test "monto
  * partido en varias palabras").
+ *
+ * El texto completo (`full`) se arma en ORDEN VISUAL, no en el orden crudo
+ * en que pdfjs devuelve `content.items` (Task 8, fix round 3): el header de
+ * las certificaciones reales de Naturgy tiene varias cajas de info en
+ * columnas x distintas, y pdfjs entrega esos items intercalados según su
+ * orden interno (que no coincide con "de arriba a abajo, de izquierda a
+ * derecha"). Concatenar `words` tal cual venían podía dejar, p. ej., la
+ * etiqueta "PERIODO A CERTIFICAR" pegada al texto de OTRA caja del header en
+ * vez de a sus propias fechas, que sí están en la misma línea visual pero en
+ * otra posición del array. Se reutiliza `agruparPorLinea` (misma
+ * cuantización `round(top/4)*4` que usa el resto del parser) para agrupar
+ * por línea, se recorren las líneas por `top` ascendente y, dentro de cada
+ * línea, las palabras por `x0` ascendente — el mismo criterio de lectura
+ * humana que ya usa `procesarPagina` para las filas de datos.
  */
 export function extraerMeta(words: PalabraPosicionada[]): Meta {
   const meta: Meta = {
@@ -399,8 +413,15 @@ export function extraerMeta(words: PalabraPosicionada[]): Meta {
     total_declarado: null,
     periodo_archivo: null,
   };
-  const full = words
-    .map((w) => w.text)
+  const lineas = agruparPorLinea(words);
+  const tops = Array.from(lineas.keys()).sort((a, b) => a - b);
+  const full = tops
+    .map((top) =>
+      [...lineas.get(top)!]
+        .sort((a, b) => a.x0 - b.x0)
+        .map((w) => w.text)
+        .join(' '),
+    )
     .join(' ')
     .replace(/\s+/g, ' ')
     .toUpperCase();
