@@ -39,9 +39,11 @@ Los 5 Excel reales (julio/junio) leen bien; comparten las debilidades de control
    **columna ignorada** y ocupa su propio rango: sus valores NO se asignan a la
    vecina.
 5. **Fila de ítem (PDF).** Código = `^[A-Za-z]?\d+([-.,/][A-Za-z0-9]+)?$` (1+
-   dígitos; "116-a" vale) Y la línea trae cantidad o total con plata. Las líneas
-   que empiezan con algo que parece código pero no traen plata se reportan como
-   aviso "línea no leída como fila" (no fallan).
+   dígitos; "116-a" vale) en la COLUMNA de ítem abre una fila (grupo de líneas);
+   la plata se exige a nivel GRUPO: un grupo sin cantidad ni total legibles en
+   ninguna de sus líneas no es fila y se reporta como aviso `linea_no_leida`
+   (ajustado 2026-09-07: Naturgy parte filas en dos líneas, ej. ítem 437 con la
+   plata en la línea siguiente).
 6. **Contrato K.** Sin cambios en la resolución (editado > maestro > archivo).
    NUEVO aviso suave: si el nombre del archivo trae `K\d+` distinto de todos los
    K resueltos → "El nombre del archivo dice K11; se resolvió K2. Si la plata va
@@ -123,8 +125,9 @@ por total declarado. OneDrive. Apagado del portal viejo (sigue en pausa).
 - Tests unitarios (Jest) con palabras sintéticas para cada regla del parser.
 - `parser-real.spec.ts`: corre contra los PDFs reales si `CERT_PDF_DIR` está
   definido (se saltea si no); asserts exactos de la tabla §1 corregida:
-  K8 Capex → 8 filas, Σ = 22.535.209,93 ± 1 vs declarado; K11 → cantidad 221,
+  K8 Capex → 8 filas, total declarado = 22.535.210 (TOTAL MES impreso, redondeado) y Σ filas dentro de ± 1; K11 → cantidad 221,
   columna ignorada CUENTA; K8 Opex → total 677.910.
 - Frontend (Vitest): revalidar espejo + página (bloqueada deshabilita Confirmar,
   fila manual suma en cuadratura, cartel rojo).
+- `parser-real.spec.ts` también corre los 3 Excel reales (julio/junio) con `CERT_XLS_DIR`: conteos base 25 / 2 / 57 filas visibles sin cambios.
 - Manual en producción con los 4 PDFs de agosto (usuario), antes del cierre.
