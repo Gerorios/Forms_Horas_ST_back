@@ -286,6 +286,59 @@ describe('procesarPagina con columna ignorada (caso real K11 agosto 2026)', () =
   });
 });
 
+describe('procesarPagina: fila real partida en dos líneas (Task 8 fix, K8 Capex agosto 2026)', () => {
+  it('ítem 437 con código+ptos+provincia en una línea y cantidad/unitario/total en la siguiente -> 2 filas', () => {
+    // Reproduce el caso real (ítem 436 y 437, sección Jujuy) que fusionaba
+    // silenciosamente la fila 437 dentro del grupo de la fila 436: la línea
+    // B trae el código y algún dato posicional (ptos_gasnor, provincia)
+    // pero SIN plata; la plata real de esa misma fila recién aparece en la
+    // línea C (que no arranca con código).
+    const filaA = [
+      ...frase('436', 60, 300, 20),
+      ...frase('MANTENIMIENTO DE LA RED', 90, 300, 21),
+      ...frase('Instalación de servicio SIN MATERIALES', 200, 300, 22),
+      ...frase('k8', 285, 300, 23),
+      ...frase('un', 328, 300, 24),
+      ...frase('212,42', 353, 300, 25),
+      ...frase('CAPEX', 387, 300, 26),
+      ...frase('SER&TEC', 429, 300, 27),
+      ...frase('Jujuy', 470, 300, 28),
+      ...frase('1', 541, 300, 29),
+      ...frase('240.007,08', 578, 300, 30),
+      ...frase('240.007,08', 626, 300, 31),
+    ];
+    // Línea B: código "437" (columna ítem) + "150,20" bajo PTOS. GASNOR +
+    // "Jujuy" bajo PROVINCIA. Sin cantidad ni total en esta línea.
+    const filaB = [
+      ...frase('437', 60, 310, 32),
+      ...frase('150,20', 353, 310, 33),
+      ...frase('Jujuy', 470, 310, 34),
+    ];
+    // Línea C: sin código, trae la plata real de la fila 437.
+    const filaC = [
+      ...frase('MANTENIMIENTO DE LA RED', 90, 320, 35),
+      ...frase('Instalación de servicio SIN MATERIALES', 200, 320, 36),
+      ...frase('un', 328, 320, 37),
+      ...frase('CAPEX', 387, 320, 38),
+      ...frase('24', 541, 320, 39),
+      ...frase('169.701,97', 578, 320, 40),
+      ...frase('4.072.847', 626, 320, 41),
+    ];
+    const r = procesarPagina(
+      [...HEADER_NATURGY, ...filaA, ...filaB, ...filaC],
+      'k8-capex.pdf',
+      2026,
+      8,
+    );
+    expect(r.filas).toHaveLength(2);
+    expect(r.filas[0].item_codigo).toBe('436');
+    expect(r.filas[1].item_codigo).toBe('437');
+    expect(r.filas[1].cantidades).toBe('24');
+    expect(r.filas[1].total_mes).toBe('4072847');
+    expect(r.filas[1].provincia).toBe('Jujuy');
+  });
+});
+
 describe('procesarPagina: fila de ítem corto y línea sin plata', () => {
   const header = [
     w('ÍTEMS', 54, 134),

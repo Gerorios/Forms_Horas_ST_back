@@ -598,7 +598,6 @@ export function procesarPagina(
 
   const grupos: PalabraPosicionada[][][] = [];
   let grupoActual: PalabraPosicionada[][] | null = null;
-  let lineasNoLeidas = 0;
 
   for (const top of tops.filter((t) => t > (headerTop as number))) {
     const ws = [...lineas.get(top)!].sort((a, b) => a.x0 - b.x0);
@@ -610,35 +609,59 @@ export function procesarPagina(
     const primer = ws[0];
     const pareceCodigo = esItemValido(primer.text.trim()) && primer.x0 < itemXMax;
 
-    if (pareceCodigo && lineaTraePlata(ws, colMap)) {
+    if (pareceCodigo) {
+      // §2.5 reinterpretado a nivel de GRUPO (Task 8, fix round 1, reemplaza
+      // la regla por línea de Task 4): cualquier línea cuyo primer token es
+      // un código de ítem válido Y cae en la columna de ítem ABRE grupo
+      // nuevo, TRAIGA O NO plata esa misma línea. Una fila real puede llegar
+      // partida en dos líneas visuales del PDF: el código junto con algún
+      // dato posicional (p. ej. ptos_gasnor/provincia) en una línea, y la
+      // cantidad/unitario/total recién en la siguiente. Exigir plata en la
+      // MISMA línea para abrir grupo fusionaba esa fila con el grupo
+      // anterior en silencio, perdiendo sus valores reales (bug detectado
+      // con el PDF real de K8 Capex agosto 2026: ítem 437 de la sección
+      // Jujuy). El guard de x0 (`primer.x0 < itemXMax`) ya excluye el texto
+      // libre de tarea que por azar arranca con un dígito ("25 mm , sobre
+      // cañería…"): esa palabra cae en la columna TAREA, no en la de ítem,
+      // así que no hace falta ningún chequeo de plata acá para protegerla.
       grupoActual = [ws];
       grupos.push(grupoActual);
-    } else if (pareceCodigo && grupoActual === null) {
-      // Parece fila pero no trae plata y no hay fila abierta: aviso, no se
-      // pierde en silencio. Si hay grupo abierto, se pega como continuación
-      // (ej. "25 mm , sobre cañería…" que arranca con un número).
-      lineasNoLeidas += 1;
-      resultado.avisos.push({
-        tipo: 'linea_no_leida',
-        hoja: nombreArchivo,
-        fila: lineasNoLeidas,
-        fuerte: false,
-        mensaje:
-          `Una línea de la página empieza con "${primer.text.trim()}" pero no trae ` +
-          `cantidad ni total legibles. Si es un ítem certificado, agregalo como fila manual.`,
-      });
     } else if (grupoActual !== null) {
       grupoActual.push(ws);
     }
     // líneas antes de la primera fila con ítem: ruido, se ignoran
   }
 
-  grupos.forEach((grupo, idx) => {
-    const numFila = idx + 1;
+  // La plata se exige a nivel de GRUPO, no de línea: un grupo donde NINGUNA
+  // línea trae cantidad ni total legibles (`lineaTraePlata`) no es una fila
+  // real — puede ser ruido o un código sin certificar — y se reporta como
+  // aviso `linea_no_leida` en vez de colarse como fila con valores vacíos.
+  // Los grupos con plata en al menos una línea siguen yendo a `procesarFila`
+  // como antes (que ya sabe leer el valor "primero" válido entre las líneas
+  // del grupo).
+  let numFila = 0;
+  let lineasNoLeidas = 0;
+  for (const grupo of grupos) {
+    const tienePlata = grupo.some((ws) => lineaTraePlata(ws, colMap));
+    if (!tienePlata) {
+      lineasNoLeidas += 1;
+      const codigo = grupo[0][0].text.trim();
+      resultado.avisos.push({
+        tipo: 'linea_no_leida',
+        hoja: nombreArchivo,
+        fila: lineasNoLeidas,
+        fuerte: false,
+        mensaje:
+          `Una línea de la página empieza con "${codigo}" pero no trae ` +
+          `cantidad ni total legibles. Si es un ítem certificado, agregalo como fila manual.`,
+      });
+      continue;
+    }
+    numFila += 1;
     const { fila, errores } = procesarFila(grupo, colMap, nombreArchivo, numFila, anio, mes, meta);
     resultado.filas.push(fila);
     resultado.errores.push(...errores);
-  });
+  }
 
   return resultado;
 }
