@@ -12,6 +12,7 @@ import { AvisoParseo, ErrorParseo, FilaParseada, PeriodoArchivo } from './parser
 import { parsearExcel } from './parser-excel';
 import { parsearPdf } from './parser-pdf';
 import { esFilaPlantilla, revalidarFila } from './validacion';
+import { canonizarProvincia } from './provincias';
 import { avisoKNombre, avisoPeriodo } from './avisos';
 import { ResolucionService } from './resolucion.service';
 import { PreviewStore, PreviewSession, FilaPreview, clonarFila } from './preview-store';
@@ -161,6 +162,11 @@ export class CargaService {
         null,
       );
       const filaResuelta: FilaParseada = { ...f, contrato: contrato ?? '' };
+      // La provincia adopta la grafía EXACTA del maestro (sin acentos ni
+      // mayúsculas de más) ANTES de validar, para que 'Tucumán' del PDF no
+      // choque con 'TUCUMAN' del maestro (regla vinculante: nunca se crea
+      // una provincia nueva por variante de formato).
+      filaResuelta.provincia = canonizarProvincia(filaResuelta.provincia, provinciasValidas) ?? filaResuelta.provincia;
       const { tieneError, detalle, cuadratura } = revalidarFila(filaResuelta, {
         itemExiste: itemEnMaestro,
         provinciasValidas,
@@ -321,6 +327,10 @@ export class CargaService {
       fila.contrato = contrato ?? '';
       fila.contrato_fuente = fuente;
       fila.item_en_maestro = mapa.existe(fila.item_codigo);
+      // Misma regla que en preview: grafía canónica del maestro antes de
+      // revalidar/insertar (por si vino editada, o si el preview quedó
+      // desactualizado respecto de las provincias activas).
+      fila.provincia = canonizarProvincia(fila.provincia, provinciasValidas) ?? fila.provincia;
 
       const { tieneError, detalle, cuadratura } = revalidarFila(fila, {
         itemExiste: fila.item_en_maestro,
@@ -364,7 +374,7 @@ export class CargaService {
         ptos_gasnor: it.ptos_gasnor,
         tipo: it.tipo,
         contratista: it.contratista,
-        provincia: m.provincia.trim(),
+        provincia: canonizarProvincia(m.provincia, provinciasValidas) ?? m.provincia.trim(),
         region: '',
         // Mismas cifras normalizadas (coma→punto) que en las ediciones.
         cantidades: normalizarCifra(m.cantidades),

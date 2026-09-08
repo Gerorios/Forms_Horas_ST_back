@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { claveProvincia } from './provincias';
 
 /**
  * Resolución de contrato/ítem/provincia de la carga de certificaciones,
@@ -186,7 +187,10 @@ export class ResolucionService {
    *   sí lo tenga, tomando el de MENOR id_item — mejora consciente sobre el
    *   `LIMIT 1` sin `ORDER BY` del portal (no determinista con duplicados).
    * - id_contrato: por código K.
-   * - id_provincia: match UPPER=UPPER.
+   * - id_provincia: match ignorando acentos/mayúsculas/espacios de más
+   *   (`claveProvincia`) contra TODO `sth_cert_provincias` (4 filas — se
+   *   trae completo, sin filtrar por `activo` ni por SQL, y se matchea en
+   *   JS: comparar con acentos en el motor no es confiable).
    * - ptos_gasnor: el del archivo si lo trae; si no, el del maestro
    *   (dim_item) del id_item resuelto; si tampoco, null.
    */
@@ -198,9 +202,7 @@ export class ResolucionService {
 
     const codigosNorm = [...new Set(filas.map((f) => normalizar(f.item_codigo)).filter((c) => c !== ''))];
     const ks = [...new Set(filas.map((f) => f.contrato).filter((k): k is string => !!k))];
-    const provinciasUpper = [
-      ...new Set(filas.map((f) => (f.provincia ?? '').trim().toUpperCase()).filter((p) => p !== '')),
-    ];
+    const hayProvincias = filas.some((f) => (f.provincia ?? '').trim() !== '');
 
     const [itemsRows, contratosRows, provinciasRows] = await Promise.all([
       codigosNorm.length
@@ -219,9 +221,9 @@ export class ResolucionService {
             Prisma.sql`SELECT id_contrato, codigo_k FROM sth_cert_contratos WHERE codigo_k IN (${Prisma.join(ks)})`,
           )
         : Promise.resolve([]),
-      provinciasUpper.length
+      hayProvincias
         ? this.prisma.$queryRaw<{ id: number | bigint; provincia: string }[]>(
-            Prisma.sql`SELECT id, provincia FROM sth_cert_provincias WHERE UPPER(provincia) IN (${Prisma.join(provinciasUpper)})`,
+            Prisma.sql`SELECT id, provincia FROM sth_cert_provincias`,
           )
         : Promise.resolve([]),
     ]);
@@ -245,8 +247,8 @@ export class ResolucionService {
     const idContratoPorK = new Map<string, number>();
     for (const r of contratosRows) idContratoPorK.set(r.codigo_k, Number(r.id_contrato));
 
-    const idProvinciaPorUpper = new Map<string, number>();
-    for (const r of provinciasRows) idProvinciaPorUpper.set(r.provincia.toUpperCase(), Number(r.id));
+    const idProvinciaPorClave = new Map<string, number>();
+    for (const r of provinciasRows) idProvinciaPorClave.set(claveProvincia(r.provincia), Number(r.id));
 
     filas.forEach((f, i) => {
       const entry = itemPorCodigo.get(normalizar(f.item_codigo));
@@ -254,7 +256,7 @@ export class ResolucionService {
       const resuelto = match ?? entry?.primero ?? null;
 
       const idContrato = f.contrato ? (idContratoPorK.get(f.contrato) ?? null) : null;
-      const idProvincia = idProvinciaPorUpper.get((f.provincia ?? '').trim().toUpperCase()) ?? null;
+      const idProvincia = idProvinciaPorClave.get(claveProvincia(f.provincia)) ?? null;
 
       const ptosDelArchivo = f.ptos_gasnor !== null && f.ptos_gasnor !== undefined && f.ptos_gasnor !== '' ? f.ptos_gasnor : null;
       const ptosGasnor = ptosDelArchivo ?? (resuelto ? resuelto.ptosGasnor : null);
