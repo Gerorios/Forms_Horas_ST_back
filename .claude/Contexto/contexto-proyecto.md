@@ -3055,3 +3055,31 @@ borrando las ramas remotas en este repo.
 portal EN PAUSA (backup de carga). Pendientes del usuario: recierre de agosto
 (GUANTAY), aviso a IT (CUIL malo), 3 ausencias a re-justificar (ADR-022),
 accesos iniciales de jefes/gerentes en Admin → Accesos.
+
+## 83. Carga de certificaciones controlada — diseño, implementación y deploy (2026-09-07 → 2026-09-08)
+
+**Disparador.** Los 4 PDFs de agosto 2026 de Naturgy se leían MAL en silencio: montos sin centavos con punto de miles ("3.840.113" → null, "400.012" → 400,012), columna nueva CUENTA que corría la cantidad (922 en vez de 221), ítem "5" perdido (se exigían 3 dígitos), NP con etiqueta "NRO. WK" no reconocida, total declarado con miles → null.
+
+**Decisiones (grilling con el usuario, 2026-09-07; glosario en `CONTEXT.md` "Carga de certificaciones (Naturgy)"; spec `docs/superpowers/specs/2026-09-07-carga-certificaciones-controlada-design.md`; plan `docs/superpowers/plans/2026-09-07-...md`):**
+1. Fila que cuadra: |cantidad × unitario − total| ≤ $1; si no (o sin unitario), BLOQUEADA hasta corregir o "Confirmar así".
+2. Total declarado vs suma: cartel FUERTE con la diferencia, pero se puede confirmar (el usuario eligió no bloquear).
+3. Montos en texto: punto = miles, coma = decimal, siempre. Celdas numéricas de Excel no pasan por la regla.
+4. Cabecera completa obligatoria (ítem, K, provincia, cantidad, unitario, total); columnas desconocidas = "ignoradas" con rango propio.
+5. Fila de ítem PDF: código de 1+ dígitos en la columna ítem abre grupo; la plata se exige a nivel GRUPO (Naturgy parte filas en dos líneas).
+6. Contrato K: maestro y contenido resuelven; la persona edita; el nombre del archivo solo avisa (caso real: archivo "K11" con contenido K2, la plata va a K11).
+7. NP con etiquetas NP y WK; período del archivo vs mes elegido = aviso fuerte sin bloquear.
+8. Editables: + unitario, + código de ítem, + "confirmada"; NUEVO filas manuales (ítem del maestro filtrado por los K del usuario, marcadas `origen='manual'`).
+9. No se confirma con bloqueadas: cada una se corrige o se excluye (sin "excluir todas").
+10. Mismas reglas para PDF y Excel.
+
+**Implementación (subagent-driven, ~20 tareas, 3 etapas + hotfix):**
+- Back Etapa A (PR #65): `montos.ts`, `fechas.ts`, `nombre-archivo.ts`, cabecera PDF por frases (`construirCabecera`, itemId de pdfjs), regla de grupo, `extraerMeta` en orden visual y solo sobre la cabecera, Excel con columnas requeridas/ignoradas, `cuadraturaFila` + `revalidarFila(confirmada)`, spec real `parser-real.spec.ts` (`CERT_PDF_DIR`/`CERT_XLS_DIR`, 4 PDFs + 3 Excel reales).
+- Back Etapa B (PR #66): DDL `docs/sql/2026-09-07-cert-origen-y-filas-manuales.sql` (`sth_cert_certificaciones.origen`, `sth_cert_cargas_log.filas_manuales`), DTOs con regex de cifras (≤4 decimales), preview con avisos (`avisos.ts`), confirmar idempotente (snapshot `originales`), 422 con `bloqueadas`, filas manuales con el ítem elegido, K inexistente bloquea, `GET carga/items-maestro`, historial con `filas_manuales`.
+- Back hotfix (PR #67): provincia se compara sin acentos/mayúsculas (`provincias.ts`) y adopta el nombre del maestro — Naturgy manda "Tucumán", el maestro tiene TUCUMAN. **Lección: verificar en la base antes de decir que falta un dato.**
+- Front Etapa C (PR #67): paso 3 según mockup aprobado (tiles A cargar/Bloqueadas/Manuales/Excluidas/Total; cartel rojo; avisos; tabla 9 columnas sin scroll; badges Cuadra/No cuadra/Bloqueada/Confirmada así/Manual; detalle con las 3 cifras y acciones; `FilaManualForm`; espejo `revalidar.ts` de la validación del back; manejo del 422 con `manual-N`).
+
+**Trampas encontradas:** pdfjs entrega títulos multi-palabra como UN item (por eso `itemId`); el x0 de las palabras se estima por proporción de caracteres (límites de columna aproximados → la TAREA a veces sale truncada, seguimiento pendiente, no afecta plata); "TOTAL MES" viene redondeado (22.535.210) y "TOTAL A CERTIFICAR NETO" con centavos: el total declarado es el TOTAL MES; el orden crudo de items de pdfjs no es el visual; celdas numéricas de Excel con `.` decimal no deben pasar por la regla es-AR; `@IsOptional` no saltea `''`; vitest 4 usa `it(name, {timeout}, fn)`; la suite del front tiene tests pesados que caen por timeout de 5 s con la máquina cargada (no son regresiones).
+
+**Deploy (2026-09-08, misregistros, todo como root vía sudo):** backup JSON `/var/www/backups/cert-pre-ddl-2026-09-08.json` (7754 fact, 122 log); DDL aplicado en `Horas_Sertec` con script Prisma (sin cliente mysql en el VPS) y verificado; `git pull` back+front, `npm install`, `prisma generate`, `npm run build`, `pm2 restart forms-horas-back --update-env` y `forms-horas-front`; smoke: 401 sin token en preview e items-maestro, front 200; preview real en producción con K8 Capex agosto: 8 filas, 7 cuadran, 1 bloqueada ("Ítem 5 no encontrado en el maestro" — el maestro tiene esa tarea como 440/441; la persona edita el ítem), total declarado 22.535.210 vs 22.474.602,04. DDL también aplicado en `testing`.
+
+**Pendiente del usuario:** cargar agosto real en producción (4 PDFs) con el flujo nuevo; opcional: subir `testTimeout` de vitest en el front; seguimiento de la tarea truncada en PDF.
