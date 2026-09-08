@@ -3083,3 +3083,17 @@ accesos iniciales de jefes/gerentes en Admin → Accesos.
 **Deploy (2026-09-08, misregistros, todo como root vía sudo):** backup JSON `/var/www/backups/cert-pre-ddl-2026-09-08.json` (7754 fact, 122 log); DDL aplicado en `Horas_Sertec` con script Prisma (sin cliente mysql en el VPS) y verificado; `git pull` back+front, `npm install`, `prisma generate`, `npm run build`, `pm2 restart forms-horas-back --update-env` y `forms-horas-front`; smoke: 401 sin token en preview e items-maestro, front 200; preview real en producción con K8 Capex agosto: 8 filas, 7 cuadran, 1 bloqueada ("Ítem 5 no encontrado en el maestro" — el maestro tiene esa tarea como 440/441; la persona edita el ítem), total declarado 22.535.210 vs 22.474.602,04. DDL también aplicado en `testing`.
 
 **Pendiente del usuario:** cargar agosto real en producción (4 PDFs) con el flujo nuevo; opcional: subir `testTimeout` de vitest en el front; seguimiento de la tarea truncada en PDF.
+
+## 84. Baja del PortalCertificaciones: dominio redirigido y contenedor apagado (2026-09-08)
+
+Se levantó la pausa de la etapa 5 (que desde el 2026-09-03 mantenía el portal vivo como backup de carga) y se ejecutaron sus pasos 4 y 5 con autorización explícita del usuario. Detalle operativo completo y rollback en `docs/2026-09-08-baja-portal-certificaciones.md`.
+
+**Relevamiento previo:** el portal seguía en uso para LECTURA (resumen, historial y analytics con 200 en los últimos días), pero la CARGA ya había migrado (última por el portal a fin de agosto; las del 7/9 por misregistros). Tenía 6 usuarios contra 3 accesos cargados en Horas, así que ~3 personas quedaban afuera. **Decisión del dueño de producto: dar de baja igual y otorgar accesos A DEMANDA**, a medida que se los pidan, para controlar quién usa el sistema nuevo.
+
+**Ejecutado:** `certificaciones.serytec.com.ar` devuelve 302 a `misregistros.serytec.com.ar/certificaciones` en 80 y 443 (verificado también en rutas profundas), y el contenedor `portal-certificaciones-back` quedó detenido con política `unless-stopped` (no vuelve solo). Puerto 8000 libre; misregistros intacto.
+
+**Dos decisiones técnicas:** 302 y no 301, porque un permanente se cachea en los navegadores y complica el rollback; y se conservó el bloque SSL porque certbot renueva con `authenticator = nginx` (`--dry-run` exitoso, vence 2026-11-11).
+
+**Rollback en un minuto:** restaurar `/etc/nginx/sites-available/certificaciones.serytec.com.ar.bak-20260908`, recargar nginx y `docker start`. Los estáticos y la imagen siguen en el VPS.
+
+**Queda pendiente (irreversible, no autorizado en este cambio):** limpiar los secretos del `.env` del portal — `AZURE_CLIENT_SECRET` sigue sin rotar desde agosto, más `OPENAI_API_KEY` y `HORAS_JWT_SECRET` —, borrar las seis vistas de compatibilidad y la tabla `usuarios` en `Horas_Sertec`, limpiar las tablas congeladas de `testing` y archivar el repo del portal.
