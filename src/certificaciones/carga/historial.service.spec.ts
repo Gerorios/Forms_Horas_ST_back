@@ -77,6 +77,7 @@ describe('HistorialService.listar — visibilidad por nivel', () => {
       periodo: '2026-08',
       filas_cargadas: 10,
       filas_error: 1,
+      filas_manuales: 2,
       estado: 'parcial',
       cargado_en: '2026-08-21 14:30',
     };
@@ -100,6 +101,7 @@ describe('HistorialService.listar — visibilidad por nivel', () => {
       periodo: '2026-08',
       filas_cargadas: BigInt(10),
       filas_error: BigInt(1),
+      filas_manuales: BigInt(2),
       estado: 'parcial',
       cargado_en: '2026-08-21 14:30',
     };
@@ -111,6 +113,7 @@ describe('HistorialService.listar — visibilidad por nivel', () => {
     expect(resultado[0].id).toBe(7);
     expect(resultado[0].filas_cargadas).toBe(10);
     expect(resultado[0].filas_error).toBe(1);
+    expect(resultado[0].filas_manuales).toBe(2);
     expect(() => JSON.stringify(resultado)).not.toThrow();
   });
 });

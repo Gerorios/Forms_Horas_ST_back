@@ -1,4 +1,4 @@
-import { PreviewStore, PreviewSession, FilaPreview } from './preview-store';
+import { PreviewStore, PreviewSession, FilaPreview, clonarFila } from './preview-store';
 
 function filaPreview(overrides: Partial<FilaPreview> = {}): FilaPreview {
   return {
@@ -29,6 +29,9 @@ function filaPreview(overrides: Partial<FilaPreview> = {}): FilaPreview {
     contrato_fuente: 'archivo',
     contrato_del_maestro: null,
     excluida: false,
+    cuadratura: { calculado: null, impreso: 100, diferencia: null, cuadra: false, sugerencia_cantidad: null },
+    confirmada: false,
+    origen: 'archivo',
     ...overrides,
   };
 }
@@ -42,7 +45,11 @@ function sesion(overrides: Partial<PreviewSession> = {}): PreviewSession {
     anio: 2026,
     mes: 8,
     filas: new Map([[fila.rowId, fila]]),
+    originales: new Map([[fila.rowId, clonarFila(fila)]]),
     creadaEn: Date.now(),
+    total_declarado: null,
+    k_nombre_archivo: null,
+    periodo_archivo: null,
     ...overrides,
   };
 }
@@ -97,5 +104,20 @@ describe('PreviewStore', () => {
     store.recuperar(s.id, s.ownerCuil);
     // segunda lectura: sigue null (ya no está, no explota)
     expect(store.recuperar(s.id, s.ownerCuil)).toBeNull();
+  });
+});
+
+describe('clonarFila', () => {
+  it('copia la fila y también el objeto cuadratura (no comparte referencia)', () => {
+    const f = filaPreview();
+    const copia = clonarFila(f);
+    expect(copia).toEqual(f);
+    expect(copia).not.toBe(f);
+    expect(copia.cuadratura).not.toBe(f.cuadratura);
+
+    copia.cantidades = '99';
+    copia.cuadratura.cuadra = true;
+    expect(f.cantidades).toBe('3');
+    expect(f.cuadratura.cuadra).toBe(false);
   });
 });

@@ -857,6 +857,7 @@ model CertCargaLog {
   periodo        String?            @db.VarChar(10)
   filasCargadas  Int                @map("filas_cargadas") @default(0)
   filasError     Int                @map("filas_error") @default(0)
+  filasManuales  Int                @map("filas_manuales") @default(0)
   estado         CertCargaLogEstado @default(ok)
   detalleErrores String?            @map("detalle_errores") @db.Text
   cargadoEn      DateTime           @map("cargado_en") @default(now())
