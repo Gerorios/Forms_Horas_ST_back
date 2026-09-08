@@ -200,7 +200,7 @@ describe('ResolucionService.contratosExistentes', () => {
 });
 
 describe('ResolucionService.resolverIds', () => {
-  it('resuelve id_item por código+K, id_contrato por K, id_provincia por UPPER y ptos_gasnor del archivo', async () => {
+  it('resuelve id_item por código+K, id_contrato por K, id_provincia por match sin acentos/mayúsculas y ptos_gasnor del archivo', async () => {
     const prisma = {
       $queryRaw: jest
         .fn()
@@ -221,6 +221,23 @@ describe('ResolucionService.resolverIds', () => {
     ]);
 
     expect(resultado.get(0)).toEqual({ idItem: 10, idContrato: 1, idProvincia: 3, ptosGasnor: '2' });
+  });
+
+  it("fila con 'Tucumán' (con acento) matchea el maestro guardado como 'TUCUMAN' (sin acento)", async () => {
+    const prisma = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ id_item: 10, item_norm: '123', codigo_k: 'K6', ptos_gasnor: null }])
+        .mockResolvedValueOnce([{ id_contrato: 1, codigo_k: 'K6' }])
+        .mockResolvedValueOnce([{ id: 7, provincia: 'TUCUMAN' }]),
+    } as any;
+    const service = new ResolucionService(prisma);
+
+    const resultado = await service.resolverIds([
+      { item_codigo: '123', contrato: 'K6', provincia: 'Tucumán', ptos_gasnor: null },
+    ]);
+
+    expect(resultado.get(0)?.idProvincia).toBe(7);
   });
 
   it('fallback de id_item a cualquier K, por MENOR id_item (determinismo consciente vs el LIMIT 1 sin ORDER BY del portal)', async () => {

@@ -465,6 +465,37 @@ describe('CargaService.confirmar', () => {
     expect(logCreate.data.estado).toBe('parcial');
   });
 
+  it("provincia 'Tucumán' (con acento, como imprime Naturgy) matchea 'TUCUMAN' del maestro: no bloquea y adopta la grafía canónica", async () => {
+    const { prisma } = crearPrismaMock({
+      maestro: [{ itemCodigo: '431', codigoK: 'K12', idItem: 1, ptosGasnor: null, idContrato: 1 }],
+      provinciasActivas: ['Salta', 'TUCUMAN'],
+      provinciasTodas: [
+        { id: 1, provincia: 'SALTA' },
+        { id: 9, provincia: 'TUCUMAN' },
+      ],
+    });
+    const store = new PreviewStore();
+    const service = new CargaService(prisma as any, new ResolucionService(prisma as any), store);
+    const buf = await armarExcel([['431', 'Tarea', 'K12', 'Tucumán', 3, 100, 300]]);
+
+    const preview = await service.preview(buf, 'a.xlsx', 2026, 8, 'excel', CERT_ADMIN, CUIL);
+    expect(preview.filas[0].tiene_error).toBe(false);
+    expect(preview.filas[0].provincia).toBe('TUCUMAN');
+
+    const resp = await service.confirmar(
+      { previewId: preview.previewId, ediciones: [] },
+      CERT_ADMIN,
+      CUIL,
+      'Juan',
+    );
+    // El INSERT no lleva el string de provincia, solo `id_provincia`: se
+    // verifica que resolvió el id de 'TUCUMAN' (9), no que quedó sin cargar.
+    expect(resp.insertadas).toBe(1);
+    expect(resp.omitidas).toBe(0);
+    const insertCall = (prisma as any).$executeRaw.mock.calls[0][0];
+    expect(insertCall.values).toContain(9);
+  });
+
   it('plantillas nunca llegan a insertarse: no viven en la sesión (ya se filtraron en preview)', async () => {
     const { prisma } = crearPrismaMock({
       maestro: [{ itemCodigo: '431', codigoK: 'K12', idItem: 1, ptosGasnor: null, idContrato: 1 }],

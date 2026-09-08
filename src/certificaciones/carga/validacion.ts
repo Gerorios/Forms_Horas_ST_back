@@ -1,4 +1,5 @@
 import { FilaParseada } from './parser-tipos';
+import { canonizarProvincia } from './provincias';
 
 /**
  * Reglas de cargabilidad de filas de certificación, portadas 1:1 de
@@ -84,7 +85,8 @@ const fmt2 = (n: number) => n.toFixed(2);
 
 /**
  * Fila cargable: ítem en maestro + contrato K + provincia válida (match
- * UPPER contra las provincias activas) + cantidad != 0 + total_mes
+ * sin acentos/mayúsculas/espacios de más contra las provincias activas,
+ * ver `canonizarProvincia`) + cantidad != 0 + total_mes
  * presente (0 es válido; solo debe parsear) + fila que cuadra (Task 7,
  * CONTEXT.md). `detalle` une las faltas con "; " usando los textos exactos
  * del portal. La cuadratura solo se evalúa si no hay ninguna otra falta
@@ -109,11 +111,8 @@ export function revalidarFila(
   const provincia = (f.provincia ?? '').trim();
   if (!provincia) {
     faltas.push('Falta provincia');
-  } else {
-    const validasUpper = new Set(opts.provinciasValidas.map((p) => p.trim().toUpperCase()));
-    if (!validasUpper.has(provincia.toUpperCase())) {
-      faltas.push(`Provincia '${provincia}' inválida`);
-    }
+  } else if (canonizarProvincia(provincia, opts.provinciasValidas) === null) {
+    faltas.push(`Provincia '${provincia}' inválida`);
   }
 
   const cant = num(f.cantidades);

@@ -94,6 +94,19 @@ describe('revalidarFila', () => {
     expect(r.tieneError).toBe(false);
   });
 
+  it("'Tucumán' con validas ['TUCUMAN'] -> sin error (match ignora acentos)", () => {
+    const r = revalidarFila(filaBase({ provincia: 'Tucumán' }), {
+      itemExiste: true,
+      provinciasValidas: ['TUCUMAN'],
+    });
+    expect(r.tieneError).toBe(false);
+  });
+
+  it("'Córdoba' fuera del maestro -> inválida con el valor tal cual lo trae la fila", () => {
+    const r = revalidarFila(filaBase({ provincia: 'Córdoba' }), opts);
+    expect(r.detalle).toBe("Provincia 'Córdoba' inválida");
+  });
+
   it('falta cantidad (null) -> texto exacto', () => {
     const r = revalidarFila(filaBase({ cantidades: null }), opts);
     expect(r.detalle).toBe('Falta cantidad');

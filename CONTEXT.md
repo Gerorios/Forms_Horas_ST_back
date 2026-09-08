@@ -181,7 +181,11 @@ manda" (deja pasar cantidades corridas de columna).
 Fila que no puede cargarse tal como está: no cuadra, su ítem no está en el
 maestro, su provincia no es válida o le falta cantidad o total. La carga no se
 confirma mientras haya filas bloqueadas: la persona corrige o **excluye** cada
-una explícitamente. Nunca se descartan en silencio ni en bloque.
+una explícitamente. Nunca se descartan en silencio ni en bloque. La provincia
+se compara sin acentos ni mayúsculas de más (2026-09-07: 'Tucumán' del PDF de
+Naturgy no se bloquea contra el maestro 'TUCUMAN') y, si matchea, la fila
+adopta el nombre EXACTO del maestro — nunca se crea una provincia nueva por
+variante de formato.
 
 **Fila manual** (2026-09-07):
 Fila que la persona agrega en el preview porque el parser no la reconoció en
