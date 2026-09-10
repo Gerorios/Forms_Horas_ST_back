@@ -109,7 +109,6 @@ describe('NovedadesService#update', () => {
     fechaInicio: new Date(2026, 7, 1),
     fechaFin: new Date(2026, 7, 2),
     justificacionTexto: 'texto viejo',
-    adjuntoUrl: null,
     estadoHys: 'desaprobada',
     aprobadoHysPorCuil: '20999999999',
     aprobadoHysEn: new Date(2026, 7, 5),
@@ -235,7 +234,6 @@ describe('NovedadesService#update', () => {
     expect(adjuntoStorageMock.guardar).not.toHaveBeenCalled();
     expect(adjuntoStorageMock.borrar).not.toHaveBeenCalled();
     const data = prismaMock.novedad.update.mock.calls[0][0].data;
-    expect(data).not.toHaveProperty('adjuntoUrl');
     expect(data).not.toHaveProperty('adjuntos');
   });
 
