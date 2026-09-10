@@ -3097,3 +3097,81 @@ Se levantó la pausa de la etapa 5 (que desde el 2026-09-03 mantenía el portal 
 **Rollback en un minuto:** restaurar `/etc/nginx/sites-available/certificaciones.serytec.com.ar.bak-20260908`, recargar nginx y `docker start`. Los estáticos y la imagen siguen en el VPS.
 
 **Queda pendiente (irreversible, no autorizado en este cambio):** limpiar los secretos del `.env` del portal — `AZURE_CLIENT_SECRET` sigue sin rotar desde agosto, más `OPENAI_API_KEY` y `HORAS_JWT_SECRET` —, borrar las seis vistas de compatibilidad y la tabla `usuarios` en `Horas_Sertec`, limpiar las tablas congeladas de `testing` y archivar el repo del portal.
+
+## 85. Certificados múltiples en novedades: adjuntar después de cargada (2026-09-10)
+
+Pedido del usuario: cuando un operario pide permiso para ir al médico, el
+supervisor carga la novedad ese día y el certificado recién existe cuando el
+operario vuelve — y no había forma de sumarlo. Relevando el módulo apareció que
+la infraestructura de adjuntos ya estaba entera (`adjuntoUrl`, storage en FS,
+`GET /:id/adjunto`) y **el bloqueo era de permisos**: el único camino era
+`PATCH /novedades/:id`, cerrado a HyS/Admin y editor completo de la novedad.
+Detalle operativo y rollback en `docs/2026-09-10-novedades-adjuntos-deploy.md`.
+
+**Diseño (12 preguntas de grilling, todas resueltas por el usuario):**
+1. Endpoint dedicado `PATCH /:id/adjunto` que sube SOLO el archivo, en vez de
+   abrirle al supervisor el editor completo.
+2. Alcance = espejo del de lectura: JefeCuadrilla solo sobre lo que cargó él, el
+   resto sobre cualquiera. Sin regla nueva que explicar.
+3. **Adjuntar NUNCA cambia el estado de HyS.** Se descartó reabrir
+   automáticamente (aunque el caso "desaprobada por falta de certificado" era
+   tentador): un supervisor subiendo un archivo no debe mover el 20% de
+   presentismo. La decisión de reabrir sigue siendo de HyS.
+4. El aviso a HyS es visual, en su bandeja: chip "Certificado nuevo" derivado de
+   comparar la fecha del último adjunto con `aprobadoHysEn`. No hay mailer ni
+   notificaciones en el sistema, y **derivarlo hace que se apague solo** cuando
+   HyS vuelve a resolver — no hay flag que pueda quedar pegado.
+5. El chip solo en resueltas (`aprobada`/`desaprobada`): las pendientes ya están
+   en la cola de trabajo de HyS.
+6. **Hasta 3 adjuntos** (1-N, tabla propia) en vez de uno: el usuario confirmó
+   que puede haber dos papeles (certificado + alta médica) y con un campo único
+   se pisaban entre sí, borrando el anterior del disco.
+7. Baja **lógica** (el archivo se conserva) por quien lo subió o HyS, y solo
+   mientras la novedad no esté resuelta. Borrado **real** solo del Admin: es la
+   salida para el certificado subido en la novedad equivocada, que es dato de
+   salud de otra persona y no puede quedar recuperable.
+8. Migración en **dos pasos**: se copia y `adjunto_url` queda poblada sin uso; el
+   DROP va en un PR posterior. El rollback del deploy es volver el código.
+9. Subida de a uno, JPEG/PNG/PDF hasta 10 MB (igual que antes).
+10. Todo desde el `DetalleNovedadDialog`, que ya comparten `/novedades` y
+    `/ausencias` — un componente para las dos pantallas.
+11. Cualquier tipo de novedad; anulada queda congelada.
+12. El fix de `pierdePresentismoHys` salió en su propio PR previo (#70).
+
+**Bug preexistente encontrado al relevar (PR #70):** `update()` reabría una
+novedad resuelta pero **no limpiaba `pierdePresentismoHys`**, contra ADR-022 —
+`CalculoService` seguía leyendo una decisión de presentismo ya sin efecto.
+`reabrir()` sí lo limpiaba. La consulta a las dos bases no encontró filas
+inconsistentes (5 con el booleano en producción, todas en `aprobada`), así que el
+fix fue preventivo y sin saneamiento de datos.
+
+**Implementación:** back PR #71 (tabla `sth_novedades_adjuntos`, tres endpoints,
+`certificadoPosteriorAResolucion` derivado, auditoría por archivo con las
+acciones nuevas `adjuntar`/`quitar_adjunto`/`borrar_adjunto`, 26 tests); front
+PR #68 en tres commits — `CertificadosNovedad`, el fix del detalle y la
+paginación (21 tests).
+
+**Se sacó el adjunto de `update()`:** antes, editar con un archivo reemplazaba el
+certificado y lo BORRABA del disco sin vuelta atrás. Ahora hay un único camino y
+ese endpoint dejó de ser multipart (pasa a JSON).
+
+**Trampas encontradas:**
+- El **ENUM de MySQL** `sth_auditoria.accion` hay que ampliarlo con `ALTER TABLE`
+  antes de levantar el código: no alcanza con tocar el enum de Prisma, y sin eso
+  el primer insert de auditoría falla. No estaba previsto en el diseño.
+- **Ensayar el DDL en `testing` destapó un bug que hubiera explotado en
+  producción**: la tabla nacía con la collation del servidor
+  (`utf8mb4_0900_ai_ci`) mientras `sth_novedades` usa `utf8mb4_unicode_ci`, y el
+  `NOT EXISTS` de la migración fallaba con "Illegal mix of collations" (1267). Va
+  declarada explícita. **Lección: ensayar todo DDL con migración de datos en
+  `testing` antes del PR.**
+- El usuario reportó al probar en local que **subir un certificado no se veía en
+  el modal** hasta cerrarlo y reabrirlo: el detalle guardaba una COPIA de la
+  novedad. Ahora guarda el ID y la busca en la lista fresca.
+- Las credenciales locales (`root_test`) **solo ven `testing`**: consultar
+  `Horas_Sertec` requiere entrar al VPS y usar el `.env` del backend.
+- La suite del front sigue cayendo por timeout de 5 s con la máquina cargada
+  (`liquidacion/perfiles`); en aislamiento pasa. No son regresiones.
+
+**Pendiente:** el `DROP COLUMN adjunto_url` en las dos bases, en su propio PR,
+recién cuando se confirme que los certificados viejos se abren bien en producción.
