@@ -54,10 +54,42 @@ Los cinco paths de la tabla coinciden exactamente con los cinco archivos de
   molestan al código viejo.
 - Backup JSON disponible por si hiciera falta.
 
+## Paso 2 — baja de `adjunto_url` (mismo día, PR #73)
+
+El usuario probó en producción, confirmó que funciona y pidió cerrar el
+pendiente, así que el paso 2 se ejecutó el mismo día en vez de esperar.
+
+**Orden respetado:** primero se deployó el código SIN `adjuntoUrl` en el schema
+(`git pull`, `prisma generate`, `npm run build`, `pm2 restart` — arrancó 17:22),
+se verificó que la API seguía respondiendo, y RECIÉN DESPUÉS se corrió el
+`ALTER`. Al revés, Prisma hubiera generado `SELECT adjunto_url` (por el `include`
+de `INCLUDE_BASICO`) y `GET /novedades` se hubiera caído.
+
+**Precondición** (adjuntos que vivieran solo en la columna vieja): **0 filas en
+las dos bases**, chequeada por el propio script justo antes del `ALTER`, con
+aborto automático si daba distinto.
+
+| Base | Precondición | Adjuntos vigentes antes/después | Novedades |
+|---|---|---|---|
+| `Horas_Sertec` | 0 | 5 / 5 | 92 intactas |
+| `testing` | 0 | 2 / 2 | 17 intactas |
+
+`SHOW COLUMNS ... LIKE 'adjunto_url'` devuelve 0 filas en ambas.
+
+**Smoke posterior al DROP:** `pm2 restart` y "Nest application successfully
+started" (17:26); front 200 en `/login`, `/novedades`, `/ausencias` y
+`/certificaciones`; API 401 sin token en las rutas de certificados.
+
+**Rollback, ya no gratis:** recrear la columna y repoblarla con el adjunto
+vigente más antiguo de cada novedad — el `UPDATE` está en
+`docs/sql/2026-09-10-novedades-drop-adjunto-url.sql`, junto con su límite (los
+certificados subidos desde el 2026-09-10 no tienen equivalente en un modelo de
+un solo archivo). Backup previo a toda la migración en
+`/var/www/backups/novedades-pre-ddl-2026-09-10.json`.
+
 ## Pendiente
 
-- **Paso 2 de la migración**: `ALTER TABLE sth_novedades DROP COLUMN adjunto_url`,
-  en las dos bases, recién cuando se confirme en producción que los certificados
-  viejos se abren bien por el camino nuevo. Va en su propio PR.
-- Los certificados quedan en el filesystem del VPS (no hay bucket). Con el tope
-  de 3 por novedad el crecimiento es acotado; el disco está al 7% (90 GB libres).
+- Ninguno de la migración: quedó cerrada en los dos pasos.
+- A tener en cuenta: los certificados viven en el filesystem del VPS (no hay
+  bucket). Con el tope de 3 por novedad el crecimiento es acotado; el disco está
+  al 7% (90 GB libres).
