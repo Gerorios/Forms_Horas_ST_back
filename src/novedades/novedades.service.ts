@@ -7,20 +7,33 @@ import { rangoQuincena } from '../common/quincena';
 import { CalculoService } from '../liquidacion/calculo.service';
 import { NOVEDAD_ADJUNTO_STORAGE, NovedadAdjuntoStorage } from './storage/novedad-adjunto-storage.interface';
 
+/** Tope de certificados vigentes por novedad. El caso real es un papel, a
+ * veces dos (certificado de atención + alta médica); 3 deja margen para el
+ * error sin volver el disco del VPS un depósito de fotos. */
+export const MAX_ADJUNTOS_POR_NOVEDAD = 3;
+
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true, legajo: true } },
   tipoNovedad: { select: { id: true, nombre: true, requiereAprobacionHys: true } },
   cargadoPor: { select: { cuil: true, nombreFueraNomina: true } },
+  // Solo los vigentes: los dados de baja quedan en la tabla para auditoría,
+  // pero no se muestran ni cuentan para el tope.
+  adjuntos: {
+    where: { eliminadoEn: null },
+    select: { id: true, mimetype: true, subidoPorCuil: true, subidoEn: true },
+    orderBy: { subidoEn: 'asc' as const },
+  },
 };
 
-// Snapshot de los campos editables de una novedad, para el before/after de Auditoría.
+// Snapshot de los campos editables de una novedad, para el before/after de
+// Auditoría. Los certificados NO están acá: no se editan por `update` y
+// tienen su propia auditoría por archivo (accion adjuntar/quitar-adjunto).
 function snapshot(n: {
   operarioCuil: string;
   tipoNovedadId: number;
   fechaInicio: Date;
   fechaFin: Date | null;
   justificacionTexto: string | null;
-  adjuntoUrl: string | null;
   estadoHys: string;
 }) {
   return {
@@ -29,9 +42,23 @@ function snapshot(n: {
     fechaInicio: n.fechaInicio,
     fechaFin: n.fechaFin,
     justificacionTexto: n.justificacionTexto,
-    adjuntoUrl: n.adjuntoUrl,
     estadoHys: n.estadoHys,
   };
+}
+
+/** Fila cruda de `sth_novedades_adjuntos` tal como la trae INCLUDE_BASICO. */
+interface AdjuntoCrudo {
+  id: number;
+  mimetype: string;
+  subidoPorCuil: string;
+  subidoEn: Date;
+}
+
+/** Lo mínimo que necesita una novedad para pasar por `conNombresCargador`. */
+interface NovedadPresentable {
+  cargadoPor: { cuil: string; nombreFueraNomina: string | null };
+  adjuntos?: AdjuntoCrudo[];
+  aprobadoHysEn?: Date | null;
 }
 
 export interface ResumenAusenciaOperario {
@@ -63,31 +90,73 @@ export class NovedadesService {
     return new Map(empleados.map((e) => [e.cuil, e.apellido_nombre]));
   }
 
+  /** Nombres para mostrar de quienes subieron certificados. Se resuelve
+   * contra snuempleados y, para los que no estén en nómina (típicamente un
+   * JefeCuadrilla), cae en `Usuario.nombreFueraNomina` — la consulta extra
+   * corre solo si quedó alguno sin resolver. */
+  private async mapaNombresSubidores(cuils: string[]): Promise<Map<string, string>> {
+    const unicos = [...new Set(cuils)];
+    if (unicos.length === 0) return new Map();
+    const mapa = await this.mapaNombresPorCuil(unicos);
+    const faltantes = unicos.filter((c) => !mapa.get(c));
+    if (faltantes.length > 0) {
+      const usuarios = await this.prisma.usuario.findMany({
+        where: { cuil: { in: faltantes } },
+        select: { cuil: true, nombreFueraNomina: true },
+      });
+      for (const u of usuarios) {
+        if (u.nombreFueraNomina) mapa.set(u.cuil, u.nombreFueraNomina);
+      }
+    }
+    return mapa;
+  }
+
+  /** Convierte los adjuntos crudos en la forma que consume el frontend y
+   * deriva `certificadoPosteriorAResolucion`: el aviso para HyS de que llegó
+   * un papel DESPUÉS de que resolvió. Se deriva de las fechas en vez de
+   * guardarse como flag, así se apaga solo cuando HyS vuelve a resolver
+   * (`resolverHys` reescribe `aprobadoHysEn`) y no puede quedar pegado. */
+  private presentarAdjuntos(
+    novedad: { adjuntos?: AdjuntoCrudo[]; aprobadoHysEn?: Date | null },
+    nombres: Map<string, string>,
+  ) {
+    const adjuntos = (novedad.adjuntos ?? []).map((a) => ({
+      id: a.id,
+      mimetype: a.mimetype,
+      subidoPorCuil: a.subidoPorCuil,
+      subidoPor: nombres.get(a.subidoPorCuil) ?? '',
+      subidoEn: a.subidoEn,
+    }));
+    const ultimo = adjuntos.reduce<Date | null>(
+      (max, a) => (max === null || a.subidoEn > max ? a.subidoEn : max),
+      null,
+    );
+    const resueltaEn = novedad.aprobadoHysEn ?? null;
+    return {
+      adjuntos,
+      certificadoPosteriorAResolucion:
+        resueltaEn !== null && ultimo !== null && ultimo > resueltaEn,
+    };
+  }
+
   /** Reemplaza `cargadoPor` (cuil + nombreFueraNomina "crudos") por el nombre
    * para mostrar. Un email (ej. "10801@st.local") no identifica a nadie en
    * el tiempo — un JefeCuadrilla no tiene otro identificador visible salvo
    * su nombre real (revisión 2026-08-25). */
-  private async conNombreCargador<T extends { cargadoPor: { cuil: string; nombreFueraNomina: string | null } }>(
-    novedad: T,
-  ): Promise<Omit<T, 'cargadoPor'> & { cargadoPor: { cuil: string; nombre: string } }> {
-    const mapa = await this.mapaNombresPorCuil([novedad.cargadoPor.cuil]);
-    return {
-      ...novedad,
-      cargadoPor: {
-        cuil: novedad.cargadoPor.cuil,
-        nombre: mapa.get(novedad.cargadoPor.cuil) ?? novedad.cargadoPor.nombreFueraNomina ?? '',
-      },
-    };
+  private async conNombreCargador<T extends NovedadPresentable>(novedad: T) {
+    return (await this.conNombresCargador([novedad]))[0];
   }
 
   /** Misma resolución que `conNombreCargador`, en lote (una sola consulta a
    * snuempleados para toda la lista) — usada por `findAll`. */
-  private async conNombresCargador<T extends { cargadoPor: { cuil: string; nombreFueraNomina: string | null } }>(
-    novedades: T[],
-  ): Promise<(Omit<T, 'cargadoPor'> & { cargadoPor: { cuil: string; nombre: string } })[]> {
+  private async conNombresCargador<T extends NovedadPresentable>(novedades: T[]) {
     const mapa = await this.mapaNombresPorCuil(novedades.map((n) => n.cargadoPor.cuil));
+    const nombresSubidores = await this.mapaNombresSubidores(
+      novedades.flatMap((n) => (n.adjuntos ?? []).map((a) => a.subidoPorCuil)),
+    );
     return novedades.map((n) => ({
       ...n,
+      ...this.presentarAdjuntos(n, nombresSubidores),
       cargadoPor: {
         cuil: n.cargadoPor.cuil,
         nombre: mapa.get(n.cargadoPor.cuil) ?? n.cargadoPor.nombreFueraNomina ?? '',
@@ -126,7 +195,7 @@ export class NovedadesService {
 
     // El adjunto se guarda en disco recién acá (no antes de validar tipo/permiso)
     // para no dejar archivos huérfanos si la carga termina rechazada.
-    const adjuntoUrl = adjunto ? await this.adjuntoStorage.guardar(adjunto.buffer, adjunto.mimetype) : undefined;
+    const path = adjunto ? await this.adjuntoStorage.guardar(adjunto.buffer, adjunto.mimetype) : undefined;
 
     const novedad = await this.prisma.novedad.create({
       data: {
@@ -136,8 +205,12 @@ export class NovedadesService {
         fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
         cargadoPorCuil,
         justificacionTexto: dto.justificacionTexto,
-        adjuntoUrl,
         estadoHys: estadoHys as any,
+        // El certificado que venga con la carga entra como el primero de la
+        // lista, no en la columna vieja `adjuntoUrl` (deprecada).
+        ...(path && adjunto
+          ? { adjuntos: { create: [{ path, mimetype: adjunto.mimetype, subidoPorCuil: cargadoPorCuil }] } }
+          : {}),
       },
       include: INCLUDE_BASICO,
     });
@@ -203,11 +276,15 @@ export class NovedadesService {
    * resuelta por HyS (aprobada/desaprobada), la edición la vuelve a
    * `pendiente` y limpia la resolución previa. Deja auditoría con el snapshot
    * antes/después.
+   *
+   * NO toca los certificados: desde 2026-09-10 se suben y se quitan por
+   * `agregarAdjunto`/`quitarAdjunto`, que es el único camino y no cambia el
+   * estado de la novedad. Antes, editar con un archivo lo reemplazaba y
+   * borraba el anterior del disco, sin vuelta atrás.
    */
   async update(
     id: number,
     dto: UpdateNovedadDto,
-    adjunto: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' | 'application/pdf' } | undefined,
     usuario: { cuil: string; rol: string },
   ) {
     const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
@@ -226,14 +303,6 @@ export class NovedadesService {
     // criterio que CargasCombustibleService#puedeModificar).
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    let adjuntoUrl = novedad.adjuntoUrl;
-    if (adjunto) {
-      if (novedad.adjuntoUrl) {
-        await this.adjuntoStorage.borrar(novedad.adjuntoUrl);
-      }
-      adjuntoUrl = await this.adjuntoStorage.guardar(adjunto.buffer, adjunto.mimetype);
-    }
-
     const yaResuelta = novedad.estadoHys === 'aprobada' || novedad.estadoHys === 'desaprobada';
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -245,7 +314,6 @@ export class NovedadesService {
           fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
           fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
           justificacionTexto: dto.justificacionTexto ?? undefined,
-          adjuntoUrl,
           // Reabrir por edición deja la novedad igual que reabrir(): sin
           // pierdePresentismoHys, que por ADR-022 solo tiene valor cuando
           // estadoHys='aprobada'. Sin limpiarlo, el booleano sobrevivía a la
@@ -410,24 +478,190 @@ export class NovedadesService {
     return this.conNombreCargador(updated);
   }
 
+  /** Mismo alcance que el listado (findAll): el JefeCuadrilla solo alcanza lo
+   * que él cargó. Sin esto, con el id en la URL podía leer el certificado
+   * médico de cualquier novedad — los ids son secuenciales (revisión
+   * 2026-08-19). Vale para ver, agregar y quitar por igual: si podés ver la
+   * novedad, podés ponerle el papel. */
+  private verificarAlcanceNovedad(
+    novedad: { cargadoPorCuil: string },
+    usuario: { cuil: string; rol: string },
+  ) {
+    if (usuario.rol === 'JefeCuadrilla' && novedad.cargadoPorCuil !== usuario.cuil) {
+      throw new ForbiddenException('No podés acceder a los certificados de una novedad que no cargaste.');
+    }
+  }
+
   async obtenerAdjunto(
     id: number,
+    adjuntoId: number,
     usuario: { cuil: string; rol: string },
   ): Promise<{ buffer: Buffer; mimetype: string }> {
     const novedad = await this.prisma.novedad.findUnique({
       where: { id },
-      select: { adjuntoUrl: true, cargadoPorCuil: true },
+      select: { cargadoPorCuil: true },
     });
-    if (!novedad || !novedad.adjuntoUrl) {
-      throw new NotFoundException('La novedad no tiene adjunto');
+    if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    this.verificarAlcanceNovedad(novedad, usuario);
+
+    // El adjunto tiene que pertenecer a ESTA novedad: sin el filtro por
+    // novedadId, un id de adjunto adivinado servía para leer el certificado
+    // de cualquier otra desde una novedad que sí se puede ver.
+    const adjunto = await this.prisma.novedadAdjunto.findFirst({
+      where: { id: adjuntoId, novedadId: id, eliminadoEn: null },
+      select: { path: true },
+    });
+    if (!adjunto) throw new NotFoundException('Certificado no encontrado');
+
+    return this.adjuntoStorage.leer(adjunto.path);
+  }
+
+  /**
+   * Agrega un certificado a una novedad ya cargada — el caso real: el operario
+   * pide permiso, el supervisor carga la novedad ese día, y el papel llega
+   * cuando vuelve del médico.
+   *
+   * NO cambia el estado de HyS: ni reabre, ni aprueba, ni desaprueba. Si el
+   * certificado llega después de que HyS resolvió, el aviso viaja como
+   * `certificadoPosteriorAResolucion` y la decisión de reabrir sigue siendo
+   * de HyS (`reabrir`).
+   */
+  async agregarAdjunto(
+    id: number,
+    archivo: { buffer: Buffer; mimetype: 'image/jpeg' | 'image/png' | 'application/pdf' },
+    usuario: { cuil: string; rol: string },
+  ) {
+    const novedad = await this.prisma.novedad.findUnique({
+      where: { id },
+      select: { id: true, cargadoPorCuil: true, estado: true },
+    });
+    if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    this.verificarAlcanceNovedad(novedad, usuario);
+    // Anulada = registro congelado, mismo criterio que `update`.
+    if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
+
+    const vigentes = await this.prisma.novedadAdjunto.count({
+      where: { novedadId: id, eliminadoEn: null },
+    });
+    if (vigentes >= MAX_ADJUNTOS_POR_NOVEDAD) {
+      throw new BadRequestException(
+        `Llegaste al máximo de ${MAX_ADJUNTOS_POR_NOVEDAD} certificados para esta novedad.`,
+      );
     }
-    // Mismo alcance que el listado (findAll): el JefeCuadrilla solo ve lo que
-    // él cargó. Sin esto, con el id en la URL podía leer el certificado médico
-    // de cualquier novedad — los ids son secuenciales (revisión 2026-08-19).
-    if (usuario.rol === 'JefeCuadrilla' && novedad.cargadoPorCuil !== usuario.cuil) {
-      throw new ForbiddenException('No podés ver el adjunto de una novedad que no cargaste.');
+
+    // Se escribe en disco recién después de validar permiso, estado y tope,
+    // para no dejar archivos huérfanos cuando la subida termina rechazada.
+    const path = await this.adjuntoStorage.guardar(archivo.buffer, archivo.mimetype);
+
+    await this.prisma.$transaction(async (tx) => {
+      const creado = await tx.novedadAdjunto.create({
+        data: { novedadId: id, path, mimetype: archivo.mimetype, subidoPorCuil: usuario.cuil },
+      });
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades_adjuntos',
+          registroId: creado.id,
+          usuarioCuil: usuario.cuil,
+          accion: 'adjuntar',
+          campo: 'certificado',
+          valorAnterior: null,
+          valorNuevo: JSON.stringify({ novedadId: id, path, mimetype: archivo.mimetype }),
+        },
+      });
+    });
+
+    return this.detalle(id);
+  }
+
+  /**
+   * Quita un certificado. Por defecto es baja LÓGICA: la fila queda con
+   * `eliminadoEn` y el archivo se conserva, así un reemplazo por error se
+   * puede recuperar.
+   *
+   * `definitivo` (solo Admin) además borra el archivo del disco: es la salida
+   * para el certificado subido en la novedad equivocada, que es dato de salud
+   * de otra persona y no puede quedar recuperable.
+   */
+  async quitarAdjunto(
+    id: number,
+    adjuntoId: number,
+    usuario: { cuil: string; rol: string },
+    definitivo = false,
+  ) {
+    const novedad = await this.prisma.novedad.findUnique({
+      where: { id },
+      select: { cargadoPorCuil: true, estado: true, estadoHys: true },
+    });
+    if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    this.verificarAlcanceNovedad(novedad, usuario);
+
+    const adjunto = await this.prisma.novedadAdjunto.findFirst({
+      where: { id: adjuntoId, novedadId: id, eliminadoEn: null },
+      select: { id: true, path: true, subidoPorCuil: true },
+    });
+    if (!adjunto) throw new NotFoundException('Certificado no encontrado');
+
+    const esAdmin = usuario.rol === 'Admin';
+
+    if (definitivo && !esAdmin) {
+      throw new ForbiddenException('Solo un Admin puede borrar un certificado definitivamente.');
     }
-    return this.adjuntoStorage.leer(novedad.adjuntoUrl);
+
+    if (!esAdmin) {
+      // Resuelta = la prueba que respalda la decisión de HyS queda congelada.
+      // El Admin es la única puerta para tocarla, y queda auditado.
+      const resuelta = novedad.estadoHys === 'aprobada' || novedad.estadoHys === 'desaprobada';
+      if (resuelta) {
+        throw new BadRequestException(
+          'La novedad ya fue resuelta por HyS: sus certificados no se pueden quitar.',
+        );
+      }
+      if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
+      // Quien lo subió puede sacar lo suyo; HyS puede sacar cualquiera.
+      if (usuario.rol !== 'HyS' && adjunto.subidoPorCuil !== usuario.cuil) {
+        throw new ForbiddenException('Solo podés quitar los certificados que subiste vos.');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.novedadAdjunto.update({
+        where: { id: adjunto.id },
+        data: { eliminadoEn: new Date(), eliminadoPorCuil: usuario.cuil },
+      });
+      await tx.auditoria.create({
+        data: {
+          tabla: 'sth_novedades_adjuntos',
+          registroId: adjunto.id,
+          usuarioCuil: usuario.cuil,
+          accion: definitivo ? 'borrar_adjunto' : 'quitar_adjunto',
+          campo: 'certificado',
+          valorAnterior: JSON.stringify({ novedadId: id, path: adjunto.path }),
+          valorNuevo: null,
+        },
+      });
+    });
+
+    // Fuera de la transacción a propósito: si el unlink falla, la baja lógica
+    // ya quedó firme y el archivo huérfano es un problema de disco, no de
+    // datos. Al revés (borrar el archivo y que falle el commit) dejaría una
+    // fila viva apuntando a un archivo que ya no está.
+    if (definitivo) {
+      await this.adjuntoStorage.borrar(adjunto.path);
+    }
+
+    return this.detalle(id);
+  }
+
+  /** Novedad completa, con la lista de certificados vigentes ya presentada
+   * — es lo que devuelven agregar/quitar para que el frontend repinte sin
+   * volver a pedir el listado entero. */
+  private async detalle(id: number) {
+    const novedad = await this.prisma.novedad.findUnique({
+      where: { id },
+      include: INCLUDE_BASICO,
+    });
+    if (!novedad) throw new NotFoundException('Novedad no encontrada');
+    return this.conNombreCargador(novedad);
   }
 
   /**

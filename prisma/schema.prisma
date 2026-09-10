@@ -624,6 +624,10 @@ model Novedad {
   fechaFin           DateTime? @map("fecha_fin") @db.Date
   cargadoPorCuil     String    @map("cargado_por_cuil") @db.Char(13)
   justificacionTexto String?   @map("justificacion_texto") @db.Text
+  // DEPRECADA (2026-09-10): los certificados viven en `sth_novedades_adjuntos`
+  // (hasta 3 por novedad). La columna quedó poblada con los datos migrados y
+  // sin uso en el código, para que el rollback del deploy sea volver el código
+  // y nada más; se dropea en un PR posterior una vez verificado en producción.
   adjuntoUrl         String?   @map("adjunto_url")
   estadoHys          EstadoHys @default(no_aplica) @map("estado_hys")
   aprobadoHysPorCuil String?   @map("aprobado_hys_por_cuil") @db.Char(13)
@@ -641,6 +645,7 @@ model Novedad {
   anuladaPorCuil     String?   @map("anulada_por_cuil") @db.Char(13)
   anuladaEn          DateTime? @map("anulada_en")
 
+  adjuntos       NovedadAdjunto[]
   operario       snuempleados @relation("NovedadOperario", fields: [operarioCuil], references: [cuil])
   tipoNovedad    TipoNovedad  @relation(fields: [tipoNovedadId], references: [id])
   cargadoPor     Usuario      @relation("NovedadCargadoPor", fields: [cargadoPorCuil], references: [cuil])
@@ -652,6 +657,34 @@ model Novedad {
   @@index([operarioCuil, fechaInicio])
   @@index([tipoNovedadId, estadoHys])
   @@map("sth_novedades")
+}
+
+/// Certificados de una novedad (hasta 3 activos). Reemplaza a
+/// `Novedad.adjuntoUrl`: el operario suele traer más de un papel (certificado
+/// de atención + alta médica) y con un solo campo se pisaban entre sí.
+///
+/// La baja es LÓGICA (`eliminadoEn`): el archivo se conserva en disco y la
+/// fila queda para auditoría. El borrado real del archivo es solo del Admin
+/// — la salida para el certificado subido por error en la novedad de otra
+/// persona, que es dato de salud y no puede quedar colgado.
+///
+/// Sin FK a Usuario a propósito (mismo criterio que `snuempleados`, ADR-008):
+/// el nombre para mostrar se resuelve por CUIL contra snuempleados.
+model NovedadAdjunto {
+  id               Int       @id @default(autoincrement())
+  novedadId        Int       @map("novedad_id")
+  /// Path relativo dentro de NOVEDADES_ADJUNTOS_DIR, ej. "2026/09/<uuid>.pdf".
+  path             String    @db.VarChar(255)
+  mimetype         String    @db.VarChar(64)
+  subidoPorCuil    String    @map("subido_por_cuil") @db.Char(13)
+  subidoEn         DateTime  @default(now()) @map("subido_en")
+  eliminadoEn      DateTime? @map("eliminado_en")
+  eliminadoPorCuil String?   @map("eliminado_por_cuil") @db.Char(13)
+
+  novedad Novedad @relation(fields: [novedadId], references: [id])
+
+  @@index([novedadId, eliminadoEn])
+  @@map("sth_novedades_adjuntos")
 }
 
 // ------------------------------------------------------------
@@ -779,6 +812,12 @@ enum AccionAuditoria {
   desaprobar
   reabrir
   anular
+  // Certificados de novedades (2026-09-10): `quitar_adjunto` es la baja
+  // lógica (el archivo sigue en disco); `borrar_adjunto` es la destrucción
+  // real del archivo, que solo puede hacer un Admin.
+  adjuntar
+  quitar_adjunto
+  borrar_adjunto
 }
 
 model Auditoria {
