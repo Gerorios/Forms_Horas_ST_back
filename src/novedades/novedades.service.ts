@@ -246,8 +246,20 @@ export class NovedadesService {
           fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
           justificacionTexto: dto.justificacionTexto ?? undefined,
           adjuntoUrl,
+          // Reabrir por edición deja la novedad igual que reabrir(): sin
+          // pierdePresentismoHys, que por ADR-022 solo tiene valor cuando
+          // estadoHys='aprobada'. Sin limpiarlo, el booleano sobrevivía a la
+          // reapertura y CalculoService seguía leyéndolo — una decisión de
+          // presentismo (20% del básico) tomada sobre una novedad que ya
+          // había vuelto a 'pendiente'.
           ...(yaResuelta
-            ? { estadoHys: 'pendiente' as any, aprobadoHysPorCuil: null, aprobadoHysEn: null, descargoHys: null }
+            ? {
+                estadoHys: 'pendiente' as any,
+                aprobadoHysPorCuil: null,
+                aprobadoHysEn: null,
+                descargoHys: null,
+                pierdePresentismoHys: null,
+              }
             : {}),
         },
         include: INCLUDE_BASICO,

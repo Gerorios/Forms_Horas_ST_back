@@ -158,6 +158,28 @@ describe('NovedadesService#update', () => {
     expect(data.justificacionTexto).toBe('texto nuevo');
   });
 
+  it('editar una novedad APROBADA limpia pierdePresentismoHys al reabrirla (ADR-022)', async () => {
+    // El booleano solo tiene valor con estadoHys='aprobada'. Si sobrevive a la
+    // reapertura, CalculoService sigue descontando (o no) el 20% de presentismo
+    // según una decisión de HyS que ya quedó sin efecto.
+    const novedadAprobada = {
+      ...NOVEDAD_RESUELTA,
+      estadoHys: 'aprobada',
+      pierdePresentismoHys: true,
+    };
+    prismaMock.novedad.findUnique.mockResolvedValue(novedadAprobada);
+    prismaMock.novedad.update.mockResolvedValue({ ...novedadAprobada, estadoHys: 'pendiente' });
+
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+      cuil: '20000000000',
+      rol: 'Admin',
+    });
+
+    const data = prismaMock.novedad.update.mock.calls[0][0].data;
+    expect(data.estadoHys).toBe('pendiente');
+    expect(data.pierdePresentismoHys).toBeNull();
+  });
+
   it('editar una novedad que estaba pendiente NO toca estadoHys (ya lo estaba)', async () => {
     const novedadPendiente = { ...NOVEDAD_RESUELTA, estadoHys: 'pendiente' };
     prismaMock.novedad.findUnique.mockResolvedValue(novedadPendiente);
@@ -173,6 +195,7 @@ describe('NovedadesService#update', () => {
     expect(data.aprobadoHysPorCuil).toBeUndefined();
     expect(data.aprobadoHysEn).toBeUndefined();
     expect(data.descargoHys).toBeUndefined();
+    expect(data.pierdePresentismoHys).toBeUndefined();
   });
 
   it('escribe una fila de Auditoria con snapshot antes/después', async () => {
