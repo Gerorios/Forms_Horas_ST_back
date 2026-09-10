@@ -624,11 +624,6 @@ model Novedad {
   fechaFin           DateTime? @map("fecha_fin") @db.Date
   cargadoPorCuil     String    @map("cargado_por_cuil") @db.Char(13)
   justificacionTexto String?   @map("justificacion_texto") @db.Text
-  // DEPRECADA (2026-09-10): los certificados viven en `sth_novedades_adjuntos`
-  // (hasta 3 por novedad). La columna quedó poblada con los datos migrados y
-  // sin uso en el código, para que el rollback del deploy sea volver el código
-  // y nada más; se dropea en un PR posterior una vez verificado en producción.
-  adjuntoUrl         String?   @map("adjunto_url")
   estadoHys          EstadoHys @default(no_aplica) @map("estado_hys")
   aprobadoHysPorCuil String?   @map("aprobado_hys_por_cuil") @db.Char(13)
   aprobadoHysEn      DateTime? @map("aprobado_hys_en")
@@ -660,7 +655,8 @@ model Novedad {
 }
 
 /// Certificados de una novedad (hasta 3 activos). Reemplaza a
-/// `Novedad.adjuntoUrl`: el operario suele traer más de un papel (certificado
+/// la vieja columna `sth_novedades.adjunto_url` (dropeada el 2026-09-10): el
+/// operario suele traer más de un papel (certificado
 /// de atención + alta médica) y con un solo campo se pisaban entre sí.
 ///
 /// La baja es LÓGICA (`eliminadoEn`): el archivo se conserva en disco y la

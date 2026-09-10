@@ -1,0 +1,59 @@
+-- =====================================================================
+-- Paso 2 de 2: baja de sth_novedades.adjunto_url
+-- Fecha: 2026-09-10
+-- Bases: Horas_Sertec (producción) y testing — aplicar en LAS DOS.
+--
+-- Cierra la migración empezada en
+-- `2026-09-10-novedades-adjuntos-multiples.sql`, que copió los adjuntos a
+-- `sth_novedades_adjuntos` y dejó esta columna poblada y sin uso para que el
+-- rollback del deploy fuera volver el código y nada más.
+--
+-- ⚠ ORDEN OBLIGATORIO: primero se deploya el código SIN `adjuntoUrl` en el
+-- schema de Prisma, y RECIÉN DESPUÉS se corre este script. `INCLUDE_BASICO`
+-- usa `include`, y Prisma con `include` selecciona todos los campos escalares
+-- del modelo: si la columna desaparece mientras el schema todavía la declara,
+-- Prisma genera `SELECT adjunto_url` y GET /novedades se cae.
+--
+-- ⚠ Este es el paso IRREVERSIBLE del conjunto: después de esto, volver al
+-- código viejo exige restaurar los datos desde el backup, no solo el código.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- PRECONDICIÓN — correr ANTES y exigir 0 filas. Si devuelve algo, hay un
+-- adjunto que solo vive en la columna vieja: NO dropear, migrarlo primero.
+-- ---------------------------------------------------------------------
+-- SELECT n.id, n.adjunto_url
+--   FROM sth_novedades n
+--  WHERE n.adjunto_url IS NOT NULL
+--    AND NOT EXISTS (SELECT 1 FROM sth_novedades_adjuntos a
+--                     WHERE a.novedad_id = n.id AND a.path = n.adjunto_url);
+--
+-- Verificado el 2026-09-10 en Horas_Sertec (0 filas; 5 adjunto_url, 6 filas
+-- en la tabla nueva contando una carga de prueba) y en testing (0 filas).
+
+ALTER TABLE sth_novedades DROP COLUMN adjunto_url;
+
+-- ---------------------------------------------------------------------
+-- VERIFICACIÓN (después): la columna no existe y los datos siguen enteros.
+--   SHOW COLUMNS FROM sth_novedades LIKE 'adjunto_url';   -- 0 filas
+--   SELECT COUNT(*) FROM sth_novedades_adjuntos WHERE eliminado_en IS NULL;
+-- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- ROLLBACK (ya no es gratis: recrea la columna vacía y la repuebla desde la
+-- tabla nueva, tomando el adjunto vigente más antiguo de cada novedad —
+-- que es el que la columna guardaba, porque el adjunto viejo solo podía
+-- entrar al crear la novedad).
+--
+--   ALTER TABLE sth_novedades ADD COLUMN adjunto_url VARCHAR(191) NULL;
+--   UPDATE sth_novedades n
+--      SET n.adjunto_url = (
+--            SELECT a.path FROM sth_novedades_adjuntos a
+--             WHERE a.novedad_id = n.id AND a.eliminado_en IS NULL
+--             ORDER BY a.subido_en ASC, a.id ASC LIMIT 1);
+--
+-- Los certificados subidos DESPUÉS del 2026-09-10 no tienen equivalente en
+-- el modelo viejo: el código anterior solo mostraría el primero de cada
+-- novedad. Backup completo previo a la migración en
+-- `/var/www/backups/novedades-pre-ddl-2026-09-10.json`.
+-- ---------------------------------------------------------------------

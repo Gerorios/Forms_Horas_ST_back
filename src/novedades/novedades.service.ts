@@ -207,7 +207,7 @@ export class NovedadesService {
         justificacionTexto: dto.justificacionTexto,
         estadoHys: estadoHys as any,
         // El certificado que venga con la carga entra como el primero de la
-        // lista, no en la columna vieja `adjuntoUrl` (deprecada).
+        // lista de adjuntos.
         ...(path && adjunto
           ? { adjuntos: { create: [{ path, mimetype: adjunto.mimetype, subidoPorCuil: cargadoPorCuil }] } }
           : {}),
