@@ -3173,5 +3173,12 @@ ese endpoint dejó de ser multipart (pasa a JSON).
 - La suite del front sigue cayendo por timeout de 5 s con la máquina cargada
   (`liquidacion/perfiles`); en aislamiento pasa. No son regresiones.
 
-**Pendiente:** el `DROP COLUMN adjunto_url` en las dos bases, en su propio PR,
-recién cuando se confirme que los certificados viejos se abren bien en producción.
+**Cierre (mismo día, PR #73):** el usuario probó en producción, confirmó que
+funciona y pidió cerrar el pendiente, así que el `DROP COLUMN adjunto_url` se
+hizo el 2026-09-10 en las dos bases (precondición en 0 filas; 5/5 y 2/2 adjuntos
+vigentes antes y después; 92 y 17 novedades intactas). **El orden no es
+opcional:** primero se deploya el código sin el campo en el schema y después se
+corre el ALTER — con el `include` de `INCLUDE_BASICO`, Prisma selecciona todos
+los escalares del modelo y si la columna falta mientras el schema la declara,
+`GET /novedades` se cae. La migración quedó cerrada; a partir de acá el rollback
+exige restaurar datos, no solo código.
