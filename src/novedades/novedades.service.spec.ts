@@ -137,7 +137,7 @@ describe('NovedadesService#update', () => {
   it('404 si la novedad no existe', async () => {
     prismaMock.novedad.findUnique.mockResolvedValue(null);
     await expect(
-      service.update(999, {}, undefined, { cuil: '20000000000', rol: 'Admin' }),
+      service.update(999, {}, { cuil: '20000000000', rol: 'Admin' }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -145,7 +145,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
     prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_RESUELTA, estadoHys: 'pendiente' });
 
-    await service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, {
       cuil: '20000000000',
       rol: 'Admin',
     });
@@ -170,7 +170,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.findUnique.mockResolvedValue(novedadAprobada);
     prismaMock.novedad.update.mockResolvedValue({ ...novedadAprobada, estadoHys: 'pendiente' });
 
-    await service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, {
       cuil: '20000000000',
       rol: 'Admin',
     });
@@ -185,7 +185,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.findUnique.mockResolvedValue(novedadPendiente);
     prismaMock.novedad.update.mockResolvedValue(novedadPendiente);
 
-    await service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, {
       cuil: '20000000000',
       rol: 'Admin',
     });
@@ -202,7 +202,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
     prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_RESUELTA, estadoHys: 'pendiente' });
 
-    await service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, {
       cuil: '20555555555',
       rol: 'Admin',
     });
@@ -218,23 +218,25 @@ describe('NovedadesService#update', () => {
     expect(JSON.parse(data.valorNuevo)).toMatchObject({ estadoHys: 'pendiente' });
   });
 
-  it('si sube un adjunto nuevo y ya había uno, borra el viejo antes de guardar el nuevo', async () => {
-    const conAdjunto = { ...NOVEDAD_RESUELTA, adjuntoUrl: '2026/07/viejo.jpg' };
-    prismaMock.novedad.findUnique.mockResolvedValue(conAdjunto);
-    prismaMock.novedad.update.mockResolvedValue(conAdjunto);
-    adjuntoStorageMock.guardar.mockResolvedValue('2026/08/nuevo.jpg');
+  /**
+   * Antes, editar con un archivo reemplazaba el adjunto y BORRABA el anterior
+   * del disco, sin vuelta atrás. Desde 2026-09-10 los certificados solo entran
+   * y salen por agregarAdjunto/quitarAdjunto: editar no los toca.
+   */
+  it('editar no toca los certificados ni el disco', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue(NOVEDAD_RESUELTA);
+    prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
 
-    await service.update(
-      1,
-      {},
-      { buffer: Buffer.from('x'), mimetype: 'image/jpeg' },
-      { cuil: '20000000000', rol: 'Admin' },
-    );
+    await service.update(1, { justificacionTexto: 'texto nuevo' }, {
+      cuil: '20000000000',
+      rol: 'Admin',
+    });
 
-    expect(adjuntoStorageMock.borrar).toHaveBeenCalledWith('2026/07/viejo.jpg');
-    expect(adjuntoStorageMock.guardar).toHaveBeenCalledWith(Buffer.from('x'), 'image/jpeg');
+    expect(adjuntoStorageMock.guardar).not.toHaveBeenCalled();
+    expect(adjuntoStorageMock.borrar).not.toHaveBeenCalled();
     const data = prismaMock.novedad.update.mock.calls[0][0].data;
-    expect(data.adjuntoUrl).toBe('2026/08/nuevo.jpg');
+    expect(data).not.toHaveProperty('adjuntoUrl');
+    expect(data).not.toHaveProperty('adjuntos');
   });
 
   it('HyS puede editar una novedad de tipo Ausencia', async () => {
@@ -242,7 +244,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
 
     await expect(
-      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+      service.update(1, { justificacionTexto: 'texto nuevo' }, {
         cuil: '20666666666',
         rol: 'HyS',
       }),
@@ -256,7 +258,7 @@ describe('NovedadesService#update', () => {
     });
 
     await expect(
-      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+      service.update(1, { justificacionTexto: 'texto nuevo' }, {
         cuil: '20666666666',
         rol: 'HyS',
       }),
@@ -271,7 +273,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
 
     await expect(
-      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+      service.update(1, { justificacionTexto: 'texto nuevo' }, {
         cuil: '20000000000',
         rol: 'Admin',
       }),
@@ -282,7 +284,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.findUnique.mockResolvedValue({ ...NOVEDAD_RESUELTA, estado: 'anulada' });
 
     await expect(
-      service.update(1, { justificacionTexto: 'texto nuevo' }, undefined, {
+      service.update(1, { justificacionTexto: 'texto nuevo' }, {
         cuil: '20000000000',
         rol: 'Admin',
       }),
@@ -297,7 +299,7 @@ describe('NovedadesService#update', () => {
     prismaMock.tipoNovedad.findUnique.mockResolvedValue({ id: 6, nombre: 'Accidente' });
 
     await expect(
-      service.update(1, { tipoNovedadId: 6 }, undefined, { cuil: '20666666666', rol: 'HyS' }),
+      service.update(1, { tipoNovedadId: 6 }, { cuil: '20666666666', rol: 'HyS' }),
     ).rejects.toThrow(ForbiddenException);
     expect(prismaMock.novedad.update).not.toHaveBeenCalled();
   });
@@ -307,7 +309,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.update.mockResolvedValue(NOVEDAD_RESUELTA);
 
     await expect(
-      service.update(1, { tipoNovedadId: 5, justificacionTexto: 'nuevo' }, undefined, {
+      service.update(1, { tipoNovedadId: 5, justificacionTexto: 'nuevo' }, {
         cuil: '20666666666',
         rol: 'HyS',
       }),
@@ -322,7 +324,7 @@ describe('NovedadesService#update', () => {
     prismaMock.novedad.update.mockResolvedValue({ ...NOVEDAD_RESUELTA, tipoNovedadId: 6 });
 
     await expect(
-      service.update(1, { tipoNovedadId: 6 }, undefined, { cuil: '20000000000', rol: 'Admin' }),
+      service.update(1, { tipoNovedadId: 6 }, { cuil: '20000000000', rol: 'Admin' }),
     ).resolves.toBeDefined();
   });
 
@@ -331,7 +333,7 @@ describe('NovedadesService#update', () => {
     prismaMock.tipoNovedad.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.update(1, { tipoNovedadId: 999 }, undefined, { cuil: '20000000000', rol: 'Admin' }),
+      service.update(1, { tipoNovedadId: 999 }, { cuil: '20000000000', rol: 'Admin' }),
     ).rejects.toThrow(NotFoundException);
   });
 });
