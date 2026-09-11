@@ -1,4 +1,5 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateTareaDto {
   @IsInt()
@@ -18,8 +19,18 @@ export class UpdateTareaDto {
   nombre?: string;
 }
 
+/** Recorta los extremos antes de validar, para que un identificador de puros
+ * espacios no pase el IsNotEmpty. No toca el resto: el identificador se guarda
+ * tal cual se escribe, porque no siempre es una patente ("TACHO PAÑOL", "S/N"). */
+const recortar = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
+
 export class CreateMovilDto {
+  // Sin identificador la fila no sirve: no se puede elegir en una carga de
+  // horas ni matchear contra un ticket de combustible.
+  @Transform(recortar)
   @IsString()
+  @IsNotEmpty()
   identificador: string;
 
   @IsOptional()
@@ -28,8 +39,12 @@ export class CreateMovilDto {
 }
 
 export class UpdateMovilDto {
+  // Puede no venir (se edita solo la descripción), pero si viene no puede
+  // quedar vacío: sería dejar huérfano un móvil ya en uso.
   @IsOptional()
+  @Transform(recortar)
   @IsString()
+  @IsNotEmpty()
   identificador?: string;
 
   @IsOptional()

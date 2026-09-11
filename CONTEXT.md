@@ -215,3 +215,27 @@ En cualquier cifra leída como texto (PDF o celda de texto de Excel) el punto
 es siempre separador de miles y la coma siempre decimal, sin adivinar por la
 forma del número. "400.012" son cuatrocientos mil doce pesos. Si algún día
 viniera al estilo inglés, la fila no cuadra y la persona lo ve.
+
+### Maestros (Admin)
+
+**Móvil** (2026-09-11):
+Vehículo o equipo de la empresa que se asocia a las cargas de horas y a las de
+combustible. **Identificador y patente son la misma cosa**: un solo campo,
+obligatorio, que en la conversación se nombra de las dos maneras y en pantalla
+se rotula "Patente". Son patentes en mayúsculas y sin separadores (`AA615NF`,
+`A166LHV`, `301IEG`), salvo cinco filas históricas de equipos que no tienen
+patente y se identifican por nombre (`TACHO PAÑOL`, `TRACTOR - PICADA`,
+`MOTO SOLDADOR`, `S/N`, y `HQJ 539` con espacio; 5 de 79 al 2026-09-11). Su
+`descripcion` es el tipo de vehículo ("Moto Guardia", "Camioneta Toyota
+Hilux") y puede ser nula.
+
+El identificador **se guarda tal cual se escribe**, solo recortado: normalizar
+al guardar rompería los que son nombres (juntaría las palabras y `[A-Z0-9]` se
+come la Ñ). La normalización a `[A-Z0-9]` es **solo para buscar y comparar**,
+aplicada a los dos lados — misma regla en la extracción de tickets de
+combustible del Backend y en el buscador de Admin del Frontend.
+
+_Avoid_: identificador interno, número de móvil (sugieren un código propio
+paralelo a la patente; no existe, el campo es uno solo). Tampoco tratarlo como
+"la patente" a secas: el que asume que siempre es una patente termina
+normalizando y rompiendo los cinco que no lo son.

@@ -3182,3 +3182,56 @@ corre el ALTER — con el `include` de `INCLUDE_BASICO`, Prisma selecciona todos
 los escalares del modelo y si la columna falta mientras el schema la declara,
 `GET /novedades` se cae. La migración quedó cerrada; a partir de acá el rollback
 exige restaurar datos, no solo código.
+
+## 86. Admin > Móviles: buscador, paginado, alta en modal y baja de la carga masiva (2026-09-11)
+
+Pedido en dos tandas. Primero: *"quiero que esa lista sea paginada y ademas por
+filtrar por patente del vehiculo"*. Después, viéndolo andar: sacar la carga
+masiva por CSV ("ya se cargaron... visualmente queda horrible") y mover el alta
+individual a un botón que abra un formulario, en vez de tener los campos
+siempre a la vista.
+
+**Todo el cambio funcional es del Frontend.** La API no se tocó: con 79 móviles
+el payload es chico, así que filtro y paginado viven en el cliente. El único
+cambio de Backend fue de validación (ver abajo).
+
+**Lo que ya existía y se reusó** — el repo tenía más hecho de lo que parecía:
+`Paginador` + `paginar()` (`components/paginador.tsx`, los usan /ausencias y
+/novedades), `BarraFiltros` + `FiltroBusqueda` (los usa /admin/usuarios),
+`contieneTexto` (`lib/facetado.ts`), el `Dialog` de base-ui, el `action` del
+`PageHeader` y el patrón `{creando && <Dialog/>}` de Cerrar quincena. Lo único
+nuevo de verdad: `lib/moviles.ts` (6 líneas) y `features/admin/crear-movil-dialog.tsx`.
+
+**La trampa del proyecto, y el error que casi se comete.** Se decidió normalizar
+la patente a `[A-Z0-9]` antes de guardar, para que quien tipee "aa 615 nf" no
+metiera un valor con otra forma que el resto. La decisión se tomó mirando 15 de
+los 79 registros. **Al revisar los 79 aparecieron cinco que no son patentes**:
+`TACHO PAÑOL`, `TRACTOR - PICADA`, `MOTO SOLDADOR`, `S/N` y `HQJ 539`. Dar de
+alta "TACHO PAÑOL" habría guardado "TACHOPAOL" — junta las palabras y `[A-Z0-9]`
+se come la Ñ. Se dio marcha atrás: **el identificador se guarda tal cual, solo
+recortado**; la normalización quedó donde sirve, en el buscador, aplicada a los
+dos lados. Lección: antes de derivar una regla de un campo, mirar *todas* las
+filas, no una muestra — un `REGEXP '[^A-Za-z0-9]'` cuesta diez segundos.
+
+La misma línea traía un bug de brecha: el botón `Crear` se habilitaba con
+`trim()` pero se enviaba lo normalizado, así que tipear `--` mandaba un
+identificador vacío. Y el Backend lo aceptaba.
+
+**Único cambio de Backend:** `CreateMovilDto`/`UpdateMovilDto` pasan a exigir
+identificador (`@Transform` que recorta + `@IsNotEmpty`). El `ValidationPipe`
+global ya tiene `transform: true`, así que el recorte corre de verdad. El
+endpoint `POST /admin/moviles/masivo` **queda vivo sin consumidor**, a
+propósito, como salida de emergencia si alguna vez entra una flota nueva.
+
+**Glosario:** se dio de alta la entrada **Móvil** en `CONTEXT.md`. Identificador
+y patente son la misma cosa —un solo campo, obligatorio, rotulado "Patente" en
+pantalla—, con las cinco excepciones históricas anotadas.
+
+**Verificación:** Frontend 708/709 (el rojo, `charts.test.tsx`, pasa aislado);
+Backend 717 pasan, 8 skipped. Los tests de comportamiento se vieron en rojo
+antes de cada arreglo; el del fix mostraba literal `expected "TACHO PAÑOL" got
+"TACHOPAOL"`. Siguen apareciendo falsos rojos por el timeout de 5 s bajo suite
+completa, en archivos que rotan y que pasan aislados — ya anotado en §82.
+
+Planes: `docs/superpowers/plans/2026-09-11-moviles-paginado-filtro.md` y
+`2026-09-11-moviles-alta-modal.md`.
