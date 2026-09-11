@@ -356,6 +356,14 @@ export class LiquidacionService {
     const empleado = await this.prisma.snuempleados.findUnique({ where: { cuil } });
     if (!empleado) throw new NotFoundException('No existe un empleado con ese CUIL');
 
+    // Las horas pactadas SOLO se escriben si vienen en el body. Pisarlas con
+    // null cuando no vienen borraría plata sin que nadie lo pida: alcanza con
+    // que alguien cambie la categoría de un `fijo` sin tocar las horas para
+    // dejarlo en "falta cargar" y sin monto extra hasta que salga el recibo.
+    // Ver ADR-023. (Un perfil nuevo sí nace en null: todavía no se cargaron.)
+    const horasSiVienen =
+      dto.horasExtraPactadas === undefined ? {} : { horasExtraPactadas: dto.horasExtraPactadas };
+
     const upsertArgs = {
       where: { cuil },
       create: {
@@ -368,7 +376,7 @@ export class LiquidacionService {
       update: {
         regimen: dto.regimen,
         categoriaUocraId: dto.categoriaUocraId,
-        horasExtraPactadas: dto.horasExtraPactadas ?? null,
+        ...horasSiVienen,
         permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
     };
@@ -422,7 +430,12 @@ export class LiquidacionService {
           update: {
             regimen: dto.regimen,
             categoriaUocraId: dto.categoriaUocraId,
-            horasExtraPactadas: dto.horasExtraPactadas ?? null,
+            // Igual que en el alta individual: sin el campo en el body, las
+            // horas ya cargadas no se tocan. Acá importa todavía más, porque
+            // una asignación en bloque las borraría de a once. Ver ADR-023.
+            ...(dto.horasExtraPactadas === undefined
+              ? {}
+              : { horasExtraPactadas: dto.horasExtraPactadas }),
             permiteHorasExtra: dto.permiteHorasExtra ?? false,
           },
         }),

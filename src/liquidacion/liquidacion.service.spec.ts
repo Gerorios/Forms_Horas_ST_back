@@ -16,11 +16,11 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
     perfilLiquidacion: { findMany: jest.fn(), upsert: jest.fn() },
     perfilContratoImputacion: { deleteMany: jest.fn(), createMany: jest.fn() },
     contrato: { findMany: jest.fn() },
-    snuempleados: { findUnique: jest.fn() },
+    snuempleados: { findUnique: jest.fn(), findMany: jest.fn() },
     sueldoMensualizado: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     usuario: { findUnique: jest.fn() },
     auditoria: { create: jest.fn() },
-    $transaction: jest.fn((fn: any) => fn(prismaMock)),
+    $transaction: jest.fn((x: any) => (Array.isArray(x) ? Promise.all(x) : x(prismaMock))),
   };
   let service: LiquidacionService;
 
@@ -28,7 +28,7 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prismaMock.$transaction = jest.fn((fn: any) => fn(prismaMock));
+    prismaMock.$transaction = jest.fn((x: any) => (Array.isArray(x) ? Promise.all(x) : x(prismaMock)));
     const mod = await Test.createTestingModule({
       providers: [LiquidacionService, { provide: PrismaService, useValue: prismaMock }],
     }).compile();
@@ -430,6 +430,41 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
 
       expect(prismaMock.perfilContratoImputacion.deleteMany).not.toHaveBeenCalled();
       expect(prismaMock.perfilContratoImputacion.createMany).not.toHaveBeenCalled();
+    });
+
+    // ADR-023. El caso que motiva esto: el Liquidador tilda a los 11 ex
+    // fijo_105 para cambiarles la categoría y deja el casillero de horas
+    // vacío. Si el upsert pisara con null, les borraría las 17,5 pactadas y
+    // nadie se enteraría hasta ver el recibo.
+    it('upsertPerfil sin horasExtraPactadas NO pisa las que ya tiene', async () => {
+      await service.upsertPerfil('20111111111', { regimen: 'fijo' } as any);
+
+      const args = prismaMock.perfilLiquidacion.upsert.mock.calls[0][0];
+      expect(args.update).not.toHaveProperty('horasExtraPactadas');
+      expect(args.create.horasExtraPactadas).toBeNull();
+    });
+
+    it('upsertPerfil con horasExtraPactadas sí las escribe', async () => {
+      await service.upsertPerfil('20111111111', { regimen: 'fijo', horasExtraPactadas: 12 } as any);
+
+      const args = prismaMock.perfilLiquidacion.upsert.mock.calls[0][0];
+      expect(args.update.horasExtraPactadas).toBe(12);
+      expect(args.create.horasExtraPactadas).toBe(12);
+    });
+
+    it('upsertPerfil con 0 lo escribe como 0, no lo confunde con vacío', async () => {
+      await service.upsertPerfil('20111111111', { regimen: 'fijo', horasExtraPactadas: 0 } as any);
+
+      const args = prismaMock.perfilLiquidacion.upsert.mock.calls[0][0];
+      expect(args.update.horasExtraPactadas).toBe(0);
+    });
+
+    it('la asignación masiva tampoco pisa las horas de quien no las manda', async () => {
+      prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20111111111' }]);
+      await service.upsertPerfilesMasivo(['20111111111'], { regimen: 'fijo' } as any);
+
+      const args = prismaMock.perfilLiquidacion.upsert.mock.calls[0][0];
+      expect(args.update).not.toHaveProperty('horasExtraPactadas');
     });
 
     it('getContratos lista los activos ordenados por código', async () => {

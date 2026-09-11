@@ -41,6 +41,9 @@ export class UpsertPerfilLiquidacionDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  // La columna es DECIMAL(5,2) y el servidor no esta en modo estricto: sin
+  // este tope, un 5000 mal tipeado entraria como 999,99 sin un solo error.
+  @Max(999.99)
   horasExtraPactadas?: number;
 
   /**

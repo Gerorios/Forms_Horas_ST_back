@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { CalculoService } from './calculo.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
   const prismaMock: any = {
@@ -258,6 +259,35 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.montoHorasExtra).toBe(0);
       expect(fila.horasTotal).toBe(88);
       expect(fila.totalBruto).toBe(88_000); // nunca inventa un extra, pero tampoco esconde lo cierto
+    });
+
+    // Prisma devuelve Decimal, no number. Si alguien saca el Number() del
+    // servicio, los mocks con number no lo notan pero esto sí.
+    it('funciona con el Decimal real que devuelve Prisma, no solo con number', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { ...perfilFijo(0), horasExtraPactadas: new Prisma.Decimal('17.50') },
+      ]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.horasExtra).toBe(17.5);
+      expect(fila.montoHorasExtra).toBe(26_250);
+    });
+
+    it('un jornalizado con horas pactadas cargadas NO las cobra: no es su régimen', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        { ...perfilFijo(17.5), regimen: 'jornalizado' },
+      ]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: '20777777777', _sum: { horas: 90 } }]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.horasTotal).toBe(90);
+      expect(fila.horasExtra).toBe(2); // 90 - 88, lo declarado; nunca las 17,5
+      expect(fila.montoHorasExtra).toBe(3_000);
     });
 
     it('sin categoría/tarifa asignada: gana el dato faltante de categoría', async () => {

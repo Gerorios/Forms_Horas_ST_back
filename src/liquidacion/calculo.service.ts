@@ -331,9 +331,10 @@ export class CalculoService {
 
   /**
    * Alertas para revisar antes de liquidar: empleados con horas cargadas
-   * pero sin perfil de liquidación, perfiles incompletos (sin categoría o
-   * modalidad), y jornalizados con 0 horas aprobadas — distinguiendo si es
-   * porque tienen horas pendientes de aprobar o porque nunca declararon
+   * pero sin perfil de liquidación, perfiles incompletos (sin categoría, o
+   * un `fijo` sin horas pactadas), y jornalizados con 0 horas aprobadas —
+   * distinguiendo si es porque tienen horas pendientes de aprobar o porque
+   * nunca declararon
    * nada en el período (a un fijo/mensualizado/por_tantos no se le exige
    * horas, así que no se lo marca).
    */
