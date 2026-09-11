@@ -22,7 +22,6 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     cuil: '20999999999',
     regimen: 'por_tantos',
     categoriaUocraId: 1,
-    modalidadPago: null,
     empleado: { apellido_nombre: 'RELEVADOR TEST', legajo: 1, cargo: 'Relevador', provincia: 'Córdoba' },
     categoria: { id: 1, nombre: 'Oficial' },
   };
@@ -128,7 +127,6 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
         cuil: '20111111111',
         regimen: 'jornalizado',
         categoriaUocraId: 1,
-        modalidadPago: 'en_b',
         empleado: { apellido_nombre: 'JORNALIZADO TEST', legajo: 2, cargo: 'Oficial', provincia: 'Córdoba' },
         categoria: { id: 1, nombre: 'Oficial' },
       },
@@ -180,24 +178,28 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
   });
 
-  describe('régimen "fijo" (básico = tarifa × 88, sin horas extra)', () => {
-    it('básico = tarifa × 88, sin horas extra sin importar lo declarado', async () => {
-      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
-        {
-          cuil: '20777777777',
-          regimen: 'fijo',
-          categoriaUocraId: 1,
-          modalidadPago: 'con_descuentos',
-          permiteHorasExtra: false,
-          empleado: { apellido_nombre: 'FIJO TEST', legajo: 4, cargo: 'Oficial', provincia: 'Córdoba' },
-          categoria: { id: 1, nombre: 'Oficial' },
-        },
-      ]);
+  describe('régimen "fijo" con horas extra pactadas (ADR-023, supera al ADR-020)', () => {
+    const perfilFijo = (horasExtraPactadas: number | null, categoriaUocraId: number | null = 1) => ({
+      cuil: '20777777777',
+      regimen: 'fijo',
+      categoriaUocraId,
+      horasExtraPactadas,
+      permiteHorasExtra: false,
+      empleado: { apellido_nombre: 'FIJO TEST', legajo: 4, cargo: 'Oficial', provincia: 'Córdoba' },
+      categoria: categoriaUocraId ? { id: 1, nombre: 'Oficial' } : null,
+    });
+
+    const prepararTarifa = (importeHora: number | null = 1000) => {
       prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
       prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
-      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
-      ]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue(
+        importeHora == null ? [] : [{ categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora }],
+      );
+    };
+
+    it('con 0 pactadas: 88 puro, sin extra, sin importar lo declarado', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(0)]);
+      prepararTarifa();
       prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: '20777777777', _sum: { horas: 20 } }]);
 
       const [fila] = await service.calcularQuincena(2026, 8, 1);
@@ -208,54 +210,59 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.totalBruto).toBe(88_000);
       expect(fila.montoHorasExtra).toBe(0);
     });
-  });
 
-  describe('régimen "fijo_105" (básico = tarifa × 88 + 17,5hs extra SIEMPRE fijas, ver ADR-020)', () => {
-    it('105hs totales sin importar lo declarado: 88 de básico + 17,5 de extra con ×1.5', async () => {
-      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
-        {
-          cuil: '20888888888',
-          regimen: 'fijo_105',
-          categoriaUocraId: 1,
-          modalidadPago: 'con_descuentos',
-          permiteHorasExtra: false,
-          empleado: { apellido_nombre: 'FIJO 105 TEST', legajo: 6, cargo: 'Oficial', provincia: 'Córdoba' },
-          categoria: { id: 1, nombre: 'Oficial' },
-        },
-      ]);
-      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
-      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
-      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([
-        { categoriaUocraId: 1, vigenteDesde: new Date(2026, 7, 1), importeHora: 1000 },
-      ]);
-      // 0 horas declaradas — no debe cambiar nada, "fijo_105" no depende de lo reportado.
+    // Los 11 ayudantes que venían de `fijo_105`: mismos números que antes de
+    // la migración. Si este test cambia, alguien cobra distinto.
+    it('con 17,5 pactadas: 105,5hs totales (88 + 17,5), misma plata que el viejo fijo_105', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(17.5)]);
+      prepararTarifa();
       prismaMock.registroHoras.groupBy.mockResolvedValue([]);
 
       const [fila] = await service.calcularQuincena(2026, 8, 1);
 
-      expect(fila.horasTotal).toBe(105);
+      // 105,5 y no 105: el viejo fijo_105 tenía el total escrito a mano y no
+      // coincidía con sus propias partes (88 + 17,5). Confirmado con el
+      // usuario el 2026-09-11: el total correcto es 105,5. La plata no cambia.
+      expect(fila.horasTotal).toBe(105.5);
       expect(fila.horasCct).toBe(88);
       expect(fila.horasExtra).toBe(17.5);
-      expect(fila.totalBruto).toBe(88_000); // básico = tarifa × 88
-      expect(fila.montoHorasExtra).toBe(26_250); // 17,5 × 1.000 × 1.5
-      expect(fila.montoPresentismo).toBe(17_600); // 20% del básico (88.000), no de las 105hs
+      expect(fila.totalBruto).toBe(88_000);
+      expect(fila.montoHorasExtra).toBe(26_250); // 17,5 × 1.000 × 1,5
+      expect(fila.montoPresentismo).toBe(17_600); // 20% del básico, no de las 105
     });
 
-    it('sin categoría/tarifa asignada: datoFaltante, sin calcular nada', async () => {
-      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
-        {
-          cuil: '20888888888',
-          regimen: 'fijo_105',
-          categoriaUocraId: null,
-          modalidadPago: 'con_descuentos',
-          permiteHorasExtra: false,
-          empleado: { apellido_nombre: 'FIJO 105 SIN CATEGORIA', legajo: 6, cargo: null, provincia: 'Córdoba' },
-          categoria: null,
-        },
-      ]);
-      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
-      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
-      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([]);
+    // El caso que motivó el cambio: 88 + 12 = 100hs, con 200hs cargadas.
+    it('con 12 pactadas: 100hs, y lo declarado NO las mueve', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(12)]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: '20777777777', _sum: { horas: 200 } }]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.horasTotal).toBe(100);
+      expect(fila.horasCct).toBe(88);
+      expect(fila.horasExtra).toBe(12);
+      expect(fila.totalBruto).toBe(88_000);
+      expect(fila.montoHorasExtra).toBe(18_000); // 12 × 1.000 × 1,5
+    });
+
+    it('sin horas pactadas: dato faltante y cero extra, pero el básico se calcula igual', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(null)]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.datoFaltante).toBe('Falta cargar las horas extra pactadas (Perfiles de empleados)');
+      expect(fila.horasExtra).toBe(0);
+      expect(fila.montoHorasExtra).toBe(0);
+      expect(fila.horasTotal).toBe(88);
+      expect(fila.totalBruto).toBe(88_000); // nunca inventa un extra, pero tampoco esconde lo cierto
+    });
+
+    it('sin categoría/tarifa asignada: gana el dato faltante de categoría', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(17.5, null)]);
+      prepararTarifa(null);
       prismaMock.registroHoras.groupBy.mockResolvedValue([]);
 
       const [fila] = await service.calcularQuincena(2026, 8, 1);
@@ -271,7 +278,6 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       cuil: '20444444444',
       regimen: 'jornalizado',
       categoriaUocraId: 1,
-      modalidadPago: 'en_b',
       empleado: { apellido_nombre: 'PRESENTISMO TEST', legajo: 5, cargo: 'Oficial', provincia: 'Córdoba' },
       categoria: { id: 1, nombre: 'Oficial' },
     };
@@ -419,8 +425,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       cuil: '20888888888',
       regimen: 'mensualizado',
       categoriaUocraId: null,
-      modalidadPago: null,
-      empleado: { apellido_nombre: 'MENSUAL TEST', legajo: 3, cargo: 'Administrativo', provincia: 'Córdoba' },
+        empleado: { apellido_nombre: 'MENSUAL TEST', legajo: 3, cargo: 'Administrativo', provincia: 'Córdoba' },
       categoria: null,
     };
 
@@ -553,7 +558,6 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       cuil: '20444444444',
       regimen: 'jornalizado',
       categoriaUocraId: 1,
-      modalidadPago: 'en_b',
       empleado: { apellido_nombre: 'PRECIOS TEST', legajo: 5, cargo: 'Oficial', provincia: 'Córdoba' },
       categoria: { id: 1, nombre: 'Oficial' },
     };
@@ -630,5 +634,83 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.plusIndividual).toBeNull();
       expect(fila.plusIndividualMotivo).toBeNull();
     });
+  });
+});
+
+describe('CalculoService — alertas de perfil (ADR-023: sin modalidad de pago)', () => {
+  const prismaMock: any = {
+    perfilLiquidacion: { findMany: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
+    registroHoras: { groupBy: jest.fn() },
+  };
+  let service: CalculoService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
+
+    const mod = await Test.createTestingModule({
+      providers: [CalculoService, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    service = mod.get(CalculoService);
+  });
+
+  const perfil = (extra: any) => ({
+    cuil: '20111111111',
+    categoriaUocraId: 1,
+    horasExtraPactadas: null,
+    empleado: { apellido_nombre: 'TEST' },
+    ...extra,
+  });
+
+  it('un jornalizado con categoría ya no queda incompleto por no tener modalidad', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil({ regimen: 'jornalizado' })]);
+
+    const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
+
+    expect(perfilIncompleto).toHaveLength(0);
+  });
+
+  it('un fijo sin horas pactadas sí queda incompleto', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+      perfil({ regimen: 'fijo', horasExtraPactadas: null }),
+    ]);
+
+    const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
+
+    expect(perfilIncompleto).toHaveLength(1);
+    expect(perfilIncompleto[0].faltaHorasExtraPactadas).toBe(true);
+  });
+
+  it('un fijo con 0 pactadas está completo: 0 es una respuesta, no un vacío', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+      perfil({ regimen: 'fijo', horasExtraPactadas: 0 }),
+    ]);
+
+    const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
+
+    expect(perfilIncompleto).toHaveLength(0);
+  });
+
+  it('sigue marcando la categoría faltante', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+      perfil({ regimen: 'jornalizado', categoriaUocraId: null }),
+    ]);
+
+    const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
+
+    expect(perfilIncompleto).toHaveLength(1);
+    expect(perfilIncompleto[0].faltaCategoria).toBe(true);
+  });
+
+  it('un mensualizado sin categoría no se marca: no le corresponde tenerla', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+      perfil({ regimen: 'mensualizado', categoriaUocraId: null }),
+    ]);
+
+    const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
+
+    expect(perfilIncompleto).toHaveLength(0);
   });
 });

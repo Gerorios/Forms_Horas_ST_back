@@ -129,7 +129,6 @@ export class CierresService {
       zona,
       regimen: fila.regimen,
       categoria: fila.categoria,
-      modalidadPago: fila.modalidadPago,
       tienePresentismo: fila.tienePresentismo,
       // Mensualizado: el "precio bruto" congelado es el sueldo quincenal
       // (= totalBruto, básico = monto × 1) — como en el Excel real. El resto

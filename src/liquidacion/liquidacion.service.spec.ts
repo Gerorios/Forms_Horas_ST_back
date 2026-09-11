@@ -393,7 +393,6 @@ describe('LiquidacionService — precios por período (ADR-018)', () => {
           cuil: '20111111111',
           regimen: 'mensualizado',
           categoriaUocraId: null,
-          modalidadPago: null,
           empleado: { apellido_nombre: 'PEREZ JUAN', legajo: '12', cargo: 'chofer' },
           categoria: null,
           contratosImputacion: [{ contratoId: 3 }, { contratoId: 7 }],

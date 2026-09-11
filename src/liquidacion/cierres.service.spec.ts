@@ -15,7 +15,6 @@ function filaBase(overrides: Record<string, unknown> = {}) {
     categoria: 'Oficial',
     regimen: 'jornalizado',
     provincia: 'SALTA',
-    modalidadPago: 'en_b',
     precioBruto: 100,
     montoKmBruto: null,
     horasTotal: 88,

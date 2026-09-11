@@ -14,7 +14,7 @@ export interface QuincenaResumen {
   alertas: number;
 }
 
-const REGIMENES_CON_CATEGORIA = new Set(['jornalizado', 'fijo', 'fijo_105', 'por_tantos']);
+const REGIMENES_CON_CATEGORIA = new Set(['jornalizado', 'fijo', 'por_tantos']);
 
 /**
  * Panel del Liquidador: lista de quincenas con estado derivado (sin marca
@@ -84,11 +84,13 @@ export class PanelService {
 
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: { not: 'administrativo' } },
-      select: { cuil: true, regimen: true, categoriaUocraId: true, modalidadPago: true },
+      select: { cuil: true, regimen: true, categoriaUocraId: true, horasExtraPactadas: true },
     });
     const cuilsConPerfil = new Set(perfiles.map((p) => p.cuil));
     const perfilesIncompletos = perfiles.filter(
-      (p) => (REGIMENES_CON_CATEGORIA.has(p.regimen) && !p.categoriaUocraId) || !p.modalidadPago,
+      (p) =>
+        (REGIMENES_CON_CATEGORIA.has(p.regimen) && !p.categoriaUocraId) ||
+        (p.regimen === 'fijo' && p.horasExtraPactadas == null),
     ).length;
 
     // Todo el span (hasta 24 quincenas) en una sola query, bucketizado en
@@ -284,7 +286,6 @@ export class PanelService {
       plusIndividual: r.plusIndividual != null ? this.num(r.plusIndividual) : null,
       plusIndividualMotivo: r.plusIndividualMotivo,
       total: this.num(r.total),
-      modalidadPago: r.modalidadPago,
       etiquetaNovedades: r.novedadesTexto,
       datoFaltante: r.datoFaltante,
       // spec §6.4: zona derivada de la provincia del perfil, para que el
