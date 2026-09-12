@@ -15,6 +15,7 @@ function filaBase(overrides: Record<string, unknown> = {}) {
     categoria: 'Oficial',
     regimen: 'jornalizado',
     provincia: 'SALTA',
+    zona: 'norte',
     precioBruto: 100,
     montoKmBruto: null,
     horasTotal: 88,
@@ -107,7 +108,7 @@ describe('CierresService', () => {
   });
 
   it('empleado sin zona queda con zona null y salvedad en cabecera', async () => {
-    calculoMock.calcularQuincena.mockResolvedValue([filaBase({ provincia: 'BUENOS AIRES' })]);
+    calculoMock.calcularQuincena.mockResolvedValue([filaBase({ provincia: 'BUENOS AIRES', zona: null })]);
     calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
     prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
 
@@ -211,7 +212,7 @@ describe('CierresService', () => {
   it('salvedad se trunca a 300 caracteres (defensivo contra el VARCHAR(300))', async () => {
     const datoFaltanteLargo = 'x'.repeat(400);
     calculoMock.calcularQuincena.mockResolvedValue([
-      filaBase({ datoFaltante: datoFaltanteLargo, provincia: 'BUENOS AIRES' }),
+      filaBase({ datoFaltante: datoFaltanteLargo, provincia: 'BUENOS AIRES', zona: null }),
     ]);
     calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
     prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });

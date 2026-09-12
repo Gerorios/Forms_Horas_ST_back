@@ -363,6 +363,7 @@ export class LiquidacionService {
     // Ver ADR-023. (Un perfil nuevo sí nace en null: todavía no se cargaron.)
     const horasSiVienen =
       dto.horasExtraPactadas === undefined ? {} : { horasExtraPactadas: dto.horasExtraPactadas };
+    const zonaSiViene = dto.zonaOverride === undefined ? {} : { zonaOverride: dto.zonaOverride };
 
     const upsertArgs = {
       where: { cuil },
@@ -371,12 +372,14 @@ export class LiquidacionService {
         regimen: dto.regimen,
         categoriaUocraId: dto.categoriaUocraId,
         horasExtraPactadas: dto.horasExtraPactadas ?? null,
+        zonaOverride: dto.zonaOverride ?? null,
         permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
       update: {
         regimen: dto.regimen,
         categoriaUocraId: dto.categoriaUocraId,
         ...horasSiVienen,
+        ...zonaSiViene,
         permiteHorasExtra: dto.permiteHorasExtra ?? false,
       },
     };

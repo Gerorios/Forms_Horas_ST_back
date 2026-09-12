@@ -47,6 +47,14 @@ export class UpsertPerfilLiquidacionDto {
   horasExtraPactadas?: number;
 
   /**
+   * Excepción de zona: fuerza la hoja del Excel de esta persona por encima de
+   * su provincia. Se manda `null` explícito para quitarla. Ver zonaDePerfil().
+   */
+  @IsOptional()
+  @IsIn(['norte', 'sur', null])
+  zonaOverride?: 'norte' | 'sur' | null;
+
+  /**
    * Contratos de imputación para el Análisis (solo regímenes mensualizado/
    * fijo/por_tantos). Presente = reemplaza el set completo; ausente = no
    * tocar. El upsert masivo NO usa este campo (addendum plan 2026-08-12).

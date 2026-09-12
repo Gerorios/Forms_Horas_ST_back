@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { zonaDePerfil } from '../common/zona';
 import { rangoQuincena } from '../common/quincena';
 
 /**
@@ -307,6 +308,10 @@ export class CalculoService {
         categoria: perfil.categoria?.nombre ?? null,
         regimen: perfil.regimen,
         provincia: perfil.empleado.provincia,
+        // Resuelta acá y una sola vez: el panel, los cierres y el Excel la
+        // leen de la fila. Así la excepción del perfil no se saltea en
+        // ninguno de los tres. Ver zonaDePerfil().
+        zona: zonaDePerfil(perfil.empleado.provincia, perfil.zonaOverride),
         precioBruto: tarifaHoraNum,
         montoKmBruto,
         horasTotal,

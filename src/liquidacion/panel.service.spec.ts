@@ -93,6 +93,7 @@ describe('PanelService', () => {
       categoria: 'Oficial',
       regimen: 'jornalizado',
       provincia: 'BA',
+      zona: null,
       precioBruto: 100,
       horasTotal: 80,
       horasCct: 80,
@@ -159,7 +160,7 @@ describe('PanelService', () => {
     });
 
     it('spec §6.4: provincia mapeada (SALTA) expone zona norte en la fila del detalle en vivo', async () => {
-      calculoMock.calcularQuincena.mockResolvedValue([{ ...filaBase, provincia: 'SALTA' }]);
+      calculoMock.calcularQuincena.mockResolvedValue([{ ...filaBase, provincia: 'SALTA', zona: 'norte' }]);
       prismaMock.registroHoras.groupBy.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
       prismaMock.snuempleados.findMany.mockResolvedValue([]);

@@ -290,6 +290,39 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.montoHorasExtra).toBe(3_000);
     });
 
+    it('la zona de la fila respeta la excepción del perfil por sobre su provincia', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          ...perfilFijo(12),
+          zonaOverride: 'sur',
+          empleado: { apellido_nombre: 'MACCHIAROLA', legajo: 9, cargo: 'Oficial', provincia: 'SANTIAGO DEL ESTERO' },
+        },
+      ]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.zona).toBe('sur');
+      expect(fila.provincia).toBe('SANTIAGO DEL ESTERO');
+    });
+
+    it('sin excepción, una provincia no mapeada queda sin zona', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+        {
+          ...perfilFijo(12),
+          zonaOverride: null,
+          empleado: { apellido_nombre: 'OTRO', legajo: 9, cargo: 'Oficial', provincia: 'SANTIAGO DEL ESTERO' },
+        },
+      ]);
+      prepararTarifa();
+      prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+
+      const [fila] = await service.calcularQuincena(2026, 8, 1);
+
+      expect(fila.zona).toBeNull();
+    });
+
     it('sin categoría/tarifa asignada: gana el dato faltante de categoría', async () => {
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfilFijo(17.5, null)]);
       prepararTarifa(null);

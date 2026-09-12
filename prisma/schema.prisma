@@ -262,6 +262,10 @@ model PerfilLiquidacion {
   // que un aumento de convenio no cambie las horas del recibo.
   // null = falta cargarlo (alerta); 0 = las 88 puras. Ver ADR-023.
   horasExtraPactadas Decimal?         @map("horas_extra_pactadas") @db.Decimal(5, 2)
+  // Excepción: fuerza la hoja del Excel en la que sale esta persona, por
+  // encima de lo que diga su provincia. null = manda la provincia (lo normal).
+  // Existe para casos que la provincia no explica — ver zonaDePerfil().
+  zonaOverride     ZonaLiquidacion?     @map("zona_override")
   // Solo tiene sentido con regimen='mensualizado': además del monto fijo,
   // cobra horas extra sobre lo declarado directamente (sin restar nada — lo
   // declarado YA es el excedente sobre su jornal, que nunca se carga). Ver

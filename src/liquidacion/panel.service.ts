@@ -3,7 +3,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena } from '../common/quincena';
 import { duplicadosExactos } from '../common/duplicados';
-import { zonaDeProvincia } from '../common/zona';
 
 export interface QuincenaResumen {
   anio: number;
@@ -288,10 +287,10 @@ export class PanelService {
       total: this.num(r.total),
       etiquetaNovedades: r.novedadesTexto,
       datoFaltante: r.datoFaltante,
-      // spec §6.4: zona derivada de la provincia del perfil, para que el
-      // frontend pueda mostrar el chip "sin zona" en vivo (no solo en el
-      // detalle congelado del cierre).
-      zona: zonaDeProvincia(r.provincia),
+      // spec §6.4: la zona viaja para que el frontend muestre el chip "sin
+      // zona" en vivo (no solo en el detalle congelado). Viene resuelta del
+      // cálculo, que ya contempló la excepción del perfil.
+      zona: r.zona,
       pendientesAprobacion: pendientesPorCuil.get(r.cuil) ?? 0,
       duplicadoCruzado: cuilesConDuplicado.has(r.cuil),
       dias: diasPorCuil.get(r.cuil) ?? [],

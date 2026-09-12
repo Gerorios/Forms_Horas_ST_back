@@ -235,6 +235,20 @@ _Avoid_: horas extra fijas (se confunde con "el régimen fijo"), régimen 105 /
 fijo_105 (ya no existe como régimen; sobrevive solo en los cierres congelados),
 monto pactado (lo que se guarda son horas, nunca el monto).
 
+**Excepción de zona** (de un perfil, 2026-09-11):
+La hoja del Excel en la que sale una persona se deriva de su **provincia**
+(NORTE = Salta + Jujuy, SUR = Tucumán). La excepción
+(`PerfilLiquidacion.zonaOverride`) la fuerza por encima de esa regla, para
+casos que la provincia no explica — el primero: un empleado de Santiago del
+Estero que por acuerdo se liquida con Tucumán. `null` (todos los perfiles al
+2026-09-11) significa "manda la provincia".
+
+Se resuelve en **un solo lugar** (`zonaDePerfil`), y el cálculo la deja ya
+resuelta en la fila: el panel, los cierres y el Excel la leen de ahí. Quien
+vuelva a llamar a `zonaDeProvincia` por su cuenta se saltea la excepción.
+_Avoid_: zona manual, zona forzada por localidad (la localidad nunca decide
+nada: viene sucia, y la excepción es por persona, no por lugar).
+
 **Modalidad de pago** (eliminada el 2026-09-11):
 Fue un dato por empleado — "en B" o "con descuentos" — que **nunca entró en
 ningún cálculo de montos**: solo producía una etiqueta para la columna

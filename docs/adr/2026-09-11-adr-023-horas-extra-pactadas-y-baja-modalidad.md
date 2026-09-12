@@ -118,6 +118,34 @@ La plata no cambia — el monto siempre se calculó con 17,5.
 
 Para el caso nuevo no hay ambigüedad: 88 + 12 = 100 exacto.
 
+### 10. Excepción de zona por persona (`zonaOverride`)
+
+La zona del Excel se deriva de la provincia (ADR-021 §4: NORTE = Salta +
+Jujuy, SUR = Tucumán). Apareció un empleado con provincia **SANTIAGO DEL
+ESTERO**, que no mapea a ninguna de las dos: **no salía en ninguna hoja** del
+Excel, solo como salvedad "sin zona". Por acuerdo tiene que salir en la hoja
+de Tucumán.
+
+Se evaluó mapear la provincia entera al SUR. **El dueño del producto eligió la
+excepción por persona**: el acuerdo es de esa persona, no de la provincia, y
+mapearla obligaría a todos los futuros empleados de Santiago del Estero a la
+hoja del sur sin que nadie lo haya decidido.
+
+- Campo nuevo `PerfilLiquidacion.zonaOverride` (`ENUM('norte','sur')`,
+  nullable). `null` — el caso de los 119 perfiles de hoy — significa "manda la
+  provincia".
+- La regla vive en **una sola función**, `zonaDePerfil(provincia, override)`.
+- **El cálculo resuelve la zona una vez** y la deja en la fila; el panel, los
+  cierres y el Excel la leen de ahí. Antes cada uno llamaba a
+  `zonaDeProvincia` por su cuenta: con tres lugares decidiendo lo mismo,
+  cualquiera que se olvidara del override se saltearía la excepción.
+- Igual que las horas pactadas, **solo se escribe si viene en el body**: editar
+  otra cosa del perfil no borra la excepción. Para quitarla hay que mandar
+  `null` explícito (la opción "no cambiar" del formulario no la toca).
+
+DDL: `docs/sql/2026-09-11-perfiles-zona-override.sql`. Agrega una columna
+nullable, no toca ninguna fila, y el rollback es dropearla.
+
 ## Por qué esto revierte al ADR-020
 
 El ADR-020 consideró y descartó esta misma solución: *"Reusar `fijo` con un
