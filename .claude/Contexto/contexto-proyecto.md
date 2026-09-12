@@ -3235,3 +3235,88 @@ completa, en archivos que rotan y que pasan aislados — ya anotado en §82.
 
 Planes: `docs/superpowers/plans/2026-09-11-moviles-paginado-filtro.md` y
 `2026-09-11-moviles-alta-modal.md`.
+
+## 87. Horas extra pactadas: los regímenes fijos dejan de ser enum (2026-09-11)
+
+Entró MACCHIAROLA con un arreglo de **88 + 12 = 100 hs** y no había régimen que
+lo cubriera. El ADR-020 había agregado `fijo_105` **diecisiete días antes**,
+tocando siete archivos y un DDL. Puestos uno al lado del otro, `fijo` (88+0),
+`fijo_105` (88+17,5) y este nuevo (88+12) **no son tres reglas: son una sola con
+un número distinto**.
+
+Ese número pasó a ser un campo del perfil (`horasExtraPactadas`), `fijo_105`
+desapareció del enum y sus 11 perfiles migraron a `fijo` + 17,5. ADR-023, que
+supera al ADR-020 — y que documenta por qué se revierte: el ADR-020 había
+descartado justamente esta solución, y era razonable **con dos casos**.
+
+**Se guardan horas, no el monto arreglado.** La cuenta (monto ÷ valor hora) la
+hace el Liquidador afuera. Si se guardara el monto, cada aumento de convenio
+bajaría las horas del recibo para que la plata diera igual — lo contrario de lo
+que exige UOCRA.
+
+### Lo que encontró la revisión, y movía plata
+
+El upsert escribía `horasExtraPactadas ?? null`. Alcanzaba con tildar a los 11
+ex `fijo_105` para cambiarles la categoría, dejando el casillero vacío, para que
+**los once perdieran sus 17,5 horas** — sin alerta, hasta ver el recibo. Ahora
+el campo solo se escribe si viene en el body.
+
+Es el mismo patrón de un bug que ya estaba en producción y se arregló de paso:
+guardar los contratos de imputación de alguien le apagaba `permiteHorasExtra`
+(el backend hace `?? false` y el front no lo re-mandaba).
+
+**Lección:** cuando el backend completa un campo ausente con un default
+(`?? null`, `?? false`), todo formulario que edite *otra cosa* del mismo
+registro tiene que re-mandarlo. Conviene al revés: escribir solo lo que vino.
+
+### Dos incoherencias viejas que salieron a la luz
+
+1. **`horasTotal = 105` cuando 88 + 17,5 = 105,5.** El total estaba escrito a
+   mano y no coincidía con sus partes; la incoherencia está congelada en los
+   cierres emitidos. El usuario confirmó que el 105 era el error. La plata
+   nunca cambió: el monto siempre se calculó con 17,5.
+2. **La zona se decidía en tres lugares** (panel, cierres, salvedad de
+   cabecera), cada uno llamando a `zonaDeProvincia` por su cuenta. Ahora el
+   cálculo la resuelve una vez y los tres la leen de la fila.
+
+### Excepción de zona
+
+MACCHIAROLA, con provincia SANTIAGO DEL ESTERO, **no salía en ninguna hoja** del
+Excel. Se evaluó mapear la provincia entera al SUR; el usuario eligió
+**excepción por persona** (`zonaOverride`): el acuerdo es de esa persona, no de
+la provincia.
+
+### Producción no era como testing
+
+El ensayo se hizo con 119 perfiles y **cero** `fijo`; producción tenía **123 y
+catorce `fijo`**, más 45 cierres congelados en vez de 11. El script ya los
+contemplaba (migran a 0, conservando su comportamiento), pero es el recordatorio
+de siempre: **el ensayo valida el procedimiento, no los datos**. Los conteos hay
+que sacarlos de producción el día del deploy.
+
+### El riesgo que se evitó
+
+Achicar un ENUM no es como ampliarlo: el servidor está en
+`sql_mode = IGNORE_SPACE,NO_ENGINE_SUBSTITUTION`, **sin `STRICT_TRANS_TABLES`**,
+así que una fila que quedara en `fijo_105` se habría convertido en `''` **en
+silencio** y esa persona desaparecía del cálculo. El script fuerza modo estricto
+en su propia conexión y aborta si el conteo no da 0 antes del `ALTER`.
+Verificación explícita post-deploy: `regimen = ''` → 0 filas.
+
+### Verificación
+
+Backend 736 tests, Frontend 103/103 en liquidación. En producción, contra
+agosto: ex `fijo_105` con básico 516.208, extra 153.982,50 y presentismo
+103.241,60; `fijo` puro con 516.208 y extra 0. **Cuadra al centavo con la
+fórmula previa.**
+
+Deploy: `docs/2026-09-11-horas-extra-pactadas-deploy.md`.
+**Pendiente:** el `DROP COLUMN modalidad_pago` (paso 2, PR aparte) y que el
+usuario cargue a MACCHIAROLA como `fijo` + 12 (hoy es `mensualizado`).
+
+### Un error propio que vale anotar
+
+Al crear `src/common/zona.spec.ts` escribí **encima de un archivo que ya
+existía** y se perdieron 9 casos de test. No falló nada — todo seguía verde — y
+se detectó solo porque el total de tests **bajó** cuando tenía que subir.
+Restaurado desde git. Antes de crear un archivo de test, verificar si existe.
