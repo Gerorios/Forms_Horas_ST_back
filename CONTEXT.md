@@ -216,6 +216,47 @@ es siempre separador de miles y la coma siempre decimal, sin adivinar por la
 forma del número. "400.012" son cuatrocientos mil doce pesos. Si algún día
 viniera al estilo inglés, la fila no cuadra y la persona lo ve.
 
+**Horas extra pactadas** (de un perfil `fijo`, 2026-09-11):
+Las horas extra que una persona de régimen **fijo** cobra **siempre**, sumadas
+a las 88 del CCT, sin depender de lo que haya reportado: si tiene 12 pactadas
+cobra 12 aunque haya cargado 200. Salen de dividir el monto que la persona
+arregló con RRHH por el valor hora de su categoría — esa cuenta la hace el
+Liquidador **afuera** y en el sistema se guarda el **resultado en horas**, no el
+monto: así un aumento de convenio sube lo que cobra sin cambiar las horas que
+exige ver el recibo.
+
+Vive en la ficha de cada empleado (`PerfilLiquidacion.horasExtraPactadas`), no
+en un catálogo de regímenes. **`null` es "falta cargarlo"** (alerta de perfil
+incompleto, y el básico de 88 se calcula igual); **`0` es una respuesta válida**
+— las 88 puras. El total es siempre `88 + pactadas`, y el ADR-023 absorbió así
+al viejo régimen `fijo_105` (que eran estas mismas horas, con 17,5 escritas en
+el código).
+_Avoid_: horas extra fijas (se confunde con "el régimen fijo"), régimen 105 /
+fijo_105 (ya no existe como régimen; sobrevive solo en los cierres congelados),
+monto pactado (lo que se guarda son horas, nunca el monto).
+
+**Excepción de zona** (de un perfil, 2026-09-11):
+La hoja del Excel en la que sale una persona se deriva de su **provincia**
+(NORTE = Salta + Jujuy, SUR = Tucumán). La excepción
+(`PerfilLiquidacion.zonaOverride`) la fuerza por encima de esa regla, para
+casos que la provincia no explica — el primero: un empleado de Santiago del
+Estero que por acuerdo se liquida con Tucumán. `null` (todos los perfiles al
+2026-09-11) significa "manda la provincia".
+
+Se resuelve en **un solo lugar** (`zonaDePerfil`), y el cálculo la deja ya
+resuelta en la fila: el panel, los cierres y el Excel la leen de ahí. Quien
+vuelva a llamar a `zonaDeProvincia` por su cuenta se saltea la excepción.
+_Avoid_: zona manual, zona forzada por localidad (la localidad nunca decide
+nada: viene sucia, y la excepción es por persona, no por lugar).
+
+**Modalidad de pago** (eliminada el 2026-09-11):
+Fue un dato por empleado — "en B" o "con descuentos" — que **nunca entró en
+ningún cálculo de montos**: solo producía una etiqueta para la columna
+NOVEDADES. Se dio de baja por ADR-023 porque no se usaba. Los cierres ya
+emitidos la conservan congelada; los nuevos no la traen.
+_Avoid_: modalidad de hora extra (nombre viejo, ADR-011), "pago en B" como si
+fuera una configuración vigente.
+
 ### Maestros (Admin)
 
 **Móvil** (2026-09-11):

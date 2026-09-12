@@ -13,6 +13,9 @@ const TIPO_POR_REGIMEN: Record<string, string> = {
   jornalizado: 'Jornalizado',
   mensualizado: 'Mensualizado',
   fijo: 'Jornalizado/Mensualizado',
+  // Histórico: filas congeladas antes del ADR-023, cuando fijo_105 era un
+  // régimen propio. Sin esta clave, el Excel de un cierre viejo imprimiría
+  // 'fijo_105' crudo en la columna TIPO.
   fijo_105: 'Jornalizado/Mensualizado',
   por_tantos: 'Jornalizado/X Tanto',
 };

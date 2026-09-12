@@ -26,17 +26,33 @@ export class UpdateCategoriaUocraDto {
 }
 
 export class UpsertPerfilLiquidacionDto {
-  @IsIn(['jornalizado', 'fijo', 'fijo_105', 'mensualizado', 'por_tantos', 'administrativo'])
-  regimen: 'jornalizado' | 'fijo' | 'fijo_105' | 'mensualizado' | 'por_tantos' | 'administrativo';
+  @IsIn(['jornalizado', 'fijo', 'mensualizado', 'por_tantos', 'administrativo'])
+  regimen: 'jornalizado' | 'fijo' | 'mensualizado' | 'por_tantos' | 'administrativo';
 
   @IsOptional()
   @IsInt()
   categoriaUocraId?: number;
 
-  /** Cómo cobra las horas extras y presentismo juntos: en B (sin descuentos) o con descuentos. */
+  /**
+   * Solo aplica con regimen='fijo': horas extra que se pagan SIEMPRE sobre
+   * las 88 del CCT, sin depender de lo reportado. 0 son las 88 puras; no
+   * mandarlo deja el perfil incompleto (nunca se asume 0). Ver ADR-023.
+   */
   @IsOptional()
-  @IsIn(['en_b', 'con_descuentos'])
-  modalidadPago?: 'en_b' | 'con_descuentos';
+  @IsNumber()
+  @Min(0)
+  // La columna es DECIMAL(5,2) y el servidor no esta en modo estricto: sin
+  // este tope, un 5000 mal tipeado entraria como 999,99 sin un solo error.
+  @Max(999.99)
+  horasExtraPactadas?: number;
+
+  /**
+   * Excepción de zona: fuerza la hoja del Excel de esta persona por encima de
+   * su provincia. Se manda `null` explícito para quitarla. Ver zonaDePerfil().
+   */
+  @IsOptional()
+  @IsIn(['norte', 'sur', null])
+  zonaOverride?: 'norte' | 'sur' | null;
 
   /**
    * Contratos de imputación para el Análisis (solo regímenes mensualizado/

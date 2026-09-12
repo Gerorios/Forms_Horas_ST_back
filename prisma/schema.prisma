@@ -233,28 +233,19 @@ model TipoNovedad {
 // ------------------------------------------------------------
 enum RegimenLiquidacion {
   jornalizado
+  // 88hs de básico SIEMPRE, más las `horasExtraPactadas` del perfil — que
+  // tampoco dependen de lo reportado. Absorbió al viejo `fijo_105` (17,5
+  // pactadas) cuando apareció un tercer arreglo, de 12. Ver ADR-023.
   fijo
-  // Igual que "fijo" (88hs básico), pero con 17,5hs extra SIEMPRE fijas
-  // (nunca dependen de horas reportadas) — 105hs totales. Ver ADR-020.
-  fijo_105
   // Sueldo bruto fijo cargado a mano por el Liquidador cada quincena (no
   // depende de categoría UOCRA ni de horas). Ver ADR-011.
   mensualizado
   por_tantos
-  // Se liquida por otro circuito (fuera de esta app). Categoría UOCRA y
-  // modalidad de pago no aplican. Igual queda con PerfilLiquidacion
-  // asignado, a diferencia de un administrativo aún no revisado (que
-  // simplemente no tiene fila todavía) — ver ADR-009.
+  // Se liquida por otro circuito (fuera de esta app). La categoría UOCRA no
+  // aplica. Igual queda con PerfilLiquidacion asignado, a diferencia de un
+  // administrativo aún no revisado (que simplemente no tiene fila todavía)
+  // — ver ADR-009.
   administrativo
-}
-
-// Cómo cobra un empleado sus horas extras Y presentismo juntos (no por
-// separado): "en B" (sin descuentos, pago informal) o como parte del sueldo
-// formal (con descuentos). Es un dato fijo por empleado, no por quincena.
-// Renombrado desde "modalidadHoraExtra" — ver ADR-011.
-enum ModalidadPago {
-  en_b
-  con_descuentos
 }
 
 // 1:1 con snuempleados (no con Usuario: la mayoría de los empleados no tiene
@@ -264,7 +255,17 @@ model PerfilLiquidacion {
   cuil             String             @id @db.Char(13)
   regimen          RegimenLiquidacion
   categoriaUocraId Int?               @map("categoria_uocra_id")
-  modalidadPago    ModalidadPago?     @map("modalidad_pago")
+  // Solo aplica a regimen='fijo': horas extra que se pagan SIEMPRE, sin
+  // depender de lo reportado, sobre las 88 del CCT. Salen de dividir el
+  // monto arreglado con RRHH por el valor hora de la categoría — esa cuenta
+  // la hace el Liquidador afuera; acá se guarda el resultado en horas, para
+  // que un aumento de convenio no cambie las horas del recibo.
+  // null = falta cargarlo (alerta); 0 = las 88 puras. Ver ADR-023.
+  horasExtraPactadas Decimal?         @map("horas_extra_pactadas") @db.Decimal(5, 2)
+  // Excepción: fuerza la hoja del Excel en la que sale esta persona, por
+  // encima de lo que diga su provincia. null = manda la provincia (lo normal).
+  // Existe para casos que la provincia no explica — ver zonaDePerfil().
+  zonaOverride     ZonaLiquidacion?     @map("zona_override")
   // Solo tiene sentido con regimen='mensualizado': además del monto fijo,
   // cobra horas extra sobre lo declarado directamente (sin restar nada — lo
   // declarado YA es el excedente sobre su jornal, que nunca se carga). Ver

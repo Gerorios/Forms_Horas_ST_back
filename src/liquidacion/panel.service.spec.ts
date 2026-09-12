@@ -63,7 +63,7 @@ describe('PanelService', () => {
     it('sin pendientes ni alertas devuelve lista', async () => {
       prismaMock.registroHoras.aggregate.mockResolvedValue({ _min: { fecha: new Date(2026, 7, 1) } });
       prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
-        { cuil: '20-1-1', regimen: 'jornalizado', categoriaUocraId: 1, modalidadPago: 'en_b' },
+        { cuil: '20-1-1', regimen: 'jornalizado', categoriaUocraId: 1 },
       ]);
       prismaMock.registroHoras.findMany.mockResolvedValue([
         { fecha: new Date(2026, 7, 5), estado: 'aprobado', operarioCuil: '20-1-1' },
@@ -93,6 +93,7 @@ describe('PanelService', () => {
       categoria: 'Oficial',
       regimen: 'jornalizado',
       provincia: 'BA',
+      zona: null,
       precioBruto: 100,
       horasTotal: 80,
       horasCct: 80,
@@ -106,7 +107,6 @@ describe('PanelService', () => {
       novedadesTexto: '',
       total: 9600,
       datoFaltante: null,
-      modalidadPago: 'en_b',
     };
 
     it('arma la fila con días solo aprobados y su importe estimado (horas x tarifa)', async () => {
@@ -160,7 +160,7 @@ describe('PanelService', () => {
     });
 
     it('spec §6.4: provincia mapeada (SALTA) expone zona norte en la fila del detalle en vivo', async () => {
-      calculoMock.calcularQuincena.mockResolvedValue([{ ...filaBase, provincia: 'SALTA' }]);
+      calculoMock.calcularQuincena.mockResolvedValue([{ ...filaBase, provincia: 'SALTA', zona: 'norte' }]);
       prismaMock.registroHoras.groupBy.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
       prismaMock.snuempleados.findMany.mockResolvedValue([]);

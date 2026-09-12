@@ -916,7 +916,7 @@ export class RegistrosHorasService {
    * entre todos los Jefes de Contrato y Admin para que cualquiera pueda
    * notarlo y coordinar.
    *
-   * Solo jornalizados: el resto de los regímenes (fijo, fijo_105,
+   * Solo jornalizados: el resto de los regímenes (fijo,
    * mensualizado, por_tantos) cobra un monto fijo o por otro criterio que no
    * depende de las horas cargadas — que no carguen es, a lo sumo,
    * estadístico, no algo que alguien tenga que salir a corregir.

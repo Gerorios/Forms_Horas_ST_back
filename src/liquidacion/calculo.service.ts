@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { zonaDePerfil } from '../common/zona';
 import { rangoQuincena } from '../common/quincena';
 
 /**
@@ -161,24 +162,25 @@ export class CalculoService {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
       } else if (perfil.regimen === 'fijo') {
-        horasTotal = 88;
+        // 88hs de básico siempre, más las horas extra pactadas del perfil —
+        // que tampoco dependen de lo reportado: si tiene 12 pactadas cobra
+        // 12 aunque haya cargado 200. Absorbió al viejo `fijo_105`, que era
+        // este mismo cálculo con 17,5 hardcodeadas. Ver ADR-023.
+        const pactadas = perfil.horasExtraPactadas == null ? null : Number(perfil.horasExtraPactadas);
         horasCct = 88;
+        horasExtra = pactadas ?? 0;
+        horasTotal = 88 + horasExtra;
         if (tarifaHoraNum != null) {
           basico = tarifaHoraNum * 88;
+          montoExtra = horasExtra * tarifaHoraNum * 1.5;
         } else {
           datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
         }
-      } else if (perfil.regimen === 'fijo_105') {
-        // Igual que "fijo", pero con 17,5hs extra SIEMPRE fijas (nunca
-        // dependen de horas reportadas) — 105hs totales. Ver ADR-020.
-        horasTotal = 105;
-        horasCct = 88;
-        horasExtra = 17.5;
-        if (tarifaHoraNum != null) {
-          basico = tarifaHoraNum * 88;
-          montoExtra = 17.5 * tarifaHoraNum * 1.5;
-        } else {
-          datoFaltante = 'Sin categoría UOCRA / tarifa asignada';
+        // Sin horas cargadas no se inventa un extra, pero tampoco se esconde
+        // el básico: se muestra lo cierto y se avisa lo que falta. La falta
+        // de categoría tiene prioridad, que sin tarifa no hay nada que hacer.
+        if (pactadas == null && datoFaltante == null) {
+          datoFaltante = 'Falta cargar las horas extra pactadas (Perfiles de empleados)';
         }
       } else if (perfil.regimen === 'mensualizado') {
         const sueldo = sueldosMensualizados.find((s) => s.cuil === perfil.cuil) ?? null;
@@ -297,8 +299,6 @@ export class CalculoService {
       const total = basico + montoExtra + presentismo + totalPlus + noRemunerativo + plusIndividualMonto;
 
       const etiquetas: string[] = [];
-      if (perfil.modalidadPago === 'en_b') etiquetas.push('Hs Extra y Presentismo en B');
-      else if (perfil.modalidadPago === 'con_descuentos') etiquetas.push('Hs Extra y Presentismo con descuentos');
       for (const p of plus) etiquetas.push(p.nombre.toUpperCase());
 
       resultado.push({
@@ -308,7 +308,10 @@ export class CalculoService {
         categoria: perfil.categoria?.nombre ?? null,
         regimen: perfil.regimen,
         provincia: perfil.empleado.provincia,
-        modalidadPago: perfil.modalidadPago,
+        // Resuelta acá y una sola vez: el panel, los cierres y el Excel la
+        // leen de la fila. Así la excepción del perfil no se saltea en
+        // ninguno de los tres. Ver zonaDePerfil().
+        zona: zonaDePerfil(perfil.empleado.provincia, perfil.zonaOverride),
         precioBruto: tarifaHoraNum,
         montoKmBruto,
         horasTotal,
@@ -333,9 +336,10 @@ export class CalculoService {
 
   /**
    * Alertas para revisar antes de liquidar: empleados con horas cargadas
-   * pero sin perfil de liquidación, perfiles incompletos (sin categoría o
-   * modalidad), y jornalizados con 0 horas aprobadas — distinguiendo si es
-   * porque tienen horas pendientes de aprobar o porque nunca declararon
+   * pero sin perfil de liquidación, perfiles incompletos (sin categoría, o
+   * un `fijo` sin horas pactadas), y jornalizados con 0 horas aprobadas —
+   * distinguiendo si es porque tienen horas pendientes de aprobar o porque
+   * nunca declararon
    * nada en el período (a un fijo/mensualizado/por_tantos no se le exige
    * horas, así que no se lo marca).
    */
@@ -373,16 +377,23 @@ export class CalculoService {
         horasPendientes: horasPorCuil.get(e.cuil)!.pendientes,
       }));
 
-    const necesitaCategoria = ['jornalizado', 'fijo', 'fijo_105', 'por_tantos'];
+    const necesitaCategoria = ['jornalizado', 'fijo', 'por_tantos'];
     const perfilIncompleto = perfiles
       .filter((p) => p.regimen !== 'administrativo')
-      .filter((p) => (necesitaCategoria.includes(p.regimen) && !p.categoriaUocraId) || !p.modalidadPago)
+      // Un `fijo` sin horas pactadas esta tan incompleto como uno sin
+      // categoria: el calculo no puede saber cuantas extra le tocan. Ojo que
+      // 0 es una respuesta valida (88 puras), no un vacio - por eso == null.
+      .filter(
+        (p) =>
+          (necesitaCategoria.includes(p.regimen) && !p.categoriaUocraId) ||
+          (p.regimen === 'fijo' && p.horasExtraPactadas == null),
+      )
       .map((p) => ({
         cuil: p.cuil,
         apellidoNombre: p.empleado.apellido_nombre,
         regimen: p.regimen,
         faltaCategoria: necesitaCategoria.includes(p.regimen) && !p.categoriaUocraId,
-        faltaModalidad: !p.modalidadPago,
+        faltaHorasExtraPactadas: p.regimen === 'fijo' && p.horasExtraPactadas == null,
       }));
 
     const sinHorasAprobadas = perfiles

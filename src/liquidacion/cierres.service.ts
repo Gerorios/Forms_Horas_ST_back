@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena } from '../common/quincena';
-import { zonaDeProvincia } from '../common/zona';
 
 type FilaCalculo = Awaited<ReturnType<CalculoService['calcularQuincena']>>[number];
 type Alertas = Awaited<ReturnType<CalculoService['getAlertasQuincena']>>;
@@ -84,7 +83,7 @@ export class CierresService {
     if (conDatoFaltante > 0) {
       salvedades.push(this.pluralizar(conDatoFaltante, 'fila con datos faltantes', 'filas con datos faltantes'));
     }
-    const sinZona = filas.filter((f) => zonaDeProvincia(f.provincia) == null).length;
+    const sinZona = filas.filter((f) => f.zona == null).length;
     if (sinZona > 0) {
       salvedades.push(this.pluralizar(sinZona, 'empleado sin zona', 'empleados sin zona'));
     }
@@ -108,7 +107,8 @@ export class CierresService {
 
   /** Mapeo del detalle congelado (spec §2.2) a partir de una fila viva del cálculo. */
   private aFilaCongelada(fila: FilaCalculo, localidadPorCuil: Map<string, string | null>, kmPorCuil: Map<string, number>) {
-    const zona = zonaDeProvincia(fila.provincia);
+    // Ya resuelta en el cálculo, con la excepción del perfil aplicada.
+    const zona = fila.zona;
     const { guardias, productividad } = this.partirPlus(fila.plus);
     const esPorTantos = fila.regimen === 'por_tantos';
 
@@ -129,7 +129,6 @@ export class CierresService {
       zona,
       regimen: fila.regimen,
       categoria: fila.categoria,
-      modalidadPago: fila.modalidadPago,
       tienePresentismo: fila.tienePresentismo,
       // Mensualizado: el "precio bruto" congelado es el sueldo quincenal
       // (= totalBruto, básico = monto × 1) — como en el Excel real. El resto
