@@ -3378,4 +3378,37 @@ timeout. `testing` quedó como estaba: los cierres de prueba se borraron.
 - El ADR nació numerado 023 por listar los ADR en un checkout atrasado; se
   renumeró a 024 antes de tocar código. Lección: listar siempre en el worktree.
 - Plan: `docs/superpowers/plans/2026-09-17-dias-trabajados-tres-quincenas.md`.
-- Deploy: pendiente de pedido explícito. Solo Backend.
+
+### Fix que entró en el mismo PR: el plus individual del relevador no se cobraba
+
+Mientras se probaba, el usuario reportó que el plus individual (Tarifas >
+Plus individual) no le impactaba a un relevador. El cálculo lo sumaba en
+`total`, pero el recibo de un `por_tantos` se parte en A y B, y el plus no
+entraba en ninguna: `montoA` y `montoB` se congelaban sin él, el Excel usa
+`montoA` como TOTAL del relevador, RESUMEN suma eso, y el Frontend calcula
+"Monto A" con la misma fórmula. Los demás regímenes usan `total`, por eso a
+ellos sí les impactaba.
+
+**Decisión del usuario:** va a la **parte B** (`montoB = montoHorasExtra +
+plusIndividual`); A no cambia; en el detalle se muestra como en los demás
+empleados, con monto y motivo. Se usa poco, solo para particularidades o
+arreglos internos. Los plus de novedades de un relevador quedan como estaban.
+PRODUCTIVIDAD del Excel principal ya no muestra el plus de un `por_tantos`
+(viaja en B). Tests rojos primero: `montoB` esperaba 7000 y recibía 5000;
+PRODUCTIVIDAD esperaba 300 y recibía 2300.
+
+**Pendiente en el Frontend (PR par):** `tabla-por-tantos.tsx`, columna
+"Monto B" = extra + plus individual, y la fila expandida con el plus y su
+motivo. Sin cambio de API.
+
+**Deuda que encontró la revisión (preexistente, no se tocó):** la
+"composición" de `analisis.service.ts` suma básico + extras + presentismo +
+plus de novedades + bono **sin** el plus individual, así que no cuadra con
+`total` cuando hay uno cargado. Pendiente para otra sesión.
+
+**Cierres viejos:** `montoB` congelado sin el plus; un recierre lo corrige.
+El usuario decidió no borrar cierres de producción: el recierre trae tanto la
+hoja nueva como el `montoB` corregido, y la versión anterior queda intacta
+(ADR-021).
+
+- Deploy: pendiente de pedido explícito. Backend + Frontend juntos.

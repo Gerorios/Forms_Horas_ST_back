@@ -103,7 +103,8 @@ export class ExportCierreService {
 
   /** En el archivo principal, un "por tantos" muestra SOLO su parte A
    * (pedido QA 2026-08-31): horas topeadas en las CCT, sin extras (el
-   * excedente es lo B, va en el archivo aparte) y TOTAL = montoA. */
+   * excedente y el plus individual son lo B, van en el archivo aparte) y
+   * TOTAL = montoA. */
   private esSoloParteA(f: FilaDetalle): boolean {
     return f.regimen === 'por_tantos';
   }
