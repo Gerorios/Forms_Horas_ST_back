@@ -518,9 +518,11 @@ model CierreLiquidacionDetalle {
   @@map("sth_cierre_liquidacion_detalle")
 }
 
-// ADR-021: días trabajados congelados del período del cierre (un día cuenta
-// si el empleado tiene ≥1 registro NO desaprobado esa fecha). Alimenta la
-// hoja DIAS TRABAJADOS del Excel (transitoria, para feriados).
+// ADR-021 + ADR-024: días trabajados congelados de TRES quincenas corridas
+// (la cerrada + las 2 anteriores; un día cuenta si el empleado tiene ≥1
+// registro NO desaprobado esa fecha). Alimenta la hoja DIAS TRABAJADOS del
+// Excel (feriados: la regla mira un mes hacia atrás). Los cierres anteriores
+// a ADR-024 solo tienen su quincena.
 model CierreDiaTrabajado {
   id             Int      @id @default(autoincrement())
   cierreId       Int      @map("cierre_id")

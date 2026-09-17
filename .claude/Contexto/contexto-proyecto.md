@@ -3320,3 +3320,62 @@ Al crear `src/common/zona.spec.ts` escribí **encima de un archivo que ya
 existía** y se perdieron 9 casos de test. No falló nada — todo seguía verde — y
 se detectó solo porque el total de tests **bajó** cuando tenía que subir.
 Restaurado desde git. Antes de crear un archivo de test, verificar si existe.
+
+## 88. DIAS TRABAJADOS: la foto del cierre congela tres quincenas y suma por mes (2026-09-17)
+
+La hoja DIAS TRABAJADOS del Excel de cierre se usa para pagar feriados, y la
+regla del feriado mira un mes hacia atrás. La hoja traía solo la quincena
+cerrada: el liquidador completaba a mano el mes anterior. El pedido fue traer
+la quincena actual más las dos anteriores y una columna con el total de días
+por mes.
+
+**La decisión de fondo fue de dónde salen las quincenas anteriores.** Tres
+opciones: leer los cierres vigentes previos (si una quincena no se cerró, la
+hoja sale vacía), leer los registros vivos al exportar (mezcla foto con datos
+editables y rompe la garantía de ADR-021), o **congelar tres quincenas al
+cerrar**. Se eligió la tercera: misma tabla, más filas, sin DDL, y el Excel
+sigue siendo 100 % foto de lo que viajó. ADR-024, que enmienda ADR-021.
+
+Layout: `Legajo | NOMBRE Y APELLIDO | días del mes 1 | Total <Mes> | días del
+mes 2 | Total <Mes>`, sin total general (un total de 45 días no le dice nada al
+liquidador). El total es un número, no una fórmula, como en RESUMEN. Aparece
+toda persona con al menos un día en la ventana, aunque no tenga ninguno en la
+quincena cerrada: si le corresponde un feriado de agosto, hay que verla.
+
+### Cierres viejos y ventana binaria
+
+Los cierres anteriores a este cambio solo tienen su quincena congelada y no se
+rellenan. La hoja decide por la foto: si no hay ninguna fecha anterior a la
+quincena cerrada, arma solo esa quincena; si hay, arma las tres completas.
+Binaria a propósito, nunca "recortada a la mínima fecha presente": eso haría
+arrancar el bloque un día arbitrario. Un recierre con nota trae la ventana
+completa.
+
+### Lo que no cambia
+
+La regla de día trabajado (≥1 registro no desaprobado), la salvedad de
+"pendientes" (sigue mirando solo la quincena cerrada, con test que lo fija),
+el análisis de la quincena (cuenta desde registros vivos) y el Frontend.
+
+### El riesgo que se midió y no era
+
+Con tres quincenas, `crearCierre` pasa de ~1.500 a ~4.500 filas de días dentro
+de una transacción con timeout de 30 s contra una base remota. Se pasó la
+inserción a `createMany` anidado y se midió en `testing` con 100 empleados x
+45 días sintéticos: **entre 1 y 4 segundos** tanto con `createMany` como con el
+`create` anidado viejo (Prisma ya agrupa las filas). No hace falta tocar el
+timeout. `testing` quedó como estaba: los cierres de prueba se borraron.
+
+### Detalles de ejecución
+
+- Ventana: `quincenasHaciaAtras(anio, mes, quincena, 3)` en `cierres.service.ts`;
+  bloques por mes y `ventanaDiasTrabajados` en `export-cierre.service.ts`.
+- `nombreMes` / `NOMBRES_MES` nuevos en `src/common/quincena.ts`; los avisos de
+  certificaciones dejaron su copia privada.
+- Fechas: encabezado en base local, foto en UTC (`@db.Date`); se comparan
+  siempre claves `YYYY-MM-DD`, nunca `Date` contra `Date`.
+- Tests: 746 en verde; los nuevos se vieron fallar antes del cambio.
+- El ADR nació numerado 023 por listar los ADR en un checkout atrasado; se
+  renumeró a 024 antes de tocar código. Lección: listar siempre en el worktree.
+- Plan: `docs/superpowers/plans/2026-09-17-dias-trabajados-tres-quincenas.md`.
+- Deploy: pendiente de pedido explícito. Solo Backend.

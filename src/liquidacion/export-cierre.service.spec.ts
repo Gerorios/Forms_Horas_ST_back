@@ -57,6 +57,22 @@ function cabeceraBase(detalle: ReturnType<typeof filaCongelada>[]) {
   };
 }
 
+/** Fila de la foto congelada de días trabajados: `fecha` sale de un `@db.Date`
+ * de Prisma, así que siempre es medianoche UTC. */
+function diaCongelado(cuil: string, apellidoNombre: string, legajo: number, fecha: Date) {
+  return { cuil, legajo, apellidoNombre, fecha };
+}
+
+/** Fila de un empleado en DIAS TRABAJADOS, buscada por nombre: el orden de las
+ * filas lo fija el `orderBy` del `findMany`, no lo asserta cada test. */
+function filaDe(ws: ExcelJS.Worksheet, apellidoNombre: string): unknown[] {
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const valores = ws.getRow(r).values as unknown[];
+    if (valores[2] === apellidoNombre) return valores;
+  }
+  throw new Error(`No hay fila de ${apellidoNombre} en DIAS TRABAJADOS`);
+}
+
 describe('ExportCierreService', () => {
   const cierresMock: any = { detalle: jest.fn() };
   const prismaMock: any = { cierreDiaTrabajado: { findMany: jest.fn() } };
@@ -91,6 +107,13 @@ describe('ExportCierreService', () => {
   });
 
   describe('generarExcelPrincipal', () => {
+    const hojaDias = async (): Promise<ExcelJS.Worksheet> => {
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      return wb.getWorksheet('DIAS TRABAJADOS')!;
+    };
+
     it('arma TOTAL/NORTE/TUCUMAN/RESUMEN/DIAS TRABAJADOS con las 18 columnas', async () => {
       cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
 
@@ -104,6 +127,31 @@ describe('ExportCierreService', () => {
       expect(headerRow).toContain('LOCALIDAD');
       expect((headerRow as unknown[]).length - 1).toBe(18); // values[0] es undefined (1-based)
       expect(filename).toBe('2026_09_1q_Sueldo SERTEC_v2.xlsx');
+    });
+
+    it('por_tantos: el plus individual es de B, no aparece en PRODUCTIVIDAD del principal (bug 2026-09-17)', async () => {
+      const filaPorTantos = filaCongelada({
+        cuil: '20-9-9',
+        regimen: 'por_tantos',
+        totalBruto: 8800,
+        montoPresentismo: 1760,
+        noRemunerativo: 500,
+        montoProductividad: 300,
+        plusIndividual: 2000,
+        montoHorasExtra: 5000,
+        montoA: 11060,
+        montoB: 7000, // 5000 de extra + 2000 de plus, congelado así por el cierre
+        total: 18060,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaPorTantos]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      const fila = wb.getWorksheet('TOTAL')!.getRow(2).values as unknown[];
+      expect(fila[12]).toBe(300); // PRODUCTIVIDAD solo con el plus de novedades: el individual viaja en B
+      expect(fila[18]).toBe(11060); // TOTAL sigue siendo montoA
     });
 
     it('por_tantos muestra solo la parte A: horas topeadas en CCT, sin extras y TOTAL = montoA', async () => {
@@ -194,28 +242,129 @@ describe('ExportCierreService', () => {
       expect(valores).toContain(300);
     });
 
-    it('DIAS TRABAJADOS: matriz legajo/nombre x día con 1 si hay fila para (cuil, fecha), keyeando UTC como Prisma', async () => {
+    it('DIAS TRABAJADOS: cierre viejo (foto de una sola quincena) queda con esa quincena y su total', async () => {
       // fecha de un `@db.Date` de Prisma: siempre medianoche UTC. Caso
       // borde: el PRIMER día de la quincena (2026-09-01) — con el bug
       // local/UTC (toDateString) este cae en la columna del 31/08 o
       // desaparece de la matriz.
+      // Además: foto SIN fechas previas al 01/09 ⇒ ventana = solo la quincena
+      // cerrada (cierres anteriores a ADR-024 no se rellenan con vacíos).
       cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
       prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
-        { cuil: '20-22222222-2', legajo: 10, apellidoNombre: 'Perez, Juan', fecha: new Date(Date.UTC(2026, 8, 1)) },
+        diaCongelado('20-22222222-2', 'Perez, Juan', 10, new Date(Date.UTC(2026, 8, 1))),
       ]);
 
-      const { buffer } = await service.generarExcelPrincipal(1);
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer as any);
-      const ws = wb.getWorksheet('DIAS TRABAJADOS')!;
+      const ws = await hojaDias();
       expect(ws.rowCount).toBe(2); // header + 1 empleado
 
       const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow.length - 1).toBe(18); // 2 fijas + 15 días + Total Septiembre
       expect(headerRow[3]).toBe('01/09'); // primera columna de día = 1° de la quincena
+      expect(headerRow[17]).toBe('15/09');
+      expect(headerRow[18]).toBe('Total Septiembre');
 
       const fila = ws.getRow(2).values as unknown[];
       expect(fila[3]).toBe(1); // marca en la columna del 01/09, no en otra ni ausente
-      expect(fila.filter((v) => v === 1)).toHaveLength(1); // ningún otro día marcado
+      expect(fila.slice(3, 18).filter((v) => v === 1)).toHaveLength(1); // ningún otro día marcado
+      expect(fila[18]).toBe(1); // total del mes
+    });
+
+    it('DIAS TRABAJADOS: sep 1q con foto de 3 quincenas abre bloque de agosto y de septiembre, cada uno con su total', async () => {
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
+      prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
+        diaCongelado('20-3-3', 'Gomez, Ana', 7, new Date(Date.UTC(2026, 7, 20))),
+        diaCongelado('20-22222222-2', 'Perez, Juan', 10, new Date(Date.UTC(2026, 7, 1))),
+        diaCongelado('20-22222222-2', 'Perez, Juan', 10, new Date(Date.UTC(2026, 8, 1))),
+      ]);
+
+      const ws = await hojaDias();
+
+      // la foto se lee ordenada por empleado: el orden de la hoja no depende
+      // del orden en que se insertaron las filas al cerrar.
+      expect(prismaMock.cierreDiaTrabajado.findMany).toHaveBeenCalledWith({
+        where: { cierreId: 1 },
+        orderBy: [{ apellidoNombre: 'asc' }, { fecha: 'asc' }],
+      });
+
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow.length - 1).toBe(50); // 2 fijas + 31 de agosto + total + 15 de septiembre + total
+      expect(headerRow[3]).toBe('01/08'); // ventana = 1/8 al 15/9 (3 quincenas, ADR-024)
+      expect(headerRow[33]).toBe('31/08');
+      expect(headerRow[34]).toBe('Total Agosto');
+      expect(headerRow[35]).toBe('01/09');
+      expect(headerRow[49]).toBe('15/09');
+      expect(headerRow[50]).toBe('Total Septiembre');
+      expect(ws.rowCount).toBe(3); // header + 2 empleados
+
+      const perez = filaDe(ws, 'Perez, Juan');
+      expect(perez[3]).toBe(1); // 01/08
+      expect(perez[34]).toBe(1);
+      expect(perez[35]).toBe(1); // 01/09
+      expect(perez[50]).toBe(1);
+
+      const gomez = filaDe(ws, 'Gomez, Ana');
+      expect(gomez[22]).toBe(1); // 20/08 = tercera columna + 19 días
+      expect(gomez[34]).toBe(1);
+      expect(gomez[50]).toBe(0); // mes sin días: 0, no vacío
+      expect(gomez.slice(3, 34).filter((v) => v === 1)).toHaveLength(1); // ningún otro día de agosto
+      expect(gomez.slice(35, 50).filter((v) => v === 1)).toHaveLength(0); // ningún día de septiembre
+    });
+
+    it('DIAS TRABAJADOS: sep 2q abre la ventana el 16/08 y la cierra el 30/09', async () => {
+      cierresMock.detalle.mockResolvedValue({ ...cabeceraBase([filaCongelada()]), quincena: 2 });
+      prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
+        diaCongelado('20-22222222-2', 'Perez, Juan', 10, new Date(Date.UTC(2026, 7, 20))),
+      ]);
+
+      const ws = await hojaDias();
+
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow.length - 1).toBe(50); // 2 fijas + 16 de agosto + total + 30 de septiembre + total
+      expect(headerRow[3]).toBe('16/08');
+      expect(headerRow[18]).toBe('31/08');
+      expect(headerRow[19]).toBe('Total Agosto');
+      expect(headerRow[20]).toBe('01/09');
+      expect(headerRow[49]).toBe('30/09');
+      expect(headerRow[50]).toBe('Total Septiembre');
+
+      const perez = filaDe(ws, 'Perez, Juan');
+      expect(perez[7]).toBe(1); // 20/08 = tercera columna + 4 días
+      expect(perez[19]).toBe(1);
+      expect(perez[50]).toBe(0);
+    });
+
+    it('DIAS TRABAJADOS: la ventana cruza el año (ene 1q) y nombra los meses de cada bloque', async () => {
+      cierresMock.detalle.mockResolvedValue({ ...cabeceraBase([filaCongelada()]), anio: 2026, mes: 1, quincena: 1 });
+      prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([
+        diaCongelado('20-22222222-2', 'Perez, Juan', 10, new Date(Date.UTC(2025, 11, 20))),
+      ]);
+
+      const ws = await hojaDias();
+
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow.length - 1).toBe(50); // 2 fijas + 31 de diciembre + total + 15 de enero + total
+      expect(headerRow[3]).toBe('01/12'); // ventana = 1/12/2025 al 15/1/2026
+      expect(headerRow[33]).toBe('31/12');
+      expect(headerRow[34]).toBe('Total Diciembre');
+      expect(headerRow[35]).toBe('01/01');
+      expect(headerRow[49]).toBe('15/01');
+      expect(headerRow[50]).toBe('Total Enero');
+
+      const perez = filaDe(ws, 'Perez, Juan');
+      expect(perez[22]).toBe(1); // 20/12
+      expect(perez[34]).toBe(1);
+      expect(perez[50]).toBe(0);
+    });
+
+    it('DIAS TRABAJADOS: foto vacía deja solo el encabezado de la quincena cerrada', async () => {
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
+      prismaMock.cierreDiaTrabajado.findMany.mockResolvedValue([]);
+
+      const ws = await hojaDias();
+      expect(ws.rowCount).toBe(1); // solo el encabezado
+      const headerRow = ws.getRow(1).values as unknown[];
+      expect(headerRow.length - 1).toBe(18); // sin fechas previas no se abren las quincenas anteriores
+      expect(headerRow[18]).toBe('Total Septiembre');
     });
 
     it('propaga NotFoundException si el cierre no existe', async () => {

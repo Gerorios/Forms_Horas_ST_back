@@ -131,6 +131,9 @@ Librería: **exceljs** (dependencia nueva del backend). Nombres de archivo:
    (equivalente estático del "TOTAL TD" dinámico del archivo viejo).
 5. **DIAS TRABAJADOS**: matriz empleado × día del período del cierre
    (1 = trabajó), desde `sth_cierre_dias_trabajados`. Transitoria (feriados).
+   **Resuelto por ADR-024 (2026-09-17):** la ventana pasa a 3 quincenas
+   corridas (cerrada + 2 anteriores), en bloques por mes calendario con un
+   "Total <Mes>" al final de cada bloque; sin total general.
 
 Mapeos de columnas desde el detalle congelado:
 - TIPO: jornalizado → "Jornalizado"; mensualizado → "Mensualizado";
@@ -196,5 +199,7 @@ integrada al bloque de salvedades del diálogo de cierre.
    (junio en el archivo de 1Q agosto — el cálculo de feriados puede mirar
    hacia atrás). La versión nueva congela SOLO los días de la quincena
    cerrada. Confirmar si alcanza o si feriados necesita más historia.
+   **Resuelto por ADR-024 (2026-09-17):** no alcanzaba; se congelan 3
+   quincenas corridas y la hoja suma por mes.
 4. Coordinación con IT: usuario MySQL de solo lectura sobre las 3 tablas
    de hechos para el analista.

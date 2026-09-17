@@ -1,5 +1,10 @@
 # ADR-021: Cierre de liquidación quincenal versionado (snapshot, sin bloqueo) + export Excel + bono quincenal
 
+**Estado:** vigente. **Enmendado por ADR-024** (2026-09-17) en §2 y §3: la
+foto de `sth_cierre_dias_trabajados` congela tres quincenas corridas (la
+cerrada + 2 anteriores) y la hoja DIAS TRABAJADOS agrupa por mes con un total
+por mes.
+
 ## Contexto
 
 El módulo de Liquidación calcula todo **en vivo** (`/liquidacion/quincena/detalle`
