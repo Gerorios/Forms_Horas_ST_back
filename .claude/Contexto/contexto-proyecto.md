@@ -3411,4 +3411,34 @@ El usuario decidió no borrar cierres de producción: el recierre trae tanto la
 hoja nueva como el `montoB` corregido, y la versión anterior queda intacta
 (ADR-021).
 
-- Deploy: pendiente de pedido explícito. Backend + Frontend juntos.
+### Cierre de la sesión: PRs, deploy y una cuenta revisada (2026-09-18)
+
+- **PRs**: Backend **#79** (`feat/dias-trabajados-tres-quincenas`, merge
+  `5edad46`) y Frontend **#71** (`fix/plus-relevador-monto-b`, merge
+  `20aa165`), mergeados con `--admin` con OK explícito del usuario.
+- **Deploy** en misregistros el 2026-09-18, a pedido explícito: pull + build
+  de ambos, `pm2 restart`, ambos `online`, sin errores nuevos en el log. Sin
+  DDL. Rollback: back `ba9c0eb`, front `dd64a30`. Detalle en
+  `docs/2026-09-18-dias-trabajados-plus-relevador-deploy.md`.
+- **Frontend (PR #71)**: en `tabla-por-tantos.tsx` la columna Monto B pasa a
+  extra + plus individual, y la fila expandida muestra "Plus individual (en
+  Monto B): $ (motivo)". Test rojo primero en `detalle-page.test.tsx`, después
+  19/19. Se trabajó en un worktree del Frontend con `node_modules` enlazado
+  al checkout principal; Turbopack rechaza ese enlace, así que en local se
+  levantó con `next dev --webpack`.
+- **Cuenta revisada a pedido**: CORBALAN JOSE ANTONIO, sep 1q, relevador
+  Oficial, 65 km en el rango 60-75 a $10.000 → neto 650.000; horas
+  equivalentes 116,54 (÷ 5.703 × 0,978); básico 501.864; B 159.177; sin
+  presentismo por Ausencia marcada por HyS como que lo pierde; bono $0 porque
+  **no hay bono cargado para septiembre en `testing`**; plus 31.500. Total
+  692.541. **El motor calcula bien**; con el fix, A = 501.864 y B = 190.677.
+  Aviso al usuario: revisar que el bono de septiembre esté cargado en
+  producción.
+- **Cierres de producción**: el usuario pidió borrarlos para rehacerlos; se
+  le explicó que el recierre trae la forma nueva sin destruir la historia
+  (ADR-021) y eligió recerrar. No se tocó ningún dato.
+- **Lección de proceso**: el ADR nació numerado 023 por listar los ADR en el
+  checkout local, atrasado respecto de `origin/main`. Listar siempre en el
+  worktree. Y el usuario pidió acortar la verificación: propuestas anotadas
+  en la memoria (un ejecutor por par test+implementación, suite completa una
+  sola vez, no repetir el spec del ejecutor, enlazar `node_modules`).
