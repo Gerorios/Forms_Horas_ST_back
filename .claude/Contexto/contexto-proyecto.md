@@ -3455,4 +3455,11 @@ Primera tarea con el **carril corto** del flujo rediseñado: sin entrevista,
 plan de 10 líneas, ejecución en sesión con test rojo primero (`+16h` no debe
 aparecer aunque `alertaHoras` sea `true`), un revisor de dos ejes más el
 `verificador-review`, una ronda. Solo Frontend, sin API: PR del Frontend
-`fix/quitar-chip-16h-operario`; Backend solo docs (plan + esta sección).
+**#72** (`fix/quitar-chip-16h-operario`, merge `8b86d74`); Backend solo docs
+(#81 plan + esta sección). Del OK al plan al cambio listo: ~15 min, contra
+~90 de la feature de ayer con el flujo viejo. El verificador descartó un
+hallazgo falso y corrigió un dato equivocado del revisor.
+
+**Deploy 2026-09-18**, a pedido explícito, solo Frontend: pull → `8b86d74`,
+build, `pm2 restart forms-horas-front`, `online`, `/` y `/mis-registros` 200.
+Rollback front `20aa165`. Doc: `docs/2026-09-18-quitar-chip-16h-operario-deploy.md`.
