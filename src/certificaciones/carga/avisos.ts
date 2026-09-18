@@ -1,3 +1,4 @@
+import { NOMBRES_MES } from '../../common/quincena';
 import { AvisoParseo, PeriodoArchivo } from './parser-tipos';
 
 /**
@@ -5,21 +6,6 @@ import { AvisoParseo, PeriodoArchivo } from './parser-tipos';
  * portal §2: no bloquean nunca una fila, son cartel/panel informativo.
  * Puros — sin acceso a BD, sin estado.
  */
-
-const MESES = [
-  'enero',
-  'febrero',
-  'marzo',
-  'abril',
-  'mayo',
-  'junio',
-  'julio',
-  'agosto',
-  'septiembre',
-  'octubre',
-  'noviembre',
-  'diciembre',
-];
 
 /** 'YYYY-MM-DD' → 'D/M/AAAA' (sin ceros a la izquierda), para el texto del aviso. */
 const dma = (iso: string) => {
@@ -72,6 +58,6 @@ export function avisoPeriodo(
     hoja,
     fila: 0,
     fuerte: true,
-    mensaje: `El archivo dice período ${dma(p.desde)} a ${dma(p.hasta)} y elegiste ${MESES[mes - 1]} ${anio}. Revisá el mes antes de confirmar.`,
+    mensaje: `El archivo dice período ${dma(p.desde)} a ${dma(p.hasta)} y elegiste ${NOMBRES_MES[mes - 1]} ${anio}. Revisá el mes antes de confirmar.`,
   };
 }

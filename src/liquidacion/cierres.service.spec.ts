@@ -144,6 +144,30 @@ describe('CierresService', () => {
     expect(detalle.montoB).toBe(5000);
   });
 
+  it('por_tantos: el plus individual entra en montoB (bug 2026-09-17: el relevador no lo cobraba en ninguna parte)', async () => {
+    const fila = filaBase({
+      regimen: 'por_tantos',
+      montoKmBruto: 45000,
+      totalBruto: 30000,
+      montoPresentismo: 6000,
+      noRemunerativo: 1000,
+      montoHorasExtra: 5000,
+      plusIndividual: 2000,
+      plusIndividualMotivo: 'Particularidad de la quincena',
+    });
+    calculoMock.calcularQuincena.mockResolvedValue([fila]);
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+    prismaMock.kmPorTantos.findMany.mockResolvedValue([{ cuil: fila.cuil, kmTotal: 150 }]);
+
+    await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
+
+    const detalle = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data.detalle.create[0];
+    expect(detalle.plusIndividual).toBe(2000);
+    expect(detalle.montoA).toBe(30000 + 6000 + 1000); // A no cambia
+    expect(detalle.montoB).toBe(5000 + 2000); // decisión del usuario: el plus del relevador va a B
+  });
+
   it('regimen distinto de por_tantos deja km/montoKm/montoA/montoB en null', async () => {
     calculoMock.calcularQuincena.mockResolvedValue([filaBase({ regimen: 'jornalizado' })]);
     calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
@@ -242,14 +266,91 @@ describe('CierresService', () => {
 
     const data = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data;
     expect(data.detalle.create).toHaveLength(0);
-    expect(data.diasTrabajados.create).toHaveLength(1);
-    expect(data.diasTrabajados.create[0]).toMatchObject({
+    expect(data.diasTrabajados.createMany.data).toHaveLength(1);
+    expect(data.diasTrabajados.createMany.data[0]).toMatchObject({
       cuil: '20-44444444-4',
       apellidoNombre: 'Gomez, Ana',
       legajo: 55,
     });
     const salvedades = JSON.parse(data.salvedades);
     expect(salvedades.some((s: string) => /sin perfil/i.test(s))).toBe(true);
+  });
+
+  // Ventana de días trabajados (ADR-024): el cierre congela la quincena
+  // cerrada + las 2 anteriores. La salvedad de pendientes NO se mueve: sigue
+  // mirando solo la quincena que se cierra.
+  /** Args de la llamada a groupBy que arma los días trabajados (la que agrupa por fecha). */
+  function argsGroupByDias() {
+    return prismaMock.registroHoras.groupBy.mock.calls
+      .map((c: any[]) => c[0])
+      .find((args: any) => args.by?.includes('fecha'));
+  }
+  /** Args de la llamada a groupBy de la salvedad de pendientes. */
+  function argsGroupByPendientes() {
+    return prismaMock.registroHoras.groupBy.mock.calls
+      .map((c: any[]) => c[0])
+      .find((args: any) => args.where?.estado === 'pendiente');
+  }
+  /** Filas de días congeladas en el `createMany` anidado del cierre. */
+  function diasCongelados(data: any): any[] {
+    return data.diasTrabajados.createMany.data;
+  }
+  /** Cierre nuevo sin filas de cálculo: alcanza para mirar los rangos de los groupBy. */
+  function cierreSinFilas() {
+    calculoMock.calcularQuincena.mockResolvedValue([]);
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+  }
+
+  it('días trabajados de septiembre 1q: ventana de 3 quincenas (1/8 al 15/9); pendientes sigue por la quincena cerrada', async () => {
+    cierreSinFilas();
+
+    await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
+
+    expect(argsGroupByDias().where.fecha).toEqual({ gte: new Date(2026, 7, 1), lte: new Date(2026, 8, 15) });
+    expect(argsGroupByPendientes().where.fecha).toEqual({ gte: new Date(2026, 8, 1), lte: new Date(2026, 8, 15) });
+  });
+
+  it('días trabajados de septiembre 2q: ventana del 16/8 al 30/9', async () => {
+    cierreSinFilas();
+
+    await service.crearCierre(2026, 9, 2, undefined, CUIL_LIQUIDADOR);
+
+    expect(argsGroupByDias().where.fecha).toEqual({ gte: new Date(2026, 7, 16), lte: new Date(2026, 8, 30) });
+    expect(argsGroupByPendientes().where.fecha).toEqual({ gte: new Date(2026, 8, 16), lte: new Date(2026, 8, 30) });
+  });
+
+  it('días trabajados de enero 1q 2026: la ventana cruza el año (1/12/2025 al 15/1/2026)', async () => {
+    cierreSinFilas();
+
+    await service.crearCierre(2026, 1, 1, undefined, CUIL_LIQUIDADOR);
+
+    expect(argsGroupByDias().where.fecha).toEqual({ gte: new Date(2025, 11, 1), lte: new Date(2026, 0, 15) });
+    expect(argsGroupByPendientes().where.fecha).toEqual({ gte: new Date(2026, 0, 1), lte: new Date(2026, 0, 15) });
+  });
+
+  it('cuil que solo trabajó en una quincena anterior queda congelado con nombre y legajo de snuempleados', async () => {
+    calculoMock.calcularQuincena.mockResolvedValue([]); // no aparece en el cálculo de la quincena cerrada
+    calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+    prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+    prismaMock.registroHoras.groupBy.mockImplementation((args: any) => {
+      if (args.where?.estado === 'pendiente') return Promise.resolve([]);
+      return Promise.resolve([{ operarioCuil: '20-44444444-4', fecha: new Date(2026, 7, 20) }]); // 20/8: quincena anterior
+    });
+    prismaMock.snuempleados.findMany.mockResolvedValue([
+      { cuil: '20-44444444-4', localidad: 'San Miguel', apellido_nombre: 'Gomez, Ana', legajo: 55 },
+    ]);
+
+    await service.crearCierre(2026, 9, 1, undefined, CUIL_LIQUIDADOR);
+
+    const data = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data;
+    expect(diasCongelados(data)).toHaveLength(1);
+    expect(diasCongelados(data)[0]).toMatchObject({
+      cuil: '20-44444444-4',
+      apellidoNombre: 'Gomez, Ana',
+      legajo: 55,
+      fecha: new Date(2026, 7, 20),
+    });
   });
 
   it('usa $transaction con timeout/maxWait al persistir', async () => {

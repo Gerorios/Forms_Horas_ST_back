@@ -1,7 +1,11 @@
 # ADR-019 — Fórmula real de "por tantos": presentismo/cargas sociales en la conversión km→horas y el monto en B (amienda ADR-015)
 
 **Fecha:** 2026-08-25
-**Estado:** Aceptado
+**Estado:** Aceptado. **Enmienda 2026-09-17:** el **plus individual** de un
+"por tantos" se suma al **Monto B** (`montoB = residual de extras + plus
+individual`); Monto A no cambia. Antes no entraba en ninguna de las dos
+partes y el relevador no lo cobraba. Decisión del dueño de producto: se usa
+poco, para particularidades o arreglos internos. Ver contexto §88.
 **Afecta:** `src/liquidacion/calculo.service.ts` (fórmula de `por_tantos`),
 `src/features/liquidacion/tabla-por-tantos.tsx` (frontend, columnas de la
 tabla de relevadores).

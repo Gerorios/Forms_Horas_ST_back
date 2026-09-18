@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
-import { rangoQuincena } from '../common/quincena';
+import { rangoQuincena, rangoVentanaDiasTrabajados } from '../common/quincena';
 
 type FilaCalculo = Awaited<ReturnType<CalculoService['calcularQuincena']>>[number];
 type Alertas = Awaited<ReturnType<CalculoService['getAlertasQuincena']>>;
@@ -12,7 +12,8 @@ type Alertas = Awaited<ReturnType<CalculoService['getAlertasQuincena']>>;
  * quincena. `crearCierre` congela en una transacción el resultado de
  * `CalculoService.calcularQuincena` (una fila por perfil, con
  * `datoFaltante`/zona derivados como en el panel en vivo), las alertas del
- * período (como salvedades de cabecera) y los días trabajados del rango.
+ * período (como salvedades de cabecera) y los días trabajados de las tres
+ * quincenas corridas que terminan en la cerrada (ADR-024).
  * Nunca bloquea nada: "vigente" es MAX(version) por período, derivado en
  * las queries de lectura (Task 5/6), no acá.
  *
@@ -147,7 +148,11 @@ export class CierresService {
       kmTotal: esPorTantos ? kmPorCuil.get(fila.cuil) ?? null : null,
       montoKmBruto: esPorTantos ? fila.montoKmBruto : null,
       montoA: esPorTantos ? fila.totalBruto + fila.montoPresentismo + fila.noRemunerativo : null,
-      montoB: esPorTantos ? fila.montoHorasExtra : null,
+      // El plus individual de un relevador va a B, no a A (decisión del
+      // usuario 2026-09-17: se usa poco, para particularidades o arreglos
+      // internos). Hasta entonces no entraba en ninguna de las dos partes y
+      // el relevador no lo cobraba, aunque el `total` sí lo sumaba.
+      montoB: esPorTantos ? fila.montoHorasExtra + (fila.plusIndividual ?? 0) : null,
       novedadesTexto: fila.novedadesTexto,
       salvedad,
       total: fila.total,
@@ -170,13 +175,22 @@ export class CierresService {
     ]);
 
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    // Ventana de días trabajados (ADR-024): no solo la quincena cerrada sino
+    // las tres quincenas corridas que terminan en ella. La regla del feriado
+    // se mira un mes para atrás, así que el liquidador necesita ese contexto;
+    // y como cada cierre es una foto autónoma (ADR-021), el contexto se
+    // congela acá y no se sale a buscar en vivo al exportar.
+    const { desde: desdeVentana } = rangoVentanaDiasTrabajados(anio, mes, quincena);
     // Un día cuenta si el empleado tiene ≥1 registro NO desaprobado esa
     // fecha (spec §2.3). Incluye a empleados sin perfil: no generan fila de
     // detalle, pero sus días sí quedan congelados.
+    // OJO: la salvedad de pendientes (abajo) NO usa la ventana — sigue
+    // mirando solo `desde`/`hasta` de la quincena que se cierra, que es lo
+    // que el liquidador está por pagar.
     const [dias, kmsPorTantos, pendientesPorOperario] = await Promise.all([
       this.prisma.registroHoras.groupBy({
         by: ['operarioCuil', 'fecha'],
-        where: { fecha: { gte: desde, lte: hasta }, estado: { not: 'desaprobado' } },
+        where: { fecha: { gte: desdeVentana, lte: hasta }, estado: { not: 'desaprobado' } },
       }),
       this.prisma.kmPorTantos.findMany({ where: { anio, mes, quincena } }),
       // Empleados con ≥1 registro pendiente en el rango (cualquier régimen) —
@@ -217,17 +231,25 @@ export class CierresService {
               nota: nota?.trim() || null,
               salvedades: salvedades.length ? JSON.stringify(salvedades) : null,
               detalle: { create: filas.map((f) => this.aFilaCongelada(f, localidadPorCuil, kmPorCuil)) },
+              // `createMany` y no `create`: con la ventana de 3 quincenas son
+              // ~4.500 filas por cierre contra una base remota compartida.
+              // Medido en `testing` (2026-09-17, 4.500 filas sintéticas): las
+              // dos formas tardan 1-4 s, lejos del timeout de 30 s — Prisma
+              // ya agrupa el `create` anidado. Se deja `createMany` porque
+              // dice lo que hace: una inserción masiva sin relaciones anidadas.
               diasTrabajados: {
-                create: dias.map((d) => {
-                  const fila = filaPorCuil.get(d.operarioCuil);
-                  const empleado = empleadoPorCuil.get(d.operarioCuil);
-                  return {
-                    cuil: d.operarioCuil,
-                    apellidoNombre: fila?.apellidoNombre ?? empleado?.apellido_nombre ?? d.operarioCuil,
-                    legajo: fila?.legajo ?? empleado?.legajo ?? null,
-                    fecha: d.fecha,
-                  };
-                }),
+                createMany: {
+                  data: dias.map((d) => {
+                    const fila = filaPorCuil.get(d.operarioCuil);
+                    const empleado = empleadoPorCuil.get(d.operarioCuil);
+                    return {
+                      cuil: d.operarioCuil,
+                      apellidoNombre: fila?.apellidoNombre ?? empleado?.apellido_nombre ?? d.operarioCuil,
+                      legajo: fila?.legajo ?? empleado?.legajo ?? null,
+                      fecha: d.fecha,
+                    };
+                  }),
+                },
               },
             },
           }),

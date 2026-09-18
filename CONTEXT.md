@@ -56,6 +56,13 @@ en vivo.
 _Avoid_: cierre de quincena como bloqueo (acá no existe candado), liquidar
 (eso lo hace el liquidador de sueldos en el sistema de sueldos real).
 
+**Días trabajados** (de un cierre, 2026-09-17):
+Los días con al menos un registro no desaprobado, congelados al cerrar para
+**tres quincenas corridas**: la cerrada y las dos anteriores. Alimentan la hoja
+DIAS TRABAJADOS del Excel, que los agrupa por mes calendario con un total por
+mes; sirve para pagar feriados, cuya regla mira un mes hacia atrás.
+_Avoid_: días de la quincena (la ventana es más larga que el período cerrado).
+
 **Versión vigente** (de un cierre):
 La de `version` más alta de esa quincena — derivada, no un flag. Recerrar
 crea una versión nueva (con nota obligatoria explicando el motivo); las

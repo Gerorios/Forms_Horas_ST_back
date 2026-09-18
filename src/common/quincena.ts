@@ -35,6 +35,50 @@ export function quincenasHaciaAtras(
   return lista;
 }
 
+/** Cuántas quincenas corridas congela la foto de días trabajados de un cierre:
+ * la cerrada + las 2 anteriores (= "un mes atrás", ADR-024). La regla del
+ * feriado mira un mes hacia atrás, así que la hoja necesita ese contexto. */
+export const QUINCENAS_DIAS_TRABAJADOS = 3;
+
+/** Rango de fechas (Date LOCAL, como `rangoQuincena`) de la ventana de días
+ * trabajados que termina en la quincena dada: desde el 1° día de la más vieja
+ * de las `QUINCENAS_DIAS_TRABAJADOS` hasta el último de la cerrada. Única
+ * definición: la usan el cierre (para congelar) y el export (para dibujar). */
+export function rangoVentanaDiasTrabajados(
+  anio: number,
+  mes: number,
+  quincena: number,
+): { desde: Date; hasta: Date } {
+  const [primera] = quincenasHaciaAtras(anio, mes, quincena, QUINCENAS_DIAS_TRABAJADOS);
+  return {
+    desde: rangoQuincena(primera.anio, primera.mes, primera.quincena).desde,
+    hasta: rangoQuincena(anio, mes, quincena).hasta,
+  };
+}
+
+/** Nombres de los meses en minúscula, indexados 0-11 (enero = 0) — para
+ * textos de avisos y encabezados de planillas. Única copia del repo. */
+export const NOMBRES_MES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+/** Mes 1-12 → nombre con inicial mayúscula: nombreMes(8) === 'Agosto'. */
+export function nombreMes(mes: number): string {
+  const nombre = NOMBRES_MES[mes - 1];
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
+
 /** "a,b,c" → ['a','b','c']. undefined/vacío → undefined (= sin filtro).
  * Para listas de CUILs u otros ids no numéricos en query params. */
 export function parseLista(valor?: string): string[] | undefined {
