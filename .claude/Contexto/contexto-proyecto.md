@@ -3442,3 +3442,17 @@ hoja nueva como el `montoB` corregido, y la versión anterior queda intacta
   worktree. Y el usuario pidió acortar la verificación: propuestas anotadas
   en la memoria (un ejecutor por par test+implementación, suite completa una
   sola vez, no repetir el spec del ejecutor, enlazar `node_modules`).
+
+## 89. Mis registros: se quita el chip "+16h" al operario (2026-09-18)
+
+Quejas de operarios: en "Mis registros" la marca `+16h` junto a las horas de
+un día los confundía, la leían como un error propio. Se quitó de
+`registros-cards.tsx` (tarjeta simple y corregida). La bandera `alertaHoras`
+sigue viniendo del backend y la alerta de jornada larga sigue igual para los
+jefes en aprobaciones y control general, que son quienes actúan sobre ella.
+
+Primera tarea con el **carril corto** del flujo rediseñado: sin entrevista,
+plan de 10 líneas, ejecución en sesión con test rojo primero (`+16h` no debe
+aparecer aunque `alertaHoras` sea `true`), un revisor de dos ejes más el
+`verificador-review`, una ronda. Solo Frontend, sin API: PR del Frontend
+`fix/quitar-chip-16h-operario`; Backend solo docs (plan + esta sección).
