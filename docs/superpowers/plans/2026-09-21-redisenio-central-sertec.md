@@ -127,6 +127,16 @@ cada par: test rojo → verde, `npx tsc --noEmit`, `npm run lint`; visual con
   en el drawer móvil. Test rojo: el contenedor de la navegación tiene
   `overflow-y-auto` y `min-h-0`; el pie no está dentro de él.
 
+## Revisión de la etapa 2 (2026-09-21)
+
+Pares 2.1-2.4 hechos. Suite 743/753 con 10 timeouts por carga que pasan
+aislados (92/92). Revisión: **0 urgent, 0 high, 10 minor, 4 descartados**;
+sin pasos R. Dos decisiones estéticas que el plan no cerraba quedan para el
+usuario en la muestra: logo/título dentro de la tarjeta del login (mockup) o
+fuera (implementado); un color por área (mockup) o todas dorado
+(implementado). Deuda preexistente anotada: anillo de foco `brand/40` del
+botón de login sobre grafito ~2,5:1.
+
 ## Etapa 2 — PR 2: inicio + login
 
 Rama `feat/central-sertec-2-inicio-login` (desde main tras el PR 1).
@@ -212,7 +222,8 @@ separado), `docs/2026-MM-DD-central-sertec-etapaN-deploy.md` por deploy.
   de HyS exige novedades → ausencias dentro de Personas.
 - `RUTAS_ANCHAS` y el full-bleed de `/` (coincidencia exacta).
 - Fotos pesadas en móviles: `next/image`, ≤ 400 KB, `priority` solo en el
-  inicio.
+  inicio. Resuelto en 2.1/2.4: `FondoFoto` acepta `prioridad?: boolean`
+  (default `true`); el login lo pasa en `false`.
 - `StatTile` unificado vs. tests de clases: componente testeado antes de
   reemplazar; uno por PR.
 - Producción a medio camino tras el PR 1 (barra nueva, inicio viejo con
