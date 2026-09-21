@@ -3540,3 +3540,14 @@ Tiempos del flujo de dos carriles en carril completo: ~2 h 15 min desde el
 relanzamiento del planificador hasta el merge, con 12 pares ejecutados por
 agentes en dos repos en paralelo, dos rondas de verificación y una pausa por
 la prueba del usuario en local.
+
+**Deploy 2026-09-21**, a pedido explícito, los dos repos: back → `f73b3da`,
+front → `0b4babb`, `pm2 restart` de ambos, `online`, páginas 200. Rollback
+back `5edad46`, front `8b86d74`. Doc:
+`docs/2026-09-21-cert-k12-formulario-manual-deploy.md`. Limpieza del mismo
+día: se borraron los worktrees de las tres tareas de la semana en ambos repos
+y cinco carpetas viejas de `Backend/.claude/worktrees` sin enlace a git
+(residuos de agosto); un proceso de Node huérfano del dev server del Frontend
+bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
+herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
+lista de procesos antes de borrar la carpeta.
