@@ -123,6 +123,34 @@ dx('Excel/xlsm reales (junio y julio 2026)', () => {
     }
   }, 120000);
 
+  // Regresión permanente del formato K12 (archivo real de agosto 2026, el que
+  // motivó la etapa A): hoja `k12` sin columna PROVINCIA, columna "K" con un
+  // coeficiente (y un 0 en la fila 7), total en la fila "TOTAL CERTIFICADO EN
+  // EL PERIODO SIN IVA" (celda combinada) y pie IVA / Total con IVA / FIRMA
+  // debajo. Antes de la etapa A esta hoja daba 0 filas.
+  it('K12 agosto (formato nuevo): 5 filas K12 sin provincia, total ≈ 7.088.522, sin pie', async () => {
+    const r = await leerXls('CERTIFICADO AGOSTO-26 - K12 (002).xlsx', 2026, 8);
+    expect(r.errores.filter((e) => e.campo === 'header')).toEqual([]);
+    // la hoja trae 5 ítems; 3 de ellos con cantidad y total en 0 (el mes no se
+    // certificaron), así que el preview solo muestra 2: las aserciones van
+    // sobre las 5 filas parseadas, que es lo que la etapa A tenía que rescatar.
+    expect(r.filas).toHaveLength(5);
+    expect(visibles(r.filas)).toHaveLength(2);
+    expect(r.filas.map((f) => f.item_codigo)).toEqual(['1137', '1136', '1138', '1130', '1131']);
+    expect([...new Set(r.filas.map((f) => f.contrato))]).toEqual(['K12']);
+    for (const f of r.filas) expect(f.provincia).toBe('');
+    expect(r.total_declarado).toBeCloseTo(7088522, 0);
+    // las filas de pie no entran como ítems
+    for (const f of r.filas) {
+      expect(f.item_codigo).not.toMatch(/IVA|FIRMA/i);
+    }
+    expect(r.avisos.map((a) => a.tipo)).not.toContain('sin_total_declarado');
+    // el nro. de WK viene en la MISMA celda que el rótulo ("WK N° 362000594",
+    // fila 4, al lado de "ORDEN DE COMPRA RENOV..."): par A6.
+    expect(r.filas[0].nro_np).toBe('362000594');
+    expect(r.avisos.map((a) => a.tipo)).not.toContain('np_no_detectado');
+  }, 120000);
+
   it('K8 Julio Capex: 8 hojas, 57 filas visibles, contratos K8/K5/K6, todas cuadran', async () => {
     const r = await leerXls('CERTIFICADOS SERTEC (K8) -Julio 26-Capex.xlsx', 2026, 7);
     expect(r.hojas).toHaveLength(8);

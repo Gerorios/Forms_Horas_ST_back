@@ -277,6 +277,306 @@ describe('parsearExcel — casos del brief T1 (port de parser.py)', () => {
     });
   });
 
+  // Caso 7d (formato K12, archivo real 2026-09): la columna "K" de esos libros
+  // NO es el código de contrato sino un coeficiente (653.32). Solo vale como
+  // contrato si parece un código K; si no, manda el K del nombre de hoja.
+  it('contrato: celda K con coeficiente (653.32) se ignora y usa el k_gasnor de la hoja "k12"', async () => {
+    const buf = await crearLibroUnaHoja('k12', [
+      [
+        'Item',
+        'DESCRIPCION',
+        'CANTIDAD',
+        'K',
+        'Puntos',
+        '$ Unit',
+        'TOTAL CERTIFICADO',
+        'Acumulado Anterior',
+        'PROVINCIA',
+      ],
+      [1137, 'Tarea', 5, 653.32, 10, 100, 500, 0, 'Salta'],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2026, 9);
+
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].contrato).toBe('K12');
+    expect(r.filas[0].tiene_error).toBe(false);
+  });
+
+  // Caso 7e: mismo coeficiente pero en una hoja sin K en el nombre → no hay de
+  // dónde sacar el contrato, así que la fila queda con error (antes se
+  // inventaba "K653.32").
+  it('contrato: celda K con coeficiente y hoja sin K → contrato vacío con error', async () => {
+    const buf = await crearLibroUnaHoja('Datos', [
+      [
+        'Item',
+        'DESCRIPCION',
+        'CANTIDAD',
+        'K',
+        'Puntos',
+        '$ Unit',
+        'TOTAL CERTIFICADO',
+        'Acumulado Anterior',
+        'PROVINCIA',
+      ],
+      [1137, 'Tarea', 5, 653.32, 10, 100, 500, 0, 'Salta'],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2026, 9);
+
+    expect(r.filas[0].contrato).toBe('');
+    expect(r.filas[0].tiene_error).toBe(true);
+    expect(r.errores).toContainEqual({
+      hoja: 'Datos',
+      fila: 2,
+      campo: 'contrato',
+      mensaje: 'Contrato K no detectado.',
+    });
+  });
+
+  // Caso 7g (par A5, archivo real K12 de agosto 2026): en ese formato la
+  // columna "K" es un coeficiente que en algunas filas vale 0. No existe el
+  // contrato K0: el 0 no cuenta como código y la fila cae al k_gasnor de la
+  // hoja ("k12").
+  it('contrato: celda K con 0 no es "K0" y usa el k_gasnor de la hoja "k12"', async () => {
+    const buf = await crearLibroUnaHoja('k12', [
+      [
+        'Item',
+        'DESCRIPCION',
+        'CANTIDAD',
+        'K',
+        'Puntos',
+        '$ Unit',
+        'TOTAL CERTIFICADO',
+        'Acumulado Anterior',
+        'PROVINCIA',
+      ],
+      [1137, 'Tarea', 5, 0, 10, 100, 500, 0, 'Salta'],
+    ]);
+
+    const r = await parsearExcel(buf, 'test.xlsx', 2026, 9);
+
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].contrato).toBe('K12');
+    expect(r.filas[0].tiene_error).toBe(false);
+  });
+
+  // Caso 7f (par A2, formato K12 del archivo real 2026-09): la última fila del
+  // bloque no es un ítem sino el cierre "TOTAL CERTIFICADO EN EL MES", con el
+  // número en la columna TOTAL. Tiene que aportar `total_declarado` (y por lo
+  // tanto apagar el aviso fuerte `sin_total_declarado`) y NO contarse como fila.
+  it('fila "TOTAL CERTIFICADO EN EL MES" aporta total_declarado y no es un ítem', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('k12');
+    ws.addRow([]);
+    ws.addRow([]);
+    ws.addRow(['PERIODO', '01-08 AL 30-08']);
+    ws.addRow(['ORDEN DE COMPRA', 'WK N° 362000594']);
+    ws.addRow([]);
+    ws.addRow([
+      'Item',
+      'DESCRIPCION',
+      'CANTIDAD',
+      'K',
+      'Puntos',
+      '$ Unit',
+      'TOTAL CERTIFICADO',
+      'Acumulado Anterior',
+      'PROVINCIA',
+    ]);
+    const items = [1137, 1136, 1138, 1130, 1131];
+    items.forEach((codigo, i) => {
+      const f = 7 + i;
+      ws.addRow([
+        codigo,
+        `Tarea ${codigo}`,
+        5,
+        653.32,
+        140,
+        { formula: `+E${f}*D${f}`, result: 100 },
+        { formula: `+F${f}*C${f}`, result: 500 },
+        0,
+        'Salta',
+      ]);
+    });
+    ws.addRow([null, 'Visitas de inspección', 0, 653.32, 140, null, null, 0, 'Salta']);
+    ws.addRow(['TOTAL CERTIFICADO EN EL MES', null, null, null, null, null, 7088522]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await parsearExcel(buf, 'k12.xlsx', 2026, 9);
+
+    // "Visitas de inspección" (sin código) se sigue ignorando; el cierre no cuenta.
+    expect(r.filas).toHaveLength(5);
+    expect(r.filas.map((f) => f.item_codigo)).toEqual(['1137', '1136', '1138', '1130', '1131']);
+    expect(r.filas.some((f) => f.item_codigo.toUpperCase().startsWith('TOTAL'))).toBe(false);
+    expect(r.total_declarado).toBe(7088522);
+    expect(r.avisos.some((a) => a.tipo === 'sin_total_declarado')).toBe(false);
+  });
+
+  // Mismo cierre pero con el total como FÓRMULA (así viene en el archivo real):
+  // `rawDeCelda`/`celdaEsNumerica` tienen que resolver el `result` cacheado.
+  it('el total del cierre K12 también se lee cuando es una fórmula', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('k12');
+    ws.addRow([
+      'Item',
+      'DESCRIPCION',
+      'CANTIDAD',
+      'K',
+      'Puntos',
+      '$ Unit',
+      'TOTAL CERTIFICADO',
+      'Acumulado Anterior',
+      'PROVINCIA',
+    ]);
+    ws.addRow([1137, 'Tarea', 5, 653.32, 140, 100, 500, 0, 'Salta']);
+    ws.addRow([
+      'TOTAL CERTIFICADO EN EL MES',
+      null,
+      null,
+      null,
+      null,
+      null,
+      { formula: 'SUM(G2:G2)', result: 7088522 },
+    ]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await parsearExcel(buf, 'k12.xlsx', 2026, 9);
+
+    expect(r.filas).toHaveLength(1);
+    expect(r.total_declarado).toBe(7088522);
+  });
+
+  // Caso 7h (así viene el archivo real "CERTIFICADO AGOSTO-26 - K12"): la fila
+  // de cierre tiene el número en una celda COMBINADA que arranca ANTES de la
+  // columna TOTAL (H13:K13, maestra en "Puntos"). exceljs le da a las celdas
+  // esclavas la fórmula de la maestra pero NO su `result` cacheado, así que
+  // leer la columna TOTAL a secas devuelve null: hay que ir a la maestra.
+  it('el cierre K12 con el total en celda combinada lee la celda maestra', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('k12');
+    ws.addRow([
+      'Item',
+      'DESCRIPCION',
+      'CANTIDAD',
+      'K',
+      'Puntos',
+      '$ Unit',
+      'TOTAL CERTIFICADO',
+      'Acumulado Anterior',
+      'PROVINCIA',
+    ]);
+    ws.addRow([1137, 'Tarea', 5, 653.32, 140, 100, 500, 0, 'Salta']);
+    const cierre = ws.addRow(['TOTAL CERTIFICADO EN EL PERIODO SIN IVA']);
+    // La maestra (columna 5, "Puntos") trae el valor; el merge tapa la 6-8,
+    // incluida la columna TOTAL (7).
+    cierre.getCell(5).value = { formula: 'SUM(G2:G2)', result: 7088522 };
+    ws.mergeCells(cierre.number, 5, cierre.number, 8);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await parsearExcel(buf, 'k12.xlsx', 2026, 9);
+
+    expect(r.filas).toHaveLength(1);
+    expect(r.total_declarado).toBe(7088522);
+  });
+
+  // Caso 7i (par A3, archivo real "CERTIFICADO AGOSTO-26 - K12"): esos libros
+  // NO traen columna PROVINCIA (la asigna la persona por fila en el paso 3) y
+  // DEBAJO del cierre "TOTAL CERTIFICADO..." viene el pie del certificado
+  // (IVA, Total con IVA, firma), cuyos rótulos pasan `esItemValido` y se
+  // colarían como ítems. El cierre tiene que terminar la zona de datos.
+  it('K12 sin columna PROVINCIA: 5 filas con provincia vacía y el pie (IVA/firma) no entra', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('k12');
+    ws.addRow([]);
+    ws.addRow([]);
+    ws.addRow(['PERIODO', '01-08 AL 30-08']);
+    ws.addRow(['ORDEN DE COMPRA', 'WK N° 362000594']);
+    ws.addRow([]);
+    ws.addRow([
+      'Item',
+      'DESCRIPCION',
+      'CANTIDAD',
+      'K',
+      'Puntos',
+      '$ Unit',
+      'TOTAL CERTIFICADO',
+      'Acumulado Anterior',
+    ]);
+    const items = [1137, 1136, 1138, 1130, 1131];
+    items.forEach((codigo, i) => {
+      const f = 7 + i;
+      ws.addRow([
+        codigo,
+        `Tarea ${codigo}`,
+        5,
+        653.32,
+        140,
+        { formula: `+E${f}*D${f}`, result: 100 },
+        { formula: `+F${f}*C${f}`, result: 500 },
+        0,
+      ]);
+    });
+    ws.addRow([null, 'Visitas de inspección', 0, 653.32, 140, null, null, 0]);
+    const cierre = ws.addRow(['TOTAL CERTIFICADO EN EL PERIODO SIN IVA']);
+    cierre.getCell(5).value = { formula: 'SUM(G7:G11)', result: 7088522.000000001 };
+    ws.mergeCells(cierre.number, 5, cierre.number, 8);
+    ws.addRow(['IVA', null, null, null, null, null, 1488589]);
+    ws.addRow(['Total con IVA', null, null, null, null, null, 8577111]);
+    ws.addRow(['FIRMA Y SELLO RESPONSABLE CONTRATISTA']);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await parsearExcel(buf, 'CERTIFICADO AGOSTO-26 - K12 (002).xlsx', 2026, 8);
+
+    // La hoja ya no se descarta por falta de PROVINCIA.
+    expect(r.errores.filter((e) => e.campo === 'header')).toEqual([]);
+    // Solo los 5 ítems: ni "Visitas de inspección" (sin código) ni el pie.
+    expect(r.filas).toHaveLength(5);
+    expect(r.filas.map((f) => f.item_codigo)).toEqual(['1137', '1136', '1138', '1130', '1131']);
+    expect(r.filas.every((f) => f.provincia === '')).toBe(true);
+    const codigos = r.filas.map((f) => f.item_codigo);
+    for (const pie of ['IVA', 'Total con IVA', 'FIRMA Y SELLO RESPONSABLE CONTRATISTA']) {
+      expect(codigos).not.toContain(pie);
+    }
+    expect(codigos.some((c) => c.toUpperCase().startsWith('TOTAL'))).toBe(false);
+    // SUM con ruido flotante en el archivo real: se compara con tolerancia.
+    expect(r.total_declarado).toBeCloseTo(7088522, 0);
+  });
+
+  // Caso 7j (par A6, archivo real "CERTIFICADO AGOSTO-26 - K12"): el número de
+  // WK (nro. de NP) viene en la MISMA celda que el rótulo —"WK N° 362000594"—
+  // y no en la celda siguiente como en los libros de Naturgy ("NRO. WK" |
+  // "362000594"). Sin leerlo, la certificación quedaba sin número de
+  // referencia y con el aviso débil `np_no_detectado`.
+  it('K12: lee el nro. de WK cuando viene en la misma celda ("WK N° 362000594")', async () => {
+    const buf = await crearLibroUnaHoja('k12', [
+      [],
+      [],
+      ['PERIODO', '01-08 AL 30-08'],
+      ['ORDEN DE COMPRA RENOV', 'WK N° 362000594'],
+      [],
+      [
+        'Item',
+        'DESCRIPCION',
+        'CANTIDAD',
+        'K',
+        'Puntos',
+        '$ Unit',
+        'TOTAL CERTIFICADO',
+        'Acumulado Anterior',
+      ],
+      [1137, 'Tarea 1137', 5, 653.32, 140, 100, 500, 0],
+      [1136, 'Tarea 1136', 5, 653.32, 140, 100, 500, 0],
+    ]);
+
+    const r = await parsearExcel(buf, 'CERTIFICADO AGOSTO-26 - K12 (002).xlsx', 2026, 8);
+
+    expect(r.filas).toHaveLength(2);
+    expect(r.filas[0].nro_np).toBe('362000594');
+    expect(r.filas.every((f) => f.nro_np === '362000594')).toBe(true);
+    expect(r.avisos.some((a) => a.tipo === 'np_no_detectado')).toBe(false);
+  });
+
   // Caso 8: "Cantidad es 0." se anota pero NO marca tiene_error.
   it('cantidad 0 se anota en errores pero no marca tiene_error', async () => {
     const buf = await crearLibroUnaHoja('CERTIF K5', [

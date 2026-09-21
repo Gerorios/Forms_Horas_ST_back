@@ -197,7 +197,9 @@ variante de formato.
 **Fila manual** (2026-09-07):
 Fila que la persona agrega en el preview porque el parser no la reconoció en
 el documento. El ítem se elige del maestro, limitado a los contratos a los que
-la persona tiene acceso; trae contrato y tarea; la persona completa provincia,
+la persona tiene acceso y, desde 2026-09-21, a los contratos (K) de las hojas
+elegidas en el paso 2 (si ese filtro no deja ningún ítem, se ofrecen todos);
+trae contrato y tarea; la persona completa provincia,
 cantidad y unitario, y el total propuesto es cantidad × unitario. Queda
 marcada con origen manual en el preview, en la base y en el historial. Suma en
 la cuadratura de la carga. Solo existe si el documento se pudo leer.
@@ -207,15 +209,37 @@ cosa que no existe hoy).
 **Columna ignorada** (de una cabecera):
 Columna del documento cuyo título el parser no reconoce (ej. "CUENTA"). Se
 lista en el preview como aviso y sus valores no se asignan a ninguna otra
-columna. El parser exige reconocer todas las columnas necesarias (ítem, K,
-provincia, cantidad, unitario, total) para procesar la hoja o página.
+columna. El parser exige reconocer las columnas necesarias (ítem, K,
+cantidad, unitario, total) para procesar la hoja o página. **Provincia**: en
+PDF sigue siendo obligatoria en la cabecera; en Excel dejó de serlo el
+2026-09-21 (formato K12, que no la trae): las filas sin provincia quedan
+bloqueadas por "Falta provincia" y la persona la elige por fila en el
+preview.
+
+**Fila de total** (de una hoja Excel, 2026-09-21):
+Fila cuyo ítem empieza con "TOTAL CERTIFICADO" (formato K12: "TOTAL
+CERTIFICADO EN EL PERIODO SIN IVA"). Aporta el total declarado del archivo
+cuando la cabecera no trae "TOTAL MES" y **cierra la zona de datos**: lo que
+sigue es pie (IVA, total con IVA, firma) y no son ítems.
+_Avoid_: tratarla como ítem, leer subtotales sueltos como total declarado.
 
 **Contrato K resuelto** (de una fila):
 El K que se carga: lo elige el maestro de ítems, después el contenido del
-documento, y la persona puede cambiarlo a mano en el preview. El nombre del
-archivo no decide nada: cuando la persona renombra el archivo para indicar a
-qué contrato va la plata (ej. certificación K2 que se contabiliza en K11), el
-sistema solo avisa que el nombre trae otro K y la persona edita el contrato.
+documento, y la persona puede cambiarlo a mano en el preview. En Excel, la
+celda de la columna K solo cuenta si es un código K (`8`, `K8`, `K12`; nunca
+`0`); si trae otra cosa, como el coeficiente 653,32 del formato K12, el K sale
+del nombre de la hoja o del archivo. El nombre del archivo no decide nada:
+cuando la persona renombra el archivo para indicar a qué contrato va la plata
+(ej. certificación K2 que se contabiliza en K11), el sistema solo avisa que el
+nombre trae otro K y la persona edita el contrato.
+
+**Número de WK** (de una certificación en Excel):
+El número de orden de compra que Naturgy imprime en la cabecera. Se lee del
+rótulo "NRO. WK" con el número en la celda siguiente (formato Naturgy) o de
+la misma celda cuando viene como "WK N° 362000594" (formato K12, fila
+"ORDEN DE COMPRA"). Solo informa el preview; si no se detecta, aviso débil.
+_Avoid_: NP (es el mismo dato con el nombre viejo), tomar un año o un código
+de ítem como número de WK.
 
 **Regla de montos en texto** (2026-09-07):
 En cualquier cifra leída como texto (PDF o celda de texto de Excel) el punto
