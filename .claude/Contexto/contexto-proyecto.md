@@ -3530,3 +3530,13 @@ sintéticos.
 código sigue ignorada; período sin año; interpretar el coeficiente 653,32;
 combobox con búsqueda o "asignar provincia a todas" (UI nueva, requeriría
 mockup). Plan: `docs/superpowers/plans/2026-09-21-cert-k12-provincia-total.md`.
+
+**Cierre (2026-09-21):** PRs mergeados con `--admin` y OK explícito del
+usuario: Backend **#83** (`fix/cert-k12-provincia-total`, merge `11fcc1a`) y
+Frontend **#73** (`fix/cert-form-manual-overflow`, merge `0b4babb`). Sin
+cambio de API. **No deployado**: en producción el K12 sigue dando 0 filas
+hasta que el usuario pida el deploy (pueden ir juntos o separados).
+Tiempos del flujo de dos carriles en carril completo: ~2 h 15 min desde el
+relanzamiento del planificador hasta el merge, con 12 pares ejecutados por
+agentes en dos repos en paralelo, dos rondas de verificación y una pausa por
+la prueba del usuario en local.
