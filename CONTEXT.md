@@ -1,10 +1,32 @@
 # Formulario Horas — Backend
 
-Sistema de carga, aprobación y liquidación de horas trabajadas para personal
-de obra (UOCRA) y de estructura, con novedades (ausencias, viáticos, guardias)
-y control de contratos por jefe.
+Sistema interno integral de Sertec, llamado **Central Sertec** desde el
+2026-09-21 (antes "Registro de Horas"): carga, aprobación y liquidación de
+horas del personal de obra (UOCRA) y de estructura, novedades y ausencias,
+certificación y facturación por contrato, km de relevadores y combustible.
 
 ## Language
+
+### Sistema y navegación
+
+**Central Sertec** (2026-09-21):
+El nombre del sistema interno completo, tal como lo ven las personas en la
+barra lateral, el login y la pestaña. Abreviado "Central" en la pestaña y
+"CS" en la barra plegada. Ver ADR-025.
+_Avoid_: Registro de Horas, Formulario Horas (nombres del origen del sistema;
+solo sobreviven en los nombres de los repositorios), Gestión de cuadrillas.
+
+**Área** (de módulos):
+Agrupación de módulos en la barra lateral y el inicio según qué mueve en la
+empresa: **Operación** (reporte diario, mis registros, aprobaciones, control
+general, km por tantos, combustible), **Personas** (novedades, ausencias),
+**Resultados operativos** (liquidación con quincena, análisis, cierres,
+perfiles y tarifas; certificaciones y facturación) y **Administración**
+(usuarios y catálogos). El área da contexto al encabezado de cada módulo. No decide
+permisos: eso sigue siendo del rol; un área sin módulos visibles para la
+persona no se muestra.
+_Avoid_: sección, categoría del menú, "Dinero" (nombre descartado del área de
+resultados).
 
 ### Precios y liquidación
 

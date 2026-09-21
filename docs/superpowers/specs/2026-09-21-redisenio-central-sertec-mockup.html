@@ -1,0 +1,346 @@
+<title>Sertec Gestión</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#f3f1ec; --fg:#1e2124; --muted:#6b6f73; --line:#dedbd3; --card:#ffffff;
+    --brand:#ecb332; --brand-deep:#a97a16; --steel:#3b6fc4; --graphite:#1b1f24;
+    --ok:#2f7d5a; --warn:#b26a00; --danger:#c0492b;
+    --display:"Space Grotesk",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#16181b; --fg:#ecebe6; --muted:#a3a7ab; --line:#2c3035; --card:#1f2327; } }
+  :root[data-theme="dark"]{ --bg:#16181b; --fg:#ecebe6; --muted:#a3a7ab; --line:#2c3035; --card:#1f2327; }
+  body{background:var(--bg);color:var(--fg);font-family:var(--body);margin:0;padding-block:0 64px;padding-inline:clamp(16px,4vw,48px);line-height:1.5}
+  h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+  p{max-width:68ch}
+  .wrap{max-width:1240px;margin:0 auto}
+  header.top{padding-block:48px 28px;display:grid;gap:14px}
+  header.top h1{font-size:clamp(30px,4vw,44px);line-height:1.05;letter-spacing:-.01em}
+  header.top .lead{color:var(--muted);font-size:17px}
+  .kicker{font-size:13px;color:var(--brand-deep);font-weight:600}
+  section{padding-block:36px;border-top:1px solid var(--line)}
+  section h2{font-size:24px;margin-bottom:6px}
+  section .sub{color:var(--muted);margin-bottom:22px}
+  /* nombres */
+  .names{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .name{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:grid;gap:8px}
+  .name b{font-family:var(--display);font-size:22px;font-weight:600}
+  .name.reco{outline:2px solid var(--brand);outline-offset:-2px}
+  .name small{color:var(--muted)}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--brand);color:#1e2124;width:max-content}
+  /* directions */
+  .dir{display:grid;gap:18px}
+  .dir-head{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:end}
+  .dir-head h3{font-size:20px}
+  .dir-head p{color:var(--muted);margin-top:4px}
+  .swatches{display:flex;gap:6px}
+  .sw{width:26px;height:26px;border-radius:6px;border:1px solid rgba(0,0,0,.12)}
+  .screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .shot{display:grid;gap:8px}
+  .shot .cap{font-size:13px;color:var(--muted)}
+  .frame{position:relative;width:100%;aspect-ratio:16/10;overflow:hidden;border-radius:10px;border:1px solid var(--line);background:#fff;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+  .screen{position:absolute;left:0;top:0;width:1280px;height:800px;transform-origin:0 0;font-family:var(--body);color:#1e2124;font-size:14px}
+  /* photo placeholder */
+  .photo{position:absolute;inset:0;background:
+      radial-gradient(120% 90% at 80% 10%, rgba(236,179,50,.35), transparent 55%),
+      linear-gradient(180deg,#2a3038 0%,#1b1f24 100%)}
+  .photo::after{content:"";position:absolute;inset:0;background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, transparent 2px 46px),
+      linear-gradient(90deg, transparent 0 62%, rgba(255,255,255,.06) 62% 63%, transparent 63%),
+      linear-gradient(0deg, rgba(0,0,0,.35), transparent 40%)}
+  .photo .lbl{position:absolute;left:18px;bottom:14px;font:500 12px var(--mono);color:rgba(255,255,255,.7);letter-spacing:.02em}
+  .duotone{filter:none}
+  /* generic mock pieces */
+  .side{position:absolute;left:0;top:0;bottom:0;width:232px;display:flex;flex-direction:column;padding:18px 14px;gap:6px;box-sizing:border-box}
+  .side .brand{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+  .logo{width:34px;height:34px;border-radius:50%;background:conic-gradient(from 200deg,#ecb332,#a97a16 60%,#ecb332);position:relative;flex:none}
+  .logo::after{content:"";position:absolute;inset:9px;border-radius:50%;background:#1e2124}
+  .brand .t{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.1}
+  .brand .s{font-size:11px;opacity:.7}
+  .grp{font-size:11px;letter-spacing:.04em;opacity:.55;margin:12px 8px 4px}
+  .nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:13.5px}
+  .nav i{width:16px;height:16px;border-radius:4px;background:currentColor;opacity:.55;flex:none}
+  .nav.on{font-weight:600}
+  .side .foot{margin-top:auto;display:flex;gap:10px;align-items:center;font-size:12.5px;padding:8px 10px}
+  .av{width:30px;height:30px;border-radius:50%;background:#f6efd9;color:#a97a16;display:grid;place-items:center;font:600 12px var(--display)}
+  .main{position:absolute;left:232px;top:0;right:0;bottom:0;padding:26px 32px;box-sizing:border-box;overflow:hidden}
+  .ph{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+  .ph h1{font-size:26px;font-weight:600;border-left:3px solid #ecb332;padding-left:12px;line-height:1.15}
+  .ph .date{color:#6b6f73;font-size:13px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 22px}
+  .kpi{border:1px solid #e6e4de;border-radius:10px;background:#fff;padding:12px 14px;display:grid;gap:4px}
+  .kpi .l{font-size:11.5px;color:#6b6f73}
+  .kpi .v{font:600 22px var(--display);font-variant-numeric:tabular-nums}
+  .kpi .v.warn{color:#b26a00}.kpi .v.danger{color:#c0492b}
+  .areas{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .area{border:1px solid #e6e4de;border-radius:12px;background:#fff;padding:14px 16px;display:grid;gap:10px}
+  .area h4{font:600 13px var(--display);color:#6b6f73;margin:0;display:flex;gap:8px;align-items:center}
+  .area h4 b{width:8px;height:8px;border-radius:2px;display:inline-block}
+  .mods{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .mod{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:10px;border-radius:8px;background:#faf9f6;border:1px solid #efece5}
+  .mod i{width:28px;height:28px;border-radius:7px;background:#f6efd9;position:relative;flex:none}
+  .mod i::after{content:"";position:absolute;inset:8px;border-radius:3px;background:#a97a16}
+  .mod .n{font:600 13px var(--display)}
+  .mod .d{font-size:11.5px;color:#6b6f73;line-height:1.35}
+  .mod .c{font:600 11px var(--mono);color:#b26a00;margin-top:2px}
+  /* login */
+  .login .card{position:absolute;background:#fff;border-radius:14px;padding:30px 32px;width:360px;box-sizing:border-box;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  .login .card h2{font:600 22px var(--display);margin:14px 0 4px}
+  .login .card p{font-size:13px;color:#6b6f73;margin:0 0 18px}
+  .fld{display:grid;gap:5px;margin-bottom:12px;font-size:12px;color:#1e2124}
+  .fld span{display:block;height:38px;border:1px solid #e6e4de;border-radius:8px;background:#fff}
+  .btn{height:40px;border-radius:8px;background:#ecb332;color:#1e2124;display:grid;place-items:center;font:600 14px var(--display);margin-top:6px}
+  .quote{position:absolute;color:#fff;font:600 30px/1.15 var(--display);max-width:520px;text-wrap:balance}
+  .quote small{display:block;font:400 14px var(--body);opacity:.8;margin-top:10px}
+  /* module screen */
+  .tbl{border:1px solid #e6e4de;border-radius:10px;background:#fff;overflow:hidden;margin-top:16px}
+  .tr{display:grid;grid-template-columns:1.6fr 1fr 1fr .8fr .8fr .7fr;gap:8px;padding:10px 14px;border-top:1px solid #efece5;font-size:12.5px;align-items:center}
+  .tr.h{border-top:0;background:#faf9f6;font:600 11px var(--display);color:#6b6f73;letter-spacing:.03em}
+  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;width:max-content}
+  .pill.ok{background:#e6f2ec;color:#2f7d5a}.pill.pend{background:#fff3df;color:#b26a00}.pill.man{background:#e8eef9;color:#3b6fc4}
+  .tabs{display:flex;gap:18px;border-bottom:1px solid #e6e4de;margin-top:14px;font-size:13.5px}
+  .tabs span{padding:8px 2px;color:#6b6f73}.tabs span.on{color:#1e2124;border-bottom:2px solid #ecb332;font-weight:600}
+  /* direction A: claro evolutivo */
+  .A .side{background:#fff;border-right:1px solid #e6e4de;color:#1e2124}
+  .A .nav.on{background:#f6efd9;border-left:3px solid #ecb332}
+  .A .main{background:#faf9f6}
+  .A .hero{position:relative;height:150px;border-radius:14px;overflow:hidden;margin-bottom:18px}
+  .A .hero .txt{position:absolute;left:24px;bottom:18px;color:#fff}
+  .A .hero .txt b{font:600 24px var(--display);display:block}
+  .A .hero .txt span{font-size:13px;opacity:.85}
+  /* direction B: grafito */
+  .B .side{background:#1b1f24;color:#ecebe6}
+  .B .side .grp{color:#ecb332;opacity:.9}
+  .B .nav.on{background:rgba(236,179,50,.14);color:#ecb332}
+  .B .main{background:#f3f1ec}
+  .B .kpi,.B .area,.B .tbl{background:#fff}
+  .B .band{position:relative;height:118px;margin:-26px -32px 20px;overflow:hidden}
+  .B .band .txt{position:absolute;left:32px;bottom:16px;color:#fff}
+  .B .band .txt b{font:600 26px var(--display);display:block}
+  .B .band .txt span{font-size:13px;opacity:.85}
+  .B .mod i{background:#1b1f24}.B .mod i::after{background:#ecb332}
+  /* direction C: tiles fiori */
+  .C .side{background:#fff;border-right:1px solid #e6e4de;color:#1e2124;width:64px;padding:18px 10px;align-items:center}
+  .C .side .brand .t,.C .side .brand .s,.C .side .grp,.C .nav span,.C .side .foot span{display:none}
+  .C .nav{justify-content:center;width:40px;height:40px;padding:0;border-radius:10px}
+  .C .nav.on{background:#f6efd9;color:#a97a16}
+  .C .main{left:64px;background:#f7f6f2}
+  .C .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px}
+  .C .tile{aspect-ratio:1/0.82;border-radius:12px;background:#fff;border:1px solid #e6e4de;padding:12px;display:grid;grid-template-rows:auto 1fr auto;box-sizing:border-box}
+  .C .tile .n{font:600 13px var(--display)}
+  .C .tile .v{font:600 26px var(--display);align-self:end;font-variant-numeric:tabular-nums}
+  .C .tile .d{font-size:11px;color:#6b6f73}
+  .C .tile.acc{background:#1b1f24;color:#ecebe6;border-color:#1b1f24}.C .tile.acc .d{color:#c9cbcf}.C .tile.acc .v{color:#ecb332}
+  .C .sec{font:600 12px var(--display);color:#6b6f73;letter-spacing:.04em;margin-top:22px;display:flex;gap:10px;align-items:center}
+  .C .sec::after{content:"";flex:1;height:1px;background:#e6e4de}
+  /* compare + notes */
+  .cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .cmp .c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .cmp h4{font:600 15px var(--display);margin:0 0 8px}
+  .cmp ul{margin:0;padding-left:18px;color:var(--muted);font-size:14px;display:grid;gap:4px}
+  .areas-doc{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .ad{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .ad h4{font:600 14px var(--display);margin:0 0 6px;display:flex;gap:8px;align-items:center}
+  .ad h4 b{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .ad ul{margin:0;padding-left:16px;font-size:13.5px;color:var(--muted);display:grid;gap:2px}
+  .decisions ol{padding-left:20px;display:grid;gap:8px;max-width:72ch}
+  .decisions li b{font-weight:600}
+  @media (max-width:640px){ .dir-head{grid-template-columns:1fr} .frame{aspect-ratio:16/11} }
+</style>
+
+<div class="wrap">
+<header class="top">
+  <span class="kicker">Propuesta de rediseño · 21 de septiembre de 2026</span>
+  <h1>De “Registro de Horas” a un sistema interno integral</h1>
+  <p class="lead">Tres direcciones visuales para la misma aplicación, construidas sobre lo que ya funciona: el dorado de marca, Space Grotesk e IBM Plex, la barra lateral plegable y los 11 módulos actuales. Las fotos de la empresa aparecen como marcadores hasta tener el material real.</p>
+</header>
+
+<section>
+  <h2>Cómo se llama</h2>
+  <p class="sub">El nombre aparece en la barra lateral, el login, la pestaña del navegador y los correos. Tiene que abarcar horas, liquidación, certificaciones, novedades y combustible sin nombrar ninguno.</p>
+  <div class="names">
+    <div class="name reco"><span class="tag">Elegido</span><b>Central Sertec</b><small>Transmite “el lugar donde converge todo” y pega con la consola oscura de la dirección B. En la pestaña: “Central”; en la barra plegada: “CS”.</small></div>
+    <div class="name"><b>Sertec Gestión</b><small>Alternativa descartada: dice de quién es y para qué sirve, pero suena más a trámite que a sistema.</small></div>
+    <div class="name"><b>Sertec Operaciones</b><small>Descartada: pone el foco solo en la operación de campo.</small></div>
+  </div>
+</section>
+
+<section>
+  <h2>Los módulos, agrupados por área</h2>
+  <p class="sub">Hoy el inicio lista los módulos en una grilla plana ordenada por menú. La propuesta los agrupa en cuatro áreas que siguen el flujo del dinero y de la gente en la empresa. Cada rol ve solo sus áreas, como ahora.</p>
+  <div class="areas-doc">
+    <div class="ad"><h4><b style="background:#ecb332"></b>Operación</h4><ul><li>Reporte diario de horas</li><li>Mis registros</li><li>Aprobaciones</li><li>Control general</li><li>Km por tantos</li><li>Combustible</li></ul></div>
+    <div class="ad"><h4><b style="background:#3b6fc4"></b>Personas</h4><ul><li>Novedades</li><li>Ausencias (HyS)</li></ul></div>
+    <div class="ad"><h4><b style="background:#2f7d5a"></b>Resultados operativos</h4><ul><li>Liquidación: quincena, análisis, cierres, perfiles, tarifas</li><li>Certificaciones y facturación</li></ul></div>
+    <div class="ad"><h4><b style="background:#6b6f73"></b>Administración</h4><ul><li>Usuarios y roles</li><li>Catálogos: contratos, tareas, móviles, provincias</li></ul></div>
+  </div>
+</section>
+
+<!-- ============ DIRECCIÓN A ============ -->
+<section class="dir A">
+  <div class="dir-head">
+    <div><span class="kicker">Dirección A</span><h3>Evolución clara</h3><p>La misma casa con más habitaciones. Barra lateral blanca con grupos, un banner fotográfico en el inicio y las áreas como tarjetas contenedoras. Es la de menor riesgo y menor cambio de código.</p></div>
+    <div class="swatches" title="Paleta"><span class="sw" style="background:#ecb332"></span><span class="sw" style="background:#a97a16"></span><span class="sw" style="background:#1e2124"></span><span class="sw" style="background:#faf9f6"></span><span class="sw" style="background:#3b6fc4"></span></div>
+  </div>
+  <div class="screens">
+    <div class="shot"><div class="frame"><div class="screen login">
+      <div class="photo"><span class="lbl">foto: cuadrilla en obra, tratamiento oscurecido</span></div>
+      <div class="quote" style="left:80px;top:250px">Todo lo que la empresa mueve, en un solo lugar.<small>Horas, novedades, liquidación, certificaciones y combustible.</small></div>
+      <div class="card" style="right:110px;top:190px"><div class="logo"></div><h2>Sertec Gestión</h2><p>Ingresá con tu usuario de la empresa</p><div class="fld">Email<span></span></div><div class="fld">Contraseña<span></span></div><div class="btn">Ingresar</div></div>
+    </div></div><div class="cap">Login: foto a pantalla completa, tarjeta a la derecha.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div><div><div class="t">Sertec Gestión</div><div class="s">Sistema interno</div></div></div>
+        <div class="grp">Operación</div><div class="nav on"><i></i>Inicio</div><div class="nav"><i></i>Reporte diario</div><div class="nav"><i></i>Aprobaciones</div><div class="nav"><i></i>Control general</div>
+        <div class="grp">Personas</div><div class="nav"><i></i>Novedades</div><div class="nav"><i></i>Ausencias</div>
+        <div class="grp">Dinero</div><div class="nav"><i></i>Liquidación</div><div class="nav"><i></i>Certificaciones</div><div class="nav"><i></i>Combustible</div>
+        <div class="grp">Administración</div><div class="nav"><i></i>Catálogos</div>
+        <div class="foot"><div class="av">CA</div><span>Carrazana Gimenez R.</span></div></aside>
+      <div class="main">
+        <div class="hero"><div class="photo"><span class="lbl">foto: gasoducto / inspección de redes</span></div><div class="txt"><b>Buen día, Rodrigo</b><span>Lunes 21 de septiembre · 1ª quincena en curso · 3 cosas para mirar</span></div></div>
+        <div class="kpis"><div class="kpi"><span class="l">Pendientes de aprobar</span><span class="v warn">14</span></div><div class="kpi"><span class="l">Ausencias sin resolver</span><span class="v danger">2</span></div><div class="kpi"><span class="l">Horas cargadas hoy</span><span class="v">312</span></div><div class="kpi"><span class="l">Certificación agosto</span><span class="v">K12 lista</span></div></div>
+        <div class="areas">
+          <div class="area"><h4><b style="background:#ecb332"></b>Operación</h4><div class="mods"><div class="mod"><i></i><div><div class="n">Reporte diario</div><div class="d">Cargar horas de la cuadrilla</div></div></div><div class="mod"><i></i><div><div class="n">Aprobaciones</div><div class="d">Lotes de horas por contrato</div><div class="c">14 pendientes</div></div></div><div class="mod"><i></i><div><div class="n">Control general</div><div class="d">Tablero de la quincena</div></div></div><div class="mod"><i></i><div><div class="n">Km por tantos</div><div class="d">Relevadores de fugas</div></div></div></div></div>
+          <div class="area"><h4><b style="background:#2f7d5a"></b>Dinero</h4><div class="mods"><div class="mod"><i></i><div><div class="n">Liquidación</div><div class="d">Quincena, cierres y tarifas</div></div></div><div class="mod"><i></i><div><div class="n">Certificaciones</div><div class="d">Cargar y facturar por contrato</div></div></div><div class="mod"><i></i><div><div class="n">Combustible</div><div class="d">Cargas con foto del ticket</div></div></div></div></div>
+        </div>
+      </div>
+    </div></div><div class="cap">Inicio: banner con foto, indicadores del rol y áreas con sus módulos.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div><div><div class="t">Sertec Gestión</div><div class="s">Sistema interno</div></div></div>
+        <div class="grp">Operación</div><div class="nav"><i></i>Inicio</div><div class="nav"><i></i>Reporte diario</div><div class="nav"><i></i>Aprobaciones</div><div class="nav"><i></i>Control general</div>
+        <div class="grp">Personas</div><div class="nav"><i></i>Novedades</div><div class="nav"><i></i>Ausencias</div>
+        <div class="grp">Dinero</div><div class="nav"><i></i>Liquidación</div><div class="nav on"><i></i>Certificaciones</div><div class="nav"><i></i>Combustible</div>
+        <div class="foot"><div class="av">CA</div><span>Carrazana Gimenez R.</span></div></aside>
+      <div class="main">
+        <div class="ph"><h1>Certificaciones</h1><span class="date">Dinero · agosto 2026</span></div>
+        <div class="tabs"><span class="on">Cargar</span><span>Resumen</span><span>Analytics</span><span>Ítems</span><span>Historial</span></div>
+        <div class="kpis"><div class="kpi"><span class="l">A cargar</span><span class="v">2</span></div><div class="kpi"><span class="l">Bloqueadas</span><span class="v warn">5</span></div><div class="kpi"><span class="l">Manuales</span><span class="v">0</span></div><div class="kpi"><span class="l">Total a cargar</span><span class="v">$ 7.088.522</span></div></div>
+        <div class="tbl"><div class="tr h"><span>Ítem</span><span>Contrato</span><span>Provincia</span><span>Cant.</span><span>$ Total</span><span>Estado</span></div>
+          <div class="tr"><span>1130 · Inspección redes MP</span><span>K12</span><span>Tucumán</span><span>7</span><span>2.057.958</span><span class="pill ok">Cuadra</span></div>
+          <div class="tr"><span>1131 · Adicional obras mayores</span><span>K12</span><span>—</span><span>11</span><span>5.030.564</span><span class="pill pend">Falta provincia</span></div>
+          <div class="tr"><span>1137 · Inspección GNC semestral</span><span>K12</span><span>—</span><span>0</span><span>0</span><span class="pill pend">Falta provincia</span></div></div>
+      </div>
+    </div></div><div class="cap">Módulo: mismas tablas de hoy, con el área como contexto en el encabezado.</div></div>
+  </div>
+</section>
+
+<!-- ============ DIRECCIÓN B ============ -->
+<section class="dir B">
+  <div class="dir-head">
+    <div><span class="kicker">Dirección B · elegida el 21/09</span><h3>Grafito industrial</h3><p>Barra lateral oscura, como una consola de planta, con el dorado como única luz. Una franja fotográfica cruza todo el ancho del inicio. Es la que más se aleja de “formulario” y más se acerca a “sistema de la empresa”. Ajustes del usuario: Combustible pasa a Operación y el área de dinero se llama Resultados operativos.</p></div>
+    <div class="swatches"><span class="sw" style="background:#1b1f24"></span><span class="sw" style="background:#ecb332"></span><span class="sw" style="background:#f3f1ec"></span><span class="sw" style="background:#ffffff"></span><span class="sw" style="background:#3b6fc4"></span></div>
+  </div>
+  <div class="screens">
+    <div class="shot"><div class="frame"><div class="screen login">
+      <div class="photo"><span class="lbl">foto: móvil de la empresa al amanecer, duotono grafito</span></div>
+      <div class="card" style="left:calc(50% - 180px);top:180px;background:#1b1f24;color:#ecebe6;box-shadow:0 30px 80px rgba(0,0,0,.6)"><div class="logo"></div><h2 style="color:#fff">Central Sertec</h2><p style="color:#a3a7ab">Sistema interno de la empresa</p><div class="fld" style="color:#c9cbcf">Email<span style="background:#262b31;border-color:#33393f"></span></div><div class="fld" style="color:#c9cbcf">Contraseña<span style="background:#262b31;border-color:#33393f"></span></div><div class="btn">Ingresar</div></div>
+    </div></div><div class="cap">Login: tarjeta oscura centrada sobre la foto.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div><div><div class="t">Central Sertec</div><div class="s">Sistema interno</div></div></div>
+        <div class="grp">Operación</div><div class="nav on"><i></i>Inicio</div><div class="nav"><i></i>Reporte diario</div><div class="nav"><i></i>Aprobaciones</div><div class="nav"><i></i>Control general</div><div class="nav"><i></i>Combustible</div>
+        <div class="grp">Personas</div><div class="nav"><i></i>Novedades</div><div class="nav"><i></i>Ausencias</div>
+        <div class="grp">Resultados operativos</div><div class="nav"><i></i>Liquidación</div><div class="nav"><i></i>Certificaciones</div>
+        <div class="foot"><div class="av">CA</div><span>Carrazana Gimenez R.</span></div></aside>
+      <div class="main">
+        <div class="band"><div class="photo"><span class="lbl">foto: red de distribución / válvulas</span></div><div class="txt"><b>Lunes 21 de septiembre</b><span>1ª quincena de septiembre en curso · cierre el 30</span></div></div>
+        <div class="kpis"><div class="kpi"><span class="l">Pendientes de aprobar</span><span class="v warn">14</span></div><div class="kpi"><span class="l">Ausencias sin resolver</span><span class="v danger">2</span></div><div class="kpi"><span class="l">Horas cargadas hoy</span><span class="v">312</span></div><div class="kpi"><span class="l">Cargas de combustible</span><span class="v">6</span></div></div>
+        <div class="areas">
+          <div class="area"><h4><b style="background:#ecb332"></b>Operación</h4><div class="mods"><div class="mod"><i></i><div><div class="n">Reporte diario</div><div class="d">Cargar horas de la cuadrilla</div></div></div><div class="mod"><i></i><div><div class="n">Aprobaciones</div><div class="d">Lotes por contrato</div><div class="c">14 pendientes</div></div></div><div class="mod"><i></i><div><div class="n">Control general</div><div class="d">Tablero de la quincena</div></div></div><div class="mod"><i></i><div><div class="n">Combustible</div><div class="d">Cargas con foto del ticket</div></div></div></div></div>
+          <div class="area"><h4><b style="background:#3b6fc4"></b>Personas</h4><div class="mods"><div class="mod"><i></i><div><div class="n">Novedades</div><div class="d">Ausencias, francos, guardias</div></div></div><div class="mod"><i></i><div><div class="n">Ausencias</div><div class="d">Resolución de HyS</div><div class="c">2 sin resolver</div></div></div></div></div>
+        </div>
+      </div>
+    </div></div><div class="cap">Inicio: franja fotográfica a todo el ancho, consola oscura.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div><div><div class="t">Central Sertec</div><div class="s">Sistema interno</div></div></div>
+        <div class="grp">Operación</div><div class="nav"><i></i>Inicio</div><div class="nav"><i></i>Reporte diario</div><div class="nav"><i></i>Aprobaciones</div><div class="nav"><i></i>Control general</div>
+        <div class="grp">Resultados operativos</div><div class="nav on"><i></i>Liquidación</div><div class="nav"><i></i>Certificaciones</div>
+        <div class="foot"><div class="av">CA</div><span>Carrazana Gimenez R.</span></div></aside>
+      <div class="main">
+        <div class="ph"><h1>Liquidación</h1><span class="date">Resultados operativos · 1ª quincena de septiembre</span></div>
+        <div class="tabs"><span class="on">Quincena</span><span>Análisis</span><span>Cierres</span><span>Perfiles</span><span>Tarifas</span></div>
+        <div class="kpis"><div class="kpi"><span class="l">Empleados</span><span class="v">123</span></div><div class="kpi"><span class="l">Total a cobrar</span><span class="v">$ 84,2 M</span></div><div class="kpi"><span class="l">Perfiles incompletos</span><span class="v warn">3</span></div><div class="kpi"><span class="l">Sin horas aprobadas</span><span class="v danger">7</span></div></div>
+        <div class="tbl"><div class="tr h"><span>Empleado</span><span>Régimen</span><span>Categoría</span><span>Hs</span><span>Total</span><span>Estado</span></div>
+          <div class="tr"><span>CORBALAN JOSE ANTONIO</span><span>Por tantos</span><span>Oficial</span><span>116,5</span><span>692.541</span><span class="pill ok">Completo</span></div>
+          <div class="tr"><span>MACCHIAROLA</span><span>Fijo</span><span>Oficial esp.</span><span>100</span><span>—</span><span class="pill pend">Falta dato</span></div>
+          <div class="tr"><span>PEREZ JUAN</span><span>Jornalizado</span><span>Ayudante</span><span>88</span><span>516.208</span><span class="pill ok">Completo</span></div></div>
+      </div>
+    </div></div><div class="cap">Módulo: el contenido queda claro sobre arena; solo la consola es oscura.</div></div>
+  </div>
+</section>
+
+<!-- ============ DIRECCIÓN C ============ -->
+<section class="dir C">
+  <div class="dir-head">
+    <div><span class="kicker">Dirección C</span><h3>Panel de mosaicos</h3><p>El inicio como un panel de control: cada módulo es un mosaico con su número vivo, agrupados por área, y la barra lateral se reduce a íconos para ganar ancho. Inspirado en los launchpads de los ERP grandes. La foto se reserva para el login.</p></div>
+    <div class="swatches"><span class="sw" style="background:#f7f6f2"></span><span class="sw" style="background:#ecb332"></span><span class="sw" style="background:#1b1f24"></span><span class="sw" style="background:#ffffff"></span><span class="sw" style="background:#2f7d5a"></span></div>
+  </div>
+  <div class="screens">
+    <div class="shot"><div class="frame"><div class="screen login">
+      <div class="photo" style="width:56%"><span class="lbl">foto: equipo de inspección GNC</span></div>
+      <div style="position:absolute;left:56%;right:0;top:0;bottom:0;background:#f7f6f2"></div>
+      <div class="card" style="right:110px;top:190px;box-shadow:none;border:1px solid #e6e4de"><div class="logo"></div><h2>Sertec Gestión</h2><p>Sistema interno de la empresa</p><div class="fld">Email<span></span></div><div class="fld">Contraseña<span></span></div><div class="btn">Ingresar</div></div>
+    </div></div><div class="cap">Login: mitad foto, mitad formulario.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div></div>
+        <div class="nav on"><i></i><span>Inicio</span></div><div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div>
+        <div class="foot"><div class="av">CA</div></div></aside>
+      <div class="main">
+        <div class="ph"><h1>Sertec Gestión</h1><span class="date">Lunes 21 de septiembre · Rodrigo Carrazana</span></div>
+        <div class="sec">Operación</div>
+        <div class="tiles"><div class="tile"><span class="n">Reporte diario</span><span class="v">312</span><span class="d">horas cargadas hoy</span></div><div class="tile acc"><span class="n">Aprobaciones</span><span class="v">14</span><span class="d">lotes pendientes</span></div><div class="tile"><span class="n">Control general</span><span class="v">98%</span><span class="d">cuadrillas con carga</span></div><div class="tile"><span class="n">Km por tantos</span><span class="v">3</span><span class="d">relevadores sin km</span></div><div class="tile"><span class="n">Mis registros</span><span class="v">88</span><span class="d">hs en la quincena</span></div></div>
+        <div class="sec">Personas</div>
+        <div class="tiles"><div class="tile"><span class="n">Novedades</span><span class="v">9</span><span class="d">esta quincena</span></div><div class="tile acc"><span class="n">Ausencias</span><span class="v">2</span><span class="d">sin resolver por HyS</span></div><div class="tile"><span class="n">Perfiles</span><span class="v">3</span><span class="d">incompletos</span></div></div>
+        <div class="sec">Dinero</div>
+        <div class="tiles"><div class="tile"><span class="n">Liquidación</span><span class="v">$ 84,2 M</span><span class="d">1ª quincena, en curso</span></div><div class="tile"><span class="n">Certificaciones</span><span class="v">K12</span><span class="d">agosto, lista para cargar</span></div><div class="tile"><span class="n">Combustible</span><span class="v">6</span><span class="d">cargas hoy</span></div><div class="tile"><span class="n">Tarifas</span><span class="v">sep</span><span class="d">cargadas</span></div></div>
+      </div>
+    </div></div><div class="cap">Inicio: mosaicos con números vivos por área; barra solo de íconos.</div></div>
+
+    <div class="shot"><div class="frame"><div class="screen">
+      <aside class="side"><div class="brand"><div class="logo"></div></div>
+        <div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav on"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div><div class="nav"><i></i></div>
+        <div class="foot"><div class="av">CA</div></div></aside>
+      <div class="main">
+        <div class="ph"><h1>Aprobaciones</h1><span class="date">Operación · 1ª quincena de septiembre</span></div>
+        <div class="tabs"><span class="on">Pendientes 14</span><span>Resueltos</span></div>
+        <div class="tbl"><div class="tr h"><span>Lote</span><span>Contrato</span><span>Cargó</span><span>Hs</span><span>Día</span><span>Estado</span></div>
+          <div class="tr"><span>Cuadrilla Norte · 5 operarios</span><span>K5</span><span>GOMEZ CARLOS</span><span>40</span><span>19/09</span><span class="pill pend">Pendiente</span></div>
+          <div class="tr"><span>Cuadrilla Sur · 3 operarios</span><span>K9</span><span>RIOS MARTIN</span><span>24</span><span>19/09</span><span class="pill pend">Pendiente</span></div>
+          <div class="tr"><span>Relevamiento · CORBALAN</span><span>K12</span><span>CORBALAN JOSE</span><span>8</span><span>18/09</span><span class="pill ok">Aprobado</span></div></div>
+      </div>
+    </div></div><div class="cap">Módulo: más ancho útil para las tablas gracias a la barra angosta.</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Cómo se comparan</h2>
+  <p class="sub">Las tres comparten nombre, tipografías, paleta base y agrupación por áreas. Cambian el shell, el peso de la foto y cuánto código hay que tocar.</p>
+  <div class="cmp">
+    <div class="c"><h4>A · Evolución clara</h4><ul><li>Cambio: sidebar con grupos, inicio nuevo, login nuevo.</li><li>Código: bajo. Los módulos no cambian.</li><li>Foto: banner del inicio y login.</li><li>Riesgo: se parece bastante a lo actual.</li></ul></div>
+    <div class="c"><h4>B · Grafito industrial</h4><ul><li>Cambio: sidebar oscura, franja fotográfica, login oscuro.</li><li>Código: medio. Tokens nuevos para el shell; módulos iguales.</li><li>Foto: protagonista en inicio y login.</li><li>Riesgo: contraste dorado sobre grafito hay que cuidarlo.</li></ul></div>
+    <div class="c"><h4>C · Panel de mosaicos</h4><ul><li>Cambio: inicio con contadores vivos, sidebar de íconos.</li><li>Código: medio-alto. Cada mosaico necesita su indicador del backend.</li><li>Foto: solo en el login.</li><li>Riesgo: la barra solo de íconos exige tooltips y aprendizaje.</li></ul></div>
+  </div>
+</section>
+
+<section class="decisions">
+  <h2>Decidido el 21 de septiembre</h2>
+  <ol>
+    <li><b>Dirección</b>: B, Grafito industrial.</li>
+    <li><b>Nombre</b>: Central Sertec.</li>
+    <li><b>Áreas</b>: Operación (incluye Combustible), Personas, Resultados operativos, Administración.</li>
+    <li><b>Alcance</b>: total. Shell, inicio, login y los 34 módulos con el mismo lenguaje, en etapas con un PR cada una para que producción nunca quede a medio camino.</li>
+    <li><b>Fotos</b>: las envía el usuario más adelante; hasta entonces, marcadores con el tratamiento oscurecido y luz dorada.</li>
+  </ol>
+</section>
+</div>
+
+<script>
+  (function(){
+    var frames=document.querySelectorAll('.frame');
+    function fit(){frames.forEach(function(f){var s=f.querySelector('.screen');if(!s)return;var k=f.clientWidth/1280;s.style.transform='scale('+k+')';});}
+    if('ResizeObserver' in window){var ro=new ResizeObserver(fit);frames.forEach(function(f){ro.observe(f);});}
+    window.addEventListener('resize',fit);fit();
+  })();
+</script>
