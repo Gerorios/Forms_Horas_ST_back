@@ -188,6 +188,28 @@ lógica.** 34 `page.tsx`:
   test: agregar mínimo), `estaciones-servicio`, `tipos-combustible`,
   `accesos-certificaciones`.
 
+Default tomado al arrancar 3a (2026-09-21): los `eyebrow` actuales que solo
+nombran un rol o el módulo ("Jefe de contrato", "Carga de horas",
+"Historial", "Combustible", "Admin") se **reemplazan** por el área; los que
+aportan un dato distinto del área (novedades: "Las que cargaste vos") se
+conservan y se muestran como "Área · eyebrow". El área se pasa con
+`area="operacion"` etc. (`AreaId` de `nav.ts`) y `PageHeader` resuelve el
+rótulo desde `AREAS`.
+
+Unificación del `StatTile` (3a.2, hecho): valor `text-xl sm:text-2xl`
+(`text-lg sm:text-xl` si pasa de 12 caracteres, lo que afirman los tests de
+carga) y `font-display` en todos; control general pierde el `text-3xl` fijo;
+los indicadores del inicio pasan de horizontales a verticales como el resto,
+y su valor se colorea (ámbar/rojo) solo cuando es > 0, igual que en control
+general (antes iba siempre en tinta; default asentado en la revisión de 3a).
+Mirar en la recorrida visual con JefeContrato / HyS / Liquidador / Operario.
+
+Revisión del PR 3a (2026-09-21): suite 779/782 con 3 timeouts en reporte que
+pasan aislados (8/8); **0 urgent, 0 high, 6 minor, 4 descartados**; guards
+de admin/liquidación/certificaciones confirmados intactos. Aviso para 3c:
+`colorearSoloSiPositivo` solo aplica a `value` numérico; con un importe
+formateado (string) no usarlo.
+
 - **PR 3a — base + Operación** (`feat/central-sertec-3a-operacion`).
   3a.1 `PageHeader` con `area?: AreaId` (par, test nuevo
   `page-header.test.tsx`: con área renderiza "Operación"; con área y eyebrow

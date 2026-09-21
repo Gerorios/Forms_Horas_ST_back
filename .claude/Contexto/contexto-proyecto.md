@@ -3551,3 +3551,87 @@ y cinco carpetas viejas de `Backend/.claude/worktrees` sin enlace a git
 bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
 herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
 lista de procesos antes de borrar la carpeta.
+
+## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1 y 2 en main, 3a lista (2026-09-21)
+
+El usuario pidió un cambio visual de **toda** la aplicación para que funcione
+como un ERP o sistema interno integral de la empresa, con módulos
+re-fashionados, un nombre nuevo en el inicio (dejar de llamarlo "Registro de
+Horas") y fotos de la empresa de fondo. Se investigaron referencias, se
+presentó un **mockup con tres direcciones** (guardado como spec en
+`docs/superpowers/specs/2026-09-21-redisenio-central-sertec-mockup.html`) y
+el usuario decidió: dirección **B "Grafito industrial"**, nombre **"Central
+Sertec"**, módulos en cuatro áreas (**Operación**: reporte, mis registros,
+aprobaciones, control general, km por tantos, combustible; **Personas**:
+novedades, ausencias; **Resultados operativos**: liquidación y
+certificaciones; **Administración**), alcance **total**, y los perfiles de
+empleados **se quedan dentro de Liquidación** (corrección explícita). Las
+fotos las manda después; mientras, un marcador grafito con luz dorada.
+Decisión y vocabulario en **ADR-025**
+(`docs/adr/2026-09-21-adr-025-central-sertec-sistema-de-diseno.md`) y
+`CONTEXT.md` ("Central Sertec", "Área"). Plan en
+`docs/superpowers/plans/2026-09-21-redisenio-central-sertec.md`: 3 etapas y
+5 PRs, 13 defaults aceptados, corregido por el planificador (el dorado sobre
+grafito **sí** cumple contraste, 8,6:1; lo que falla es dorado como texto
+sobre claro y `slate` sobre grafito).
+
+**Etapa 1 — nombre, tokens y barra (Frontend #74, docs Backend #86, en
+main).** Tokens `graphite #1b1f24`, `graphite-2`, `sand-deep #f3f1ec`;
+`nav.ts` con `AREAS` y `navPorArea(perfil)` (los roles siguen decidiendo qué
+se ve); barra lateral grafito con títulos de área en dorado, activo con banda
+dorada, hover blanco translúcido, monograma "CS" plegada; login, pestaña y
+barra dicen "Central Sertec · Sistema interno". Paso R1 salido de la prueba
+visual: en pantallas bajas la barra tapaba el botón de plegar; ahora el menú
+scrollea internamente y el pie queda fijo. Revisión 0/0/7 minor.
+
+**Etapa 2 — inicio y login (Frontend #75, en main).** `FondoFoto`
+(`components/layout/fondo-foto.tsx`): grafito + foto opcional con dos velos
+siempre (gradiente y luz dorada), `prioridad` apagada en el login;
+`src/lib/fotos.ts` con `FOTOS.inicio/login` en `null` (encender = copiar a
+`public/fotos/`, ≤ 400 KB, y setear la ruta). El inicio va **sin
+contenedor** (`RUTAS_SIN_CONTENEDOR = ['/']`) con franja a todo el ancho:
+saludo, fecha larga y quincena en curso; debajo los indicadores por rol y
+una sección por área con las tarjetas. Login con foto a pantalla completa,
+tarjeta `graphite/90`, foco dorado; errores en `red-300/200` porque `danger`
+sobre grafito da 3,3:1. Decisiones del usuario en la muestra: logo y título
+**fuera** de la tarjeta; puntos de área **todos dorados** (único acento).
+Revisión 0/0/10 minor.
+
+**Etapa 3a — base + Operación (rama `feat/central-sertec-3a-operacion`,
+lista, SIN PR).** `PageHeader` acepta `area` y muestra "Operación" o
+"Operación · eyebrow" (default: los eyebrows que solo nombraban rol o módulo
+se reemplazan por el área); `StatTile` compartido (`components/stat-tile.tsx`,
+API unión: `tone`, `colorearSoloSiPositivo`, `icon`, `href`/`onClick`,
+`testId`, `animar`) reemplaza al de control general y a los indicadores del
+inicio, que pasan a verticales y colorean el valor solo si es > 0; `SubNav`
+compartido reemplaza las tres copias de admin, liquidación y certificaciones
+con guards intactos y `aria-current`; las 7 páginas de Operación llevan el
+área. Suite 779/782 con 3 timeouts de reporte que pasan aislados; revisión
+**0 urgent, 0 high, 6 minor, 4 descartados**.
+
+**Método.** Carril completo del flujo de dos carriles: planificador
+Fable/high, 12 pares test-rojo → implementación por ejecutores Opus/high (1.1
+a 1.4 + R1, 2.1 a 2.4, 3a.1 a 3a.4), y por PR: suite completa una vez,
+`code-review` en dos ejes y `verificador-review`. Ningún urgent/high en tres
+revisiones; los minor van listados en cada PR. Servidores locales levantados
+desde el worktree (`next dev --webpack`, backend desde `dist`) para la
+recorrida visual con Chrome; la sesión venció antes de recorrer 3a.
+
+**PENDIENTE.**
+- **Testeo del usuario**: recorrer en local (`http://localhost:3000`) el
+  inicio con los indicadores nuevos, control general y los módulos de
+  Operación con el encabezado de área; después OK para el PR 3a.
+- **PR 3a** (crear y mergear con `--admin` tras el OK), luego **PR 3b**
+  (Personas + Administración: 12 cambios de encabezado) y **PR 3c**
+  (Resultados operativos: liquidación y certificaciones, migración de los 4
+  `StatTile` locales; **2 rondas de revisión** porque toca vistas de cierres
+  y precios; `colorearSoloSiPositivo` solo con `value` numérico).
+- **Fotos**: dos, del usuario (inicio ~1920×700, login 1920×1080).
+- **Deploy**: **NO** hasta que las tres etapas estén mergeadas y el usuario lo
+  pida explícitamente; documento `docs/2026-MM-DD-central-sertec-deploy.md`
+  en ese momento. Producción sigue en `f73b3da` back / `0b4babb` front.
+- Docs del Backend: la rama `docs/redisenio-central-sertec` acumula el plan
+  actualizado y esta sección; se abre su PR con el cierre de la etapa 3.
+- Deuda anotada: anillo de foco `brand/40` del botón de login sobre grafito
+  ~2,5:1 (preexistente); azul `#3b6fc4` repetido a mano en certificaciones
+  existiendo `--color-chart-2`.
