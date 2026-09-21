@@ -114,6 +114,19 @@ cada par: test rojo → verde, `npx tsc --noEmit`, `npm run lint`; visual con
 - Cierre: suite completa, tsc, lint, recorrida visual por rol, mostrar al
   usuario, PR, merge; deploy solo a pedido.
 
+## Pasos R de la etapa 1 (hallazgos de la revisión visual, 2026-09-21)
+
+- **R1 (par).** En una ventana de 577 px de alto, la barra desplegada (4
+  títulos de área + 11 ítems + pie) es más alta que la pantalla: "Admin" y el
+  botón "Plegar menú" quedan tapados por el pie de usuario y la rueda del
+  mouse desplaza el contenido, no la barra. Escenario: notebook chica o
+  ventana no maximizada → no se puede plegar ni llegar a Administración.
+  Arreglo mínimo en `app-shell.tsx`: el `aside` es `flex flex-col h-screen`
+  con la lista de navegación en un contenedor `flex-1 min-h-0 overflow-y-auto`
+  y el pie (usuario + toggle) fuera del scroll, fijo abajo. Mismo tratamiento
+  en el drawer móvil. Test rojo: el contenedor de la navegación tiene
+  `overflow-y-auto` y `min-h-0`; el pie no está dentro de él.
+
 ## Etapa 2 — PR 2: inicio + login
 
 Rama `feat/central-sertec-2-inicio-login` (desde main tras el PR 1).

@@ -11,8 +11,8 @@ certificación y facturación por contrato, km de relevadores y combustible.
 
 **Central Sertec** (2026-09-21):
 El nombre del sistema interno completo, tal como lo ven las personas en la
-barra lateral, el login y la pestaña. Abreviado "Central" en la pestaña y
-"CS" en la barra plegada. Ver ADR-025.
+barra lateral, el login y la pestaña (título completo; una pestaña angosta lo
+recorta a "Central"). Abreviado "CS" en la barra plegada. Ver ADR-025.
 _Avoid_: Registro de Horas, Formulario Horas (nombres del origen del sistema;
 solo sobreviven en los nombres de los repositorios), Gestión de cuadrillas.
 

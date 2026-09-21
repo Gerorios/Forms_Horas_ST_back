@@ -22,8 +22,9 @@ también publicada en https://claude.ai/artifact/SENhNr72nKf24tFte9RJw7; plan:
 ## Decisión
 
 1. **Nombre: "Central Sertec".** Reemplaza a "Registro de Horas" en barra,
-   login, pestaña, correos y documentación. Abreviaturas: "Central" en la
-   pestaña, "CS" en la barra plegada.
+   login, pestaña y documentación (no hay correos en el sistema). El título
+   de la pestaña es "Central Sertec" completo (una pestaña angosta lo recorta
+   sola a "Central"); la abreviatura "CS" se usa en la barra plegada.
 2. **Módulos agrupados en cuatro áreas**, que ordenan la barra lateral y el
    inicio y dan contexto al encabezado de cada módulo:
    - **Operación**: reporte diario, mis registros, aprobaciones, control
