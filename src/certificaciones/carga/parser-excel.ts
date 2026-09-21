@@ -36,11 +36,17 @@ import { fechaISODeCelda } from './fechas';
  * procesa ninguna fila y se emite un error de `header` (mejor no cargar
  * nada que cargar valores corridos de columna). Paridad con
  * `COLUMNAS_REQUERIDAS` del parser PDF.
+ *
+ * `provincia` NO está en la lista (desde 2026-09-21, formato K12): esos
+ * libros no traen la columna y descartar la hoja entera dejaba la carga en
+ * 0 filas. La exigencia baja de la HOJA a la FILA: sin provincia, la fila
+ * queda bloqueada por `revalidarFila` con "Falta provincia" y la persona la
+ * asigna en el paso 3 con el selector que ya existe. El parser PDF sigue
+ * con su propia lista (`COLUMNAS_REQUERIDAS`), que no se toca.
  */
 const COLUMNAS_REQUERIDAS_XLS = [
   'item_codigo',
   'contrato',
-  'provincia',
   'cantidades',
   'precio_unitario',
   'total_mes',
@@ -66,6 +72,16 @@ const COL_ALIAS: Record<string, string[]> = {
 const HEADER_ITEM = new Set(['ÍTEMS', 'ITEMS', 'ÍTEM', 'ITEM']);
 const LITERALES_NULOS = new Set(['NAN', 'NAT', 'NONE', '#N/A', '']);
 const FLOAT_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
+ * Un código de contrato K: `8`, `K8`, `K12` (hasta 3 dígitos, con o sin la K).
+ * Sirve para decidir si la celda de la columna "K"/"K GASNOR" es realmente un
+ * contrato: en los libros con formato K12 esa columna trae un COEFICIENTE
+ * (p.ej. 653.32), no un código, y sin este filtro terminaba como "K653.32".
+ * El cero queda excluido a propósito: no existe el contrato K0 y en el formato
+ * K12 ese coeficiente vale 0 en varias filas (daba un "K0" inventado).
+ */
+const ES_CODIGO_K = /^K?(?!0+$)\d{1,3}$/i;
 
 function pad2(n: number): string {
   return n.toString().padStart(2, '0');
@@ -294,6 +310,22 @@ function extraerMeta(
       }
     }
 
+    // Formato K12 (archivo real "CERTIFICADO AGOSTO-26 - K12"): el rótulo y
+    // el número viven en la MISMA celda —"WK N° 362000594", al lado de
+    // "ORDEN DE COMPRA RENOV..."— así que la búsqueda de arriba (rótulo en
+    // una celda, número en la SIGUIENTE) no lo encuentra y la certificación
+    // quedaba sin número de referencia (aviso `np_no_detectado`). Se exigen
+    // 4+ dígitos pegados al "WK" para no tomar un año ni un código de ítem.
+    if (!meta.nro_np) {
+      for (const v of vals) {
+        const m = v.texto.match(/\bWK\s*N?[°º.]?\s*(\d{4,})/i);
+        if (m) {
+          meta.nro_np = m[1];
+          break;
+        }
+      }
+    }
+
     if (filaStr.includes('PERIODO A CERTIFICAR') && !meta.periodo_archivo) {
       const fechas = vals
         .map((v) => fechaISODeCelda(v.texto))
@@ -359,7 +391,13 @@ function procesarFila(
   const itemCodigo = fmtItem(get('item_codigo'));
   const nombreContrato = get('nombre_contrato');
   const tarea = get('tarea');
-  let contrato = (get('contrato') || '').trim().toUpperCase() || meta.k_gasnor || '';
+  // La celda solo vale como contrato si es un código K; si no (vacía,
+  // coeficiente del formato K12, texto suelto) manda el K del nombre de
+  // hoja/archivo que resolvió `extraerMeta`.
+  const celdaContrato = (get('contrato') || '').trim();
+  let contrato = ES_CODIGO_K.test(celdaContrato)
+    ? celdaContrato.toUpperCase()
+    : meta.k_gasnor || '';
   const unidadMedida = get('unidad_medida');
   const ptosGasnor = fmtNum(get('ptos_gasnor'), esNumCampo('ptos_gasnor'));
   const tipo = get('tipo');
@@ -475,10 +513,46 @@ function procesarHoja(
   }
 
   const colItem = colMap.get('item_codigo')!;
+  const colTotal = colMap.get('total_mes');
   const totalFilas = worksheet.rowCount || 0;
   for (let r = headerIdx + 1; r <= totalFilas; r++) {
     const row = worksheet.getRow(r);
     const rawItem = rawDeCelda(row.getCell(colItem));
+
+    // Cierre del formato K12: la fila "TOTAL CERTIFICADO EN EL MES" no es un
+    // ítem (si no, `esItemValido` la aceptaría y se cargaría una fila falsa)
+    // sino el total declarado del archivo, que en esos libros NO está en la
+    // cabecera ("TOTAL MES" que busca `extraerMeta`) sino al pie, en la misma
+    // columna TOTAL de los ítems. El rótulo se exige completo ("TOTAL
+    // CERTIFICADO", no cualquier "TOTAL") para no confundirlo con los
+    // subtotales intermedios de los libros de Naturgy. Igual que con "TOTAL
+    // MES", solo aporta el total si todavía no lo trajo ninguna hoja.
+    if ((rawItem ?? '').trim().toUpperCase().startsWith('TOTAL CERTIFICADO')) {
+      if (colTotal !== undefined && resultado.total_declarado === null) {
+        // En el archivo real ese número está en una celda COMBINADA que
+        // arranca ANTES de la columna TOTAL (H13:K13, maestra en "Puntos"):
+        // exceljs le da a las esclavas la fórmula de la maestra pero NO su
+        // `result` cacheado, así que la columna TOTAL sola devuelve null.
+        const celdaTotal = row.getCell(colTotal);
+        const celdaValor = celdaTotal.isMerged ? celdaTotal.master : celdaTotal;
+        const rawTotal = rawDeCelda(celdaValor);
+        if (rawTotal !== null) {
+          // El origen (número real vs. texto) también se mira en la MAESTRA:
+          // la esclava no tiene `result`, así que daba "texto" y la regla
+          // es-AR leía el punto como separador de miles (el total real
+          // 7088522.000000001 terminaba en 7088522000000001).
+          resultado.total_declarado = parsearMonto(rawTotal.trim(), celdaEsNumerica(celdaValor));
+        }
+      }
+      // Esa fila CIERRA la zona de datos de la hoja: lo que viene abajo es el
+      // pie del certificado (IVA, Total con IVA, FIRMA Y SELLO RESPONSABLE
+      // CONTRATISTA), cuyos rótulos pasan `esItemValido` y entrarían como
+      // ítems falsos con el monto del IVA en TOTAL. Paridad con
+      // `FOOTER_PALABRAS` del parser PDF, que también corta ahí. En el
+      // archivo real nunca hay ítems debajo del total.
+      break;
+    }
+
     if (!esItemValido(rawItem)) continue;
 
     const { fila, errores } = procesarFila(row, colMap, nombreHoja, r, nombreArchivo, meta);

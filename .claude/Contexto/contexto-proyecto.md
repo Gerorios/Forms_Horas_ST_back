@@ -3463,3 +3463,70 @@ hallazgo falso y corrigió un dato equivocado del revisor.
 **Deploy 2026-09-18**, a pedido explícito, solo Frontend: pull → `8b86d74`,
 build, `pm2 restart forms-horas-front`, `online`, `/` y `/mis-registros` 200.
 Rollback front `20aa165`. Doc: `docs/2026-09-18-quitar-chip-16h-operario-deploy.md`.
+
+## 90. Certificación K12 en Excel: provincia por fila, fila de total y formulario manual sin desborde (2026-09-21)
+
+El usuario pidió probar la carga con `CERTIFICADO AGOSTO-26 - K12 (002).xlsx`:
+"no reconoce nada" y la carga manual "se rompe y se ve todo mal". Se
+diagnosticó con lazos reproducibles antes de tocar nada (skill
+diagnosing-bugs), incluida la reproducción en el navegador con el usuario del
+dueño de producto.
+
+**Bug 1, Backend.** El K12 es un formato distinto al de Naturgy: header en la
+fila 6 sin columna PROVINCIA (que el parser exigía → hoja descartada, 0
+filas), la columna "K" trae un coeficiente (653,32 o 0) y no el código, el
+total viene en una fila "TOTAL CERTIFICADO EN EL PERIODO SIN IVA" con el
+número en una **celda combinada** cuya maestra está en otra columna, el WK en
+"WK N° 362000594" dentro de una celda, y debajo del total hay pie (IVA, Total
+con IVA, firma) que pasaba como ítems. Todo eso quedó resuelto en
+`parser-excel.ts`: la celda K solo cuenta si es un código K (nunca `0`), la
+fila de total aporta `total_declarado` leyendo la celda maestra y **cierra la
+zona de datos**, PROVINCIA deja de ser requerida solo en Excel (la exigencia
+baja de hoja a fila: "Falta provincia" y la persona la elige en el paso 3), y
+el WK se lee de la misma celda. El archivo real quedó como caso permanente de
+`parser-real.spec.ts`: 5 filas K12 (solo 2 con cantidad: 1130 y 1131; las
+otras 3 vienen en cero), total ≈ 7.088.522, sin pie. Un ejecutor atrapó de
+paso un bug que habría llegado a producción: el total de la celda combinada
+se leía como texto y salía 7.088.522.000.000.001.
+
+**Decisión del usuario sobre la provincia:** el planificador propuso tomarla
+del contrato, pero **el maestro de contratos no tiene provincia** y el
+histórico tampoco sirve: verificado en las dos bases, **todos** los K tienen
+varias provincias (K12: Jujuy, Salta, Santiago del Estero, Tucumán). El
+usuario eligió **asignarla por fila** con el selector que ya existía, sin UI
+nueva ni resolución automática. También verificado: K12 existe y sus 5 ítems
+están en el maestro.
+
+**Bug 2, Frontend.** El formulario "+ Agregar fila manual" no se rompía: se
+desbordaba. El `<select>` de ítems traía cientos de opciones de todos los
+contratos con rótulos de ~130 caracteres, y la grilla con pistas `fr` (=
+`minmax(auto, fr)`) dejaba que esa columna empujara Provincia / Cantidad /
+Unitario / Total / botones fuera del recuadro, con scroll horizontal. Arreglo:
+pistas `minmax(0, …)`, `min-w-0` en los hijos, `w-full min-w-0` en los
+campos; y el selector se filtra por los K de las hojas elegidas (∪ contratos
+de las filas visibles; si queda vacío, todos). Para K12 pasa de cientos a 9
+opciones. El primer "congelamiento" del navegador fue la compilación del dev
+server, no el código.
+
+**Tras la prueba del usuario en local** ("me reconoce correctamente el archivo
+y los montos"), tres ajustes visuales decididos por él: el paso 3 muestra
+**solo avisos urgentes** (desapareció el panel "Avisos de lectura" con
+columnas ignoradas y errores por fila; los errores de header sí se muestran
+como urgentes); un **aviso de provincia faltante** que cuenta las filas sin
+provincia y recomienda asignarla en cada fila para poder cargarlas; y la
+tarjeta **TOTAL A CARGAR** ya no desborda con montos largos (`min-w-0`,
+`break-words`, tamaño menor cuando el texto pasa de 12 caracteres). Anotado:
+`columnas_ignoradas` sigue llegando de la API sin ninguna vista que lo use.
+
+**Revisión (dos ejes + verificador por repo):** Backend 0 urgent, 0 high, 7
+minor listados. Frontend 0 urgent, **2 high arreglados sin intervención del
+usuario** (pasos R1/R2 del plan): el filtro podía dejar el selector vacío si
+el K no tenía ítems en el maestro, y un test no aislaba la vía que decía
+probar. Los 3 Excel reales de Naturgy que usaba `parser-real.spec.ts` **ya no
+existen** (el usuario los borró): la regresión Naturgy queda en los ~30 tests
+sintéticos.
+
+**Fuera de alcance, anotado:** `parser-pdf.ts`; "Visitas de inspección" sin
+código sigue ignorada; período sin año; interpretar el coeficiente 653,32;
+combobox con búsqueda o "asignar provincia a todas" (UI nueva, requeriría
+mockup). Plan: `docs/superpowers/plans/2026-09-21-cert-k12-provincia-total.md`.
