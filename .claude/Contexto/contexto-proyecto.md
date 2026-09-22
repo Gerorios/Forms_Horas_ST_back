@@ -3789,9 +3789,23 @@ rechazó una tanda de herramientas por error de UI y pidió seguir ("y?").
   borró el worktree Backend con el cambio sin commitear; se rehízo en
   `.claude/worktrees/total-horas-dia`. Lección: commitear WIP antes de reiniciar.
 
+**DEPLOYADO 2026-09-22** a pedido del usuario: back `93729d5`, front `2991269`,
+pm2 ambos online. Detalle y rollback en `docs/2026-09-22-total-horas-dia-rotulos-deploy.md`.
+
+**(C) Cristian Urueña — diagnosticado, NO es bug.** Consulta de solo lectura en
+`Horas_Sertec`: en la 2ª quincena de septiembre (16-30) tiene 0 hs aprobadas y
+5 filas pendientes (53.6 hs: 16, 17, 18 y 21/09). La tarjeta del operario en
+Mis registros suma solo lo aprobado → 0 hs. Las 10.5 aprobadas son del 14/09
+(1ª quincena). El rótulo nuevo "Horas aprobadas · 2ª quincena" lo hace
+explícito. Ojo: el 16/09 suma 22.45 hs pendientes en 2 filas — revisar al aprobar.
+
+**Incidente 2:** `git worktree remove` del Backend siguió el junction de
+`node_modules` y vació el del checkout principal; se recuperó con `npm ci` +
+`prisma generate` (build y jest 760 OK). Para el Frontend se quitó primero el
+junction con `cmd /c rmdir` (destino intacto, 563 entradas).
+
 **PENDIENTES:**
-- Deploy de Backend y Frontend: NO hecho, solo si el usuario lo pide.
-- (C) Cristian Urueña 0 hs / 10.5 aprobadas: sin diagnosticar.
-- Borrar worktrees: Backend `total-horas-dia` y el `.git` huérfano en
-  `redisenio-central-sertec`; Frontend `redisenio-central-sertec`.
-- PR de docs con esta sección.
+- Borrar a mano dos carpetas sueltas (sin metadata de git):
+  Backend `.claude/worktrees/redisenio-central-sertec` (solo un `.git`) y
+  Frontend `.claude/worktrees/redisenio-central-sertec` (falló por "Filename
+  too long" en `.next`).
