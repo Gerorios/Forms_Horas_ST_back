@@ -62,6 +62,8 @@ Rutas: **FE** = worktree
 5. Franja del inicio: saludo + fecha + quincena en curso; el tile de cierre
    queda como está.
 6. Fotos: dos (inicio ~1920×700, login 1920×1080), ≤ 400 KB, `public/fotos/`.
+   *Actualizado 2026-09-22 (par F1): el login quedó vertical 1440×1920 porque
+   la foto que mandó el usuario es vertical; aprobó la previsualización.*
 7. Favicon: se conserva el logo actual.
 8. Pestaña: `title: 'Central Sertec'`.
 9. Fondo del contenido: `sand-deep #f3f1ec` con tarjetas blancas.
@@ -230,6 +232,45 @@ formateado (string) no usarlo.
   vistas de cierres y precios → 2 rondas de review**, aunque sea solo
   encabezado.
 
+## Par F1 — Fotos reales (carril corto, 2026-09-22)
+
+**Pedido:** encender las fotos de fondo del ADR-025 con las dos imágenes que
+mandó el usuario (`C:\Users\Administrador\Desktop\FotosApp`).
+
+- **Asignación:** inicio = panorámica de la cuadrilla (3064×1376, generada);
+  login = trabajo en altura (1200×1600, vertical; con `object-cover` a pantalla
+  completa quedan el operario y el cielo, y en móvil entra entera).
+- **Archivos:** `public/fotos/inicio.jpg` (recorte 1920×700 centrado),
+  `public/fotos/login.jpg` (1920 de alto máximo), ambos ≤ 400 KB, y
+  `src/lib/fotos.ts` con las dos rutas. Un solo archivo de código.
+- **Test rojo primero:** `src/lib/fotos.test.ts`: cada entrada de `FOTOS` es
+  una ruta no nula y el archivo existe en `public/`. Falla hoy (ambas `null`).
+- **Verificación:** test verde, `fondo-foto.test.tsx` intacto, vista en local
+  del inicio y del login a 390 y 1366 px (texto blanco legible sobre el velo).
+- **Entrega:** commit propio dentro del PR de la etapa 3a, que sigue esperando
+  el OK del usuario (un PR menos; las fotos no dependen de 3a pero salen juntas).
+- **Riesgo:** la foto generada muestra un logo en la camioneta; el velo la
+  oscurece pero se ve. El usuario la eligió a sabiendas.
+- **Hecho 2026-09-22.** Test rojo (2 fallan con `null`) → imágenes 374 KB y
+  275 KB → verde (6/6 con `fondo-foto.test.tsx`). Verificado en la app real a
+  1366 y 390 px: en el login la tarjeta oscura queda sobre el cuerpo del
+  operario (casco y torso arriba, estructura abajo); el usuario vio esa
+  previsualización y la aprobó ("si queda así está de diez"). Suite completa
+  784/784.
+- **Paso F2 (2026-09-22, pedido del usuario al ver el login):** "corregiría la
+  imagen del login y la pondría un poco más abajo". Se le mostraron tres
+  anclajes en la app real (28 %, 38 %, 45 %) y eligió **B = 38 %**: el casco
+  del operario queda a la altura del título, arriba de la tarjeta. Par:
+  `FondoFoto` gana la prop opcional `posicion` (clase de `object-position`
+  sumada a `object-cover`); el login pasa `object-[center_38%]`; el inicio no
+  cambia. Tests: default sin clase de posición; con `posicion` tiene ambas
+  clases (rojo → verde). Suite 786/786, tsc y lint limpios. Verificado a 1366
+  y 390 px. Revisión: 0
+  urgent, 0 high, 4 minor (comentario "en null" ya no alcanzable sin tocar el
+  test; `400 * 1024` sin nombre; `ruta as string`; deriva de docs corregida).
+  Deuda fuera del par: `priority` de `next/image` deprecado en Next 16 a favor
+  de `preload` (`fondo-foto.tsx`, etapa 2).
+
 ## Docs (PR Backend `docs/redisenio-central-sertec`)
 
 ADR-025 (hecho), spec mockup (hecho), este plan, `CONTEXT.md` (hecho),
@@ -257,7 +298,8 @@ separado), `docs/2026-MM-DD-central-sertec-etapaN-deploy.md` por deploy.
 
 ## Fuera de alcance
 
-Lógica de módulos; Backend salvo docs; fotos reales y su edición; identidad
+Lógica de módulos; Backend salvo docs; edición de las fotos más allá del
+recorte y la compresión (las fotos reales entraron en el par F1); identidad
 gráfica nueva (logo/favicon "CS"); modo oscuro real; tipografías; rediseño
 interno de tablas, formularios, diálogos y gráficos; gating de roles
 (Combustible sigue solo Admin); `403` y "Cargando…"; nombres de repos y

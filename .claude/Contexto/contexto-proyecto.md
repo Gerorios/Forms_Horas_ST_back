@@ -3552,7 +3552,7 @@ bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
 herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
 lista de procesos antes de borrar la carpeta.
 
-## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1 y 2 en main, 3a lista (2026-09-21)
+## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1, 2 y 3a en main con fotos reales (2026-09-21 → 2026-09-22)
 
 El usuario pidió un cambio visual de **toda** la aplicación para que funcione
 como un ERP o sistema interno integral de la empresa, con módulos
@@ -3597,8 +3597,7 @@ sobre grafito da 3,3:1. Decisiones del usuario en la muestra: logo y título
 **fuera** de la tarjeta; puntos de área **todos dorados** (único acento).
 Revisión 0/0/10 minor.
 
-**Etapa 3a — base + Operación (rama `feat/central-sertec-3a-operacion`,
-lista, SIN PR).** `PageHeader` acepta `area` y muestra "Operación" o
+**Etapa 3a — base + Operación (Frontend #76, en main el 2026-09-22).** `PageHeader` acepta `area` y muestra "Operación" o
 "Operación · eyebrow" (default: los eyebrows que solo nombraban rol o módulo
 se reemplazan por el área); `StatTile` compartido (`components/stat-tile.tsx`,
 API unión: `tone`, `colorearSoloSiPositivo`, `icon`, `href`/`onClick`,
@@ -3617,21 +3616,44 @@ revisiones; los minor van listados en cada PR. Servidores locales levantados
 desde el worktree (`next dev --webpack`, backend desde `dist`) para la
 recorrida visual con Chrome; la sesión venció antes de recorrer 3a.
 
+**2026-09-22 — mobile, fotos reales y PR 3a (Frontend #76).** Se recorrió 3a
+en local con la extensión de Chrome a 390 px (la ventana maximizada no
+acepta `resize`; se usó un iframe `sandbox` de 390 px, que además evita que
+la app navegue el top): sin desborde horizontal en inicio, reporte, mis
+registros, control general, km por tantos, combustible y nueva carga; el
+usuario acotó que **para el personal de campo alcanza con reporte, mis
+registros y combustible**, el resto es administrativo. Único desborde,
+**preexistente**: la fila de pestañas de `/aprobaciones` (~15 px). El usuario
+mandó dos fotos (`Desktop/FotosApp`): una panorámica generada de la cuadrilla
+(3064×1376) y una vertical real de trabajo en altura (1200×1600). Se le
+mostró una previsualización compuesta (PIL, mismos velos) y aprobó
+panorámica → inicio (1920×700, 374 KB) y vertical → login (1440×1920, 275 KB);
+par F1 con `fotos.test.ts` (rojo con `null`) y luego, al verlo en la app,
+pidió "la imagen del login un poco más abajo": se le mostraron tres anclajes
+en la app real y eligió **38 %** → paso F2: `FondoFoto` gana `posicion`
+(clase de `object-position`), el login pasa `object-[center_38%]`, el inicio
+sigue centrado. Suite 786/786; revisión fotos 0/0/4 minor, posición sin
+hallazgos. Tres commits en un PR (#76), mergeado con `--admin`. **Trampas:**
+Claude Code mató los servidores de fondo por poca memoria y quedaron `node`
+huérfanos en 3000/3001 que siguieron sirviendo (el nuevo arranque falla por
+puerto ocupado); el `main` local del Backend está 28 commits atrás y no
+compila contra el cliente Prisma regenerado (`git pull` antes de tocarlo);
+al compilar rutas nuevas, el dev server recarga el top y pisa el iframe de
+prueba. Deuda nueva: `priority` de `next/image` deprecado en Next 16
+(`fondo-foto.tsx`).
+
 **PENDIENTE.**
-- **Testeo del usuario**: recorrer en local (`http://localhost:3000`) el
-  inicio con los indicadores nuevos, control general y los módulos de
-  Operación con el encabezado de área; después OK para el PR 3a.
-- **PR 3a** (crear y mergear con `--admin` tras el OK), luego **PR 3b**
-  (Personas + Administración: 12 cambios de encabezado) y **PR 3c**
+- **PR 3b** (Personas + Administración: 12 cambios de encabezado) y **PR 3c**
   (Resultados operativos: liquidación y certificaciones, migración de los 4
   `StatTile` locales; **2 rondas de revisión** porque toca vistas de cierres
   y precios; `colorearSoloSiPositivo` solo con `value` numérico).
-- **Fotos**: dos, del usuario (inicio ~1920×700, login 1920×1080).
 - **Deploy**: **NO** hasta que las tres etapas estén mergeadas y el usuario lo
   pida explícitamente; documento `docs/2026-MM-DD-central-sertec-deploy.md`
   en ese momento. Producción sigue en `f73b3da` back / `0b4babb` front.
-- Docs del Backend: la rama `docs/redisenio-central-sertec` acumula el plan
-  actualizado y esta sección; se abre su PR con el cierre de la etapa 3.
+- Docs del Backend: la rama `docs/redisenio-central-sertec` se mergea por
+  PR al cerrar cada etapa (este cierre de 3a incluido).
+- Arreglar el desborde de las pestañas de `/aprobaciones` en 390 px
+  (`flex-wrap` u `overflow-x-auto`), junto con 3b.
 - Deuda anotada: anillo de foco `brand/40` del botón de login sobre grafito
   ~2,5:1 (preexistente); azul `#3b6fc4` repetido a mano en certificaciones
   existiendo `--color-chart-2`.
