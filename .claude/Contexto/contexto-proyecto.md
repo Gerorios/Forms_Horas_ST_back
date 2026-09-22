@@ -3552,7 +3552,7 @@ bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
 herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
 lista de procesos antes de borrar la carpeta.
 
-## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1, 2, 3a y 3b en main con fotos reales (2026-09-21 → 2026-09-22)
+## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral — las 3 etapas en main con fotos reales, SIN deploy (2026-09-21 → 2026-09-22)
 
 El usuario pidió un cambio visual de **toda** la aplicación para que funcione
 como un ERP o sistema interno integral de la empresa, con módulos
@@ -3662,8 +3662,34 @@ sumarlo al PR (3b.R3, test rojo → verde). Un solo PR, mergeado con `--admin`.
 Deuda preexistente vista: `react-hooks/set-state-in-effect` en
 `aprobaciones/page.tsx:60` y `ausencias/page.tsx:212`.
 
+**Etapa 3c — Resultados operativos (Frontend #78, mismo día).** Dos
+ejecutores en paralelo sobre archivos disjuntos (A liquidación: 6 páginas +
+2 tabs de tarifas + tile de análisis; B certificaciones: 5 páginas + 3
+tiles): los eyebrows "Liquidador"/"Liquidación"/"Certificaciones" nombraban
+rol o módulo y se reemplazaron por el área; las 4 copias locales de
+`StatTile` se fueron (−66 líneas) y el compartido dejó verdes las
+aserciones del monto largo de carga sin tocarlas. 15 rojos → 114 + 154
+verdes; suite completa **816/816** sin flaky; tsc limpio. Revisión (2 ejes +
+verificador): **0 urgent, 0 high, 3 minor, 5 descartados**; en los 5
+archivos sensibles (cierres ×2, detalle de quincena, 2 tabs de tarifas) el
+diff es solo la línea del `PageHeader`, verificado por archivo. La 2.ª ronda
+prevista para cierres/precios no tuvo hunks de arreglo que revisar. Un
+revisor afirmó que admin/novedades "seguían sin área": falso, el verificador
+lo descartó con `git grep` sobre HEAD (lección: los revisores pueden leer un
+ref viejo; el verificador es la compuerta). Cambio visual asentado (3a.2):
+los importes largos de análisis, resumen y analytics bajan un escalón de
+tipografía y ganan `font-display`. **Rediseño completo en `main` del
+Frontend (#74, #75, #76, #77, #78); producción NO lo tiene.**
+
 **PENDIENTE.**
-- **PR 3c**
+- **Deploy del rediseño completo**: solo con pedido explícito del usuario.
+  Front `cf3ab34` (main) sobre producción `0b4babb`; el Backend no cambió
+  (solo docs), así que el deploy es únicamente del Frontend. Documento
+  `docs/2026-MM-DD-central-sertec-deploy.md` en ese momento; rollback =
+  volver el front a `0b4babb`.
+- Recorrida visual del usuario en producción o en local con Liquidador/Admin:
+  los tableros de análisis, resumen y analytics con la tipografía nueva.
+- (histórico) **PR 3c**
   (Resultados operativos: liquidación y certificaciones, migración de los 4
   `StatTile` locales; **2 rondas de revisión** porque toca vistas de cierres
   y precios; `colorearSoloSiPositivo` solo con `value` numérico).
