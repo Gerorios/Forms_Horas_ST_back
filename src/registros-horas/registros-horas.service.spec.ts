@@ -635,4 +635,44 @@ describe('RegistrosHorasService', () => {
       });
     });
   });
+
+  describe('porAprobar — totalHorasDia (2026-09-22)', () => {
+    it('redondea el total del día a 2 decimales, como los otros totales', async () => {
+      const fecha = new Date('2026-09-10');
+      const usuarioFila = { cuil: '20-1-1', email: 'a@b', nombreFueraNomina: 'Jefe' };
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ loteId: 'L1' }]) // lotes
+        .mockResolvedValueOnce([
+          {
+            id: 1,
+            loteId: 'L1',
+            operarioCuil: '20-2-2',
+            fecha,
+            horas: 0.1,
+            contratoId: 1,
+            cargadoPorCuil: '20-1-1',
+            aprobadoPorCuil: null,
+            cargadoPor: usuarioFila,
+            aprobadoPor: null,
+          },
+        ]) // filas del lote
+        .mockResolvedValueOnce(
+          [0.1, 0.2, 0.3].map((horas, i) => ({
+            id: i + 1,
+            operarioCuil: '20-2-2',
+            fecha,
+            horas,
+            contratoId: i + 1,
+            tareas: [],
+            moviles: [],
+          })),
+        ); // filas del día, todos los contratos
+
+      const r = await service.porAprobar(usuario, 'pendiente');
+
+      // 0.1 + 0.2 + 0.3 en coma flotante da 0.6000000000000001
+      expect(r[0].totalHorasDia).toBe(0.6);
+    });
+  });
 });

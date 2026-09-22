@@ -758,7 +758,7 @@ export class RegistrosHorasService {
         aprobadoPor: f.aprobadoPor
           ? { cuil: f.aprobadoPor.cuil, nombre: nombreUsuario(f.aprobadoPor) }
           : null,
-        totalHorasDia: totalPorClave.get(k) ?? Number(f.horas),
+        totalHorasDia: Math.round((totalPorClave.get(k) ?? Number(f.horas)) * 100) / 100,
         duplicadoCruzado: idsDuplicados.has(f.id),
       };
     });
