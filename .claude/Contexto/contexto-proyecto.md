@@ -3772,3 +3772,26 @@ rechazó una tanda de herramientas por error de UI y pidió seguir ("y?").
   con la tipografía unificada.
 - Borrar el worktree `redisenio-central-sertec` de ambos repos cuando no haga
   falta seguir en él.
+
+## 93. totalHorasDia redondeado (Backend) + rótulos de horas (Frontend) (2026-09-22)
+
+**Carril corto.** Plan: `docs/superpowers/plans/2026-09-22-total-horas-dia-y-rotulos.md`.
+
+- **Backend #91** (merge `0d97ca6`): `porAprobar` redondea `totalHorasDia` a 2
+  decimales (`registros-horas.service.ts:761`), como los otros 5 totales. Test
+  nuevo visto fallar (0.6000000000000001). Jest 760 passed, build OK.
+- **Frontend #80** (merge `2991269`): inicio "Horas cargadas" + "Incluye
+  pendientes de aprobación"; Mis registros del operario "Horas aprobadas · Nª
+  quincena"; Cargas agrupadas "Total" + "Incluye pendientes de aprobación". 3
+  tests nuevos, vitest 833/833, tsc OK.
+- Revisión: 2 ejes (0/0/2 minor) → `verificador-review` descartó los 2 minor.
+- Incidente: el reinicio de Claude Code (para habilitar Opus 5.5 en los agentes)
+  borró el worktree Backend con el cambio sin commitear; se rehízo en
+  `.claude/worktrees/total-horas-dia`. Lección: commitear WIP antes de reiniciar.
+
+**PENDIENTES:**
+- Deploy de Backend y Frontend: NO hecho, solo si el usuario lo pide.
+- (C) Cristian Urueña 0 hs / 10.5 aprobadas: sin diagnosticar.
+- Borrar worktrees: Backend `total-horas-dia` y el `.git` huérfano en
+  `redisenio-central-sertec`; Frontend `redisenio-central-sertec`.
+- PR de docs con esta sección.
