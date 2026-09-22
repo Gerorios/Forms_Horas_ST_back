@@ -262,6 +262,40 @@ formateado (string) no usarlo.
   StatTiles. **Toca
   vistas de cierres y precios → 2 rondas de review**, aunque sea solo
   encabezado.
+  Rama creada el 2026-09-22 desde `6a15df3` (main con 3b). Relevamiento: los
+  eyebrows existentes son "Liquidación" (analisis), "Liquidador" (quincena,
+  quincena/detalle ×2 incl. "Período inválido", cierres, cierres/[id] ×2 incl.
+  "Cierre inválido") y "Certificaciones" (×5): todos nombran módulo o rol →
+  se **reemplazan** por `area="resultados"` (rótulo "Resultados operativos").
+  `perfiles/page.tsx:299` y las dos tabs de tarifas
+  (`features/liquidacion/precios-vigentes-tab.tsx:60`,
+  `sueldos-mensualizados-tab.tsx:79`) no tienen eyebrow → solo ganan `area`.
+  `liquidacion/page.tsx` es redirect y no se toca. **Dos ejecutores en
+  paralelo** sobre archivos disjuntos: (A) liquidación: 6 pages + 2 tabs +
+  migración del `StatTile` local de `analisis/page.tsx:42` al compartido;
+  (B) certificaciones: 5 pages + migración de los `StatTile` locales de
+  `page.tsx:58`, `analytics/page.tsx:51` y `carga/page.tsx:286` (este con
+  `tone` incl. `manual`, `testId` obligatorio; `carga-page.test.tsx:624-631`
+  afirma `break-words`, `text-lg` por longitud, `min-w-0` en el padre y que
+  el valor corto NO lleva `text-lg`: el compartido ya cumple, ver 3a.2).
+  Regla: `colorearSoloSiPositivo` NO se usa en 3c (los valores son strings
+  formateados). Test de área en cada `*-page.test.tsx`; `certificaciones/
+  page.tsx` (resumen) y `analytics` tienen su test en
+  `src/features/certificaciones/{resumen,analytics}/`.
+  **Ejecutado 2026-09-22** (dos ejecutores en paralelo, A: 10 rojos → 114/114;
+  B: 5 rojos → 154/154, `carga-page.test.tsx:624-631` intacto). Suite
+  completa **816/816**, tsc limpio, eslint solo preexistentes
+  (`set-state-in-effect` en cierres:181, perfiles:233, items:360 y ×4 en
+  precios-vigentes-tab). Diff: 25 archivos, +97/−87 (las 4 copias del tile).
+  **Ronda 1** (2 ejes + verificador): **0 urgent, 0 high, 3 minor, 5
+  descartados**; en los 5 archivos sensibles (cierres ×2, quincena/detalle,
+  las 2 tabs de tarifas) el diff es solo la línea del `PageHeader`,
+  verificado con `git diff` por archivo. Minor: tests de área copiados;
+  `getAllByText(...)[0]` laxo; `testId` pasa de obligatorio a opcional en el
+  tile de carga. **Ronda 2: sin hunks de arreglo que revisar** (la segunda
+  ronda revisa solo los arreglos de la primera). Cambio visual esperado
+  (3a.2): los importes largos de resumen, analytics y análisis bajan un
+  escalón de tipografía y ganan `font-display`.
 
 ## Par F1 — Fotos reales (carril corto, 2026-09-22)
 
