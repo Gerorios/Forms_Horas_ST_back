@@ -225,7 +225,38 @@ formateado (string) no usarlo.
   layouts. 3a.4 Páginas de Operación: test de área en cada
   `*-page.test.tsx` + el cambio de `PageHeader`.
 - **PR 3b — Personas + Administración** (`-3b-personas-admin`): 12 cambios de
-  una línea con su test de área.
+  una línea con su test de área. Rama creada el 2026-09-22 desde `3105108`
+  (main con 3a). Páginas: `novedades` (area personas, conserva el eyebrow
+  condicional → "Personas · Las que cargaste vos"), `ausencias` (personas;
+  el eyebrow "Higiene y Seguridad" solo nombra el rol → se reemplaza),
+  `admin/{usuarios, contratos, tareas, moviles, provincias, tipos-novedad,
+  categorias-uocra, estaciones-servicio, tipos-combustible,
+  accesos-certificaciones}` (area administracion; `admin/page` es redirect y
+  no se toca). `categorias-uocra` no tiene test: se agrega uno mínimo (render
+  + área).
+  **Paso 3b.R1 — pestañas de `/aprobaciones` en 390 px** (hallazgo de la
+  recorrida mobile del 2026-09-22, preexistente): el contenedor
+  `flex gap-1 border-b border-line` de `aprobaciones/page.tsx:192` no envuelve
+  y la tercera pestaña con contador llega a 390 px sobre 375 útiles (scroll
+  horizontal). Arreglo mínimo: `flex-wrap`. Test: el contenedor de pestañas
+  tiene la clase `flex-wrap`. Es el mismo criterio que `SubNav`.
+  **Ejecutado 2026-09-22** (ejecutor, un lanzamiento con los 13 pares): 14
+  rojos → 132/132 verdes; suite 799/800 (1 timeout flaky en
+  `resumen-page.test.tsx`, pasa aislado). Revisión (2 ejes + verificador):
+  **0 urgent, 1 high, 2 minor, 6 descartados**.
+  **Paso 3b.R2 (high, arreglado):** `novedades-page.test.tsx:151`, el test
+  "Supervisor NO ve la aclaración" usaba `queryByText('Las que cargaste vos')`
+  exacto y, como el `PageHeader` ahora imprime "Personas · Las que cargaste
+  vos" en un solo nodo, la aserción negativa quedó vacía (pasaba aunque el
+  eyebrow se mostrara). Arreglo: regex `/Las que cargaste vos/`. Evidencia:
+  con el eyebrow forzado en `page.tsx` el test falla; restaurado, 28/28.
+  Minor sin tocar: selector `/pendientes/i` y `.parentElement` en el test de
+  `flex-wrap` de aprobaciones. **Deuda detectada:** las pestañas de
+  `/ausencias` (`ausencias/page.tsx:314`, `flex gap-1`) tienen el mismo
+  desborde y peor (~420 px sobre 375). **Paso 3b.R3 (2026-09-22, el usuario
+  pidió sumarlo al PR):** `flex-wrap` en esa fila, test rojo (1/31) → verde
+  (44/44 con aprobaciones), tsc limpio; el error de eslint
+  `set-state-in-effect` en `ausencias/page.tsx:212` es preexistente.
 - **PR 3c — Resultados operativos** (`-3c-resultados`): liquidación (6 pages
   incl. perfiles + 2 tabs), análisis + StatTile, certificaciones ×5 con 3
   StatTiles. **Toca

@@ -3552,7 +3552,7 @@ bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
 herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
 lista de procesos antes de borrar la carpeta.
 
-## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1, 2 y 3a en main con fotos reales (2026-09-21 → 2026-09-22)
+## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral, etapas 1, 2, 3a y 3b en main con fotos reales (2026-09-21 → 2026-09-22)
 
 El usuario pidió un cambio visual de **toda** la aplicación para que funcione
 como un ERP o sistema interno integral de la empresa, con módulos
@@ -3642,8 +3642,28 @@ al compilar rutas nuevas, el dev server recarga el top y pisa el iframe de
 prueba. Deuda nueva: `priority` de `next/image` deprecado en Next 16
 (`fondo-foto.tsx`).
 
+**Etapa 3b — Personas + Administración (Frontend, mismo día, tras el OK
+"seguí con los pendientes").** Un ejecutor (Opus/high) hizo los 13 pares de
+una vez: novedades y ausencias → área Personas (novedades conserva
+"Personas · Las que cargaste vos"; el eyebrow "Higiene y Seguridad" solo
+nombraba el rol y se fue), las 10 páginas de admin → Administración, test de
+área por página, `categorias-uocra` gana su primer test, y 3b.R1 `flex-wrap`
+en las pestañas de aprobaciones. 14 rojos → 132/132; suite 799/800 (timeout
+flaky de `resumen-page.test.tsx`, pasa aislado). Revisión con dos revisores
+en paralelo + verificador: **0 urgent, 1 high, 2 minor, 6 descartados**. El
+high (3b.R2): el test negativo "Supervisor NO ve la aclaración" hacía
+`queryByText('Las que cargaste vos')` exacto y, como el encabezado ahora
+imprime "Personas · Las que cargaste vos" en un nodo, la aserción quedó
+vacía; pasó a regex y se probó que falla con el eyebrow forzado. **Lección:
+al cambiar el texto de un encabezado, revisar también los tests negativos
+que lo buscan.** El verificador destapó que las pestañas de `/ausencias`
+desbordaban más que las de aprobaciones (~420 px sobre 375); el usuario pidió
+sumarlo al PR (3b.R3, test rojo → verde). Un solo PR, mergeado con `--admin`.
+Deuda preexistente vista: `react-hooks/set-state-in-effect` en
+`aprobaciones/page.tsx:60` y `ausencias/page.tsx:212`.
+
 **PENDIENTE.**
-- **PR 3b** (Personas + Administración: 12 cambios de encabezado) y **PR 3c**
+- **PR 3c**
   (Resultados operativos: liquidación y certificaciones, migración de los 4
   `StatTile` locales; **2 rondas de revisión** porque toca vistas de cierres
   y precios; `colorearSoloSiPositivo` solo con `value` numérico).
@@ -3652,8 +3672,6 @@ prueba. Deuda nueva: `priority` de `next/image` deprecado en Next 16
   en ese momento. Producción sigue en `f73b3da` back / `0b4babb` front.
 - Docs del Backend: la rama `docs/redisenio-central-sertec` se mergea por
   PR al cerrar cada etapa (este cierre de 3a incluido).
-- Arreglar el desborde de las pestañas de `/aprobaciones` en 390 px
-  (`flex-wrap` u `overflow-x-auto`), junto con 3b.
 - Deuda anotada: anillo de foco `brand/40` del botón de login sobre grafito
   ~2,5:1 (preexistente); azul `#3b6fc4` repetido a mano en certificaciones
   existiendo `--color-chart-2`.
