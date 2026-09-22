@@ -3552,7 +3552,7 @@ bloqueaba una carpeta y hubo que matarlo. Lección: al bajar `next dev` con la
 herramienta de tareas puede quedar vivo el proceso hijo; verificar con la
 lista de procesos antes de borrar la carpeta.
 
-## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral — las 3 etapas en main con fotos reales, SIN deploy (2026-09-21 → 2026-09-22)
+## 91. Rediseño "Central Sertec": la app pasa a sistema interno integral — las 3 etapas en main con fotos reales, DEPLOYADO el 2026-09-22 (2026-09-21 → 2026-09-22)
 
 El usuario pidió un cambio visual de **toda** la aplicación para que funcione
 como un ERP o sistema interno integral de la empresa, con módulos
@@ -3682,11 +3682,9 @@ tipografía y ganan `font-display`. **Rediseño completo en `main` del
 Frontend (#74, #75, #76, #77, #78); producción NO lo tiene.**
 
 **PENDIENTE.**
-- **Deploy del rediseño completo**: solo con pedido explícito del usuario.
-  Front `cf3ab34` (main) sobre producción `0b4babb`; el Backend no cambió
-  (solo docs), así que el deploy es únicamente del Frontend. Documento
-  `docs/2026-MM-DD-central-sertec-deploy.md` en ese momento; rollback =
-  volver el front a `0b4babb`.
+- ~~Deploy del rediseño completo~~ **HECHO el 2026-09-22** junto con el fix
+  de horas (§92): front `0009141`, solo Frontend; documento
+  `docs/2026-09-22-central-sertec-deploy.md`; rollback = front `0b4babb`.
 - Recorrida visual del usuario en producción o en local con Liquidador/Admin:
   los tableros de análisis, resumen y analytics con la tipografía nueva.
 - (histórico) **PR 3c**
@@ -3701,3 +3699,76 @@ Frontend (#74, #75, #76, #77, #78); producción NO lo tiene.**
 - Deuda anotada: anillo de foco `brand/40` del botón de login sobre grafito
   ~2,5:1 (preexistente); azul `#3b6fc4` repetido a mano en certificaciones
   existiendo `--color-chart-2`.
+
+## 92. Horas con un decimal en los totales sumados + deploy del rediseño completo (2026-09-22)
+
+Pedido del usuario, antes de pasar a producción: "hay montos de tarjetas que
+se ven mal, por ejemplo en cargas que hice con uno de los usuarios se ven
+como hasta 8 decimales, se podría redondear ese número a un único decimal? y
+revisar en todo el proyecto si ese problema también existe en otras secciones
+y abordar la solución de la misma manera". Plan
+`docs/superpowers/plans/2026-09-22-horas-un-decimal.md`; PR Frontend #79
+(`fix/horas-un-decimal`, merge `0009141`). Sin Backend, sin API, sin DDL.
+
+**Diagnóstico.** La base guarda todo con ≤ 2 decimales (`horas` Decimal(4,2);
+litros/monto/km Decimal(8,2)/(12,2)); las colas nacen en **sumas en coma
+flotante en el Frontend** sobre `Number(horas)`: `0.1 + 0.2 + 0.3 =
+0.6000000000000001`. Se mostraban crudas en las tarjetas grandes de Mis
+registros ("Cargas que hice", "Mis horas"), en el "hs totales" de cada lote
+(`resumen-carga`, usado en Mis registros y Aprobaciones) y en el aviso "Xhs
+ese día" (`totalHorasDia`, que el Backend suma en JS sin redondear en
+`registros-horas.service.ts:761`). El Backend ya redondea a 2 decimales el
+resto de sus totales. Inicio, control general y ranking ya redondeaban a 1
+decimal inline: ese era el criterio del repo. Barrido del resto: importes de
+liquidación/certificaciones pasan por `fmtMoneda`/`formatMoney`; no hay
+sumas de litros/monto/km en el front.
+
+**Decisiones (defaults del planificador, aprobados por el usuario):** helper
+compartido `src/lib/horas.ts` → `redondearHoras(n): number` (1 decimal; un
+entero sigue viéndose "8", punto decimal como el resto de la sección); no se
+tocan los valores por fila ni `subtotalHoras` (alimenta el diálogo de
+corrección); la comparación de alerta `>= 16` NO se redondea; Backend sin
+tocar.
+
+**Ejecución (carril completo):** planificador Fable/high; 5 pares por
+ejecutores Opus/high (A+B en uno, C/D/E en paralelo sobre archivos disjuntos),
+todos con test rojo pegado (el DOM mostraba `0.6000000000000001 hs` y
+`16.000000000000004hs ese día`). Suite 828/828. Revisión (2 ejes +
+verificador): **0 urgent, 1 high, 2 minor, 3 descartados**. **El high lo
+introdujo el propio fix (R1):** el Par B redondeaba `totalHoras` en la capa
+de datos (`agrupar.ts`) y el Par C volvía a redondear la suma → dos lotes de
+8.25 daban 16.6 en vez de 16.5 (alcanzable: el `step=0.5` es solo el spinner).
+Arreglo: el total del lote queda crudo y se redondea una sola vez al mostrar
+(`resumen-carga.tsx`); test con dos lotes de 8.25 → `16.5 hs`. Suite final
+**830/830**. **Lección: redondear en el render, nunca en la capa de datos que
+después se vuelve a sumar.** El usuario probó en local ("dejame probarlo a
+mí") y dio el OK.
+
+**Deploy (pedido explícito: "mergea todo y el deploy en produccion").** Solo
+Frontend, incluye el rediseño completo (#74-#78) y este fix (#79): front
+`0b4babb` → `0009141`, build 33 s, `pm2 restart forms-horas-front` (PID
+651809). Backend `f73b3da` → `ba62298` solo docs, sin build ni restart.
+Verificado: `/`, `/login`, `/mis-registros`, `/liquidacion/analisis` 200;
+fotos 200; `<title>` "Central Sertec"; dominio público
+`https://misregistros.serytec.com.ar/login` 200 con el título nuevo; API sin
+token 401. Documento `docs/2026-09-22-central-sertec-deploy.md`. Rollback =
+front `0b4babb`.
+
+**Trampas de la sesión:** el `main` local del Backend estaba 28 commits atrás
+(todo se trabajó en worktrees) y no compilaba contra el cliente Prisma
+regenerado → `git pull` + `prisma generate` antes de levantarlo; el usuario
+rechazó una tanda de herramientas por error de UI y pidió seguir ("y?").
+
+**PENDIENTES.**
+- Backend: redondear `totalHorasDia` en `registros-horas.service.ts:761`
+  (`Math.round(x * 100) / 100`, como el resto de sus totales). Un par chico.
+- Inicio suma `estado !== 'desaprobado'` y Mis registros solo `'aprobado'`:
+  dos totales distintos para la misma quincena (previo). Decidir criterio.
+- Minor sin tocar: `page.test.tsx` no resetea `h.registros` en `beforeEach`;
+  comentario del bug repetido en tres archivos.
+- `combustible/page.tsx` muestra litros/monto sin separador de miles (otro
+  pedido, si el usuario lo quiere).
+- Recorrida del usuario en producción con Liquidador/Admin de los tableros
+  con la tipografía unificada.
+- Borrar el worktree `redisenio-central-sertec` de ambos repos cuando no haga
+  falta seguir en él.
