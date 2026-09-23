@@ -3910,3 +3910,23 @@ el remove solo después de leer la confirmación.
   una promesa rechazada sin manejar.
 - Minors de #84: el test de `setItem` detecta el bug vía el error no manejado,
   no por su aserción; dos comentarios se superponen.
+
+## 97. Token de sesión a prueba de localStorage bloqueado (2026-09-23)
+
+Pendiente de §96. **Frontend #85** (merge `55b3ded`, carril corto):
+`src/lib/api/token.ts` protege `getItem`/`setItem`/`removeItem` con `try/catch`.
+Si `setItem` falla, el token queda **en memoria** (la sesión dura lo que la
+pestaña) y se **borra el token anterior persistido**; con storage sano manda
+`localStorage` como antes. Así el login ya no tira y `session.tsx` no deja la
+promesa rechazada. 4 tests nuevos vistos fallar. Suite 841/841.
+Revisión: **1 urgent arreglado** (con cuota llena quedaba el token viejo
+persistido → tras recargar B operaba como A), 3 minor sin tocar, 2 descartados.
+**DEPLOYADO** (front PID 663036, rollback `4d82676`). Deploy:
+`docs/2026-09-23-token-storage-deploy.md`.
+
+**PENDIENTES:**
+- Deuda previa: `src/app/login/page.tsx` no redirige a quien ya tiene sesión
+  (permite loguearse encima de un token vigente sin logout).
+- Minors de #85: test de regresión de `respaldo = null` tras `setItem` exitoso;
+  renombrar `respaldo` → `tokenEnMemoria`.
+- Siguen los minors de #84 (§96).
