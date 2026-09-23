@@ -3844,4 +3844,37 @@ mismo contrato (11 y 11.45 hs, 22.45 en total) — posible duplicado a revisar a
 aprobar.
 
 **PENDIENTES:**
-- Borrar a mano las carpetas sueltas de worktrees de §93.
+- ~~Borrar a mano las carpetas sueltas de worktrees de §93~~ → borradas el 2026-09-23.
+
+## 95. Marca "Central SER&TEC" y copy "Sistema Interno" (2026-09-23)
+
+**Carril corto.** Plan: `docs/superpowers/plans/2026-09-23-nombre-ser-tec.md`.
+Deploy: `docs/2026-09-23-nombre-ser-tec-deploy.md`.
+
+- Pedido: en el login, "Sertec" → "SER&TEC" y el copy a solo "Sistema Interno".
+  Alcance elegido por el usuario: toda la app (login, barra lateral, pestaña).
+  Después pidió también la mayúscula "Sistema Interno" en la barra.
+- **Frontend #82** (merge `c67ec80`): `login/page.tsx`, `app-shell.tsx`,
+  `app/layout.tsx` + tests de login y app-shell (vistos fallar antes).
+- Suite 830/835: 5 timeouts en 4 archivos ajenos que solos pasan 59/59.
+  `next build` LOCAL falla en `next/font` ("Cannot read properties of null
+  (reading '1')") también en `origin/main` sin cambios → entorno local, no el
+  código; el build del VPS pasa. eslint: 1 error preexistente en `app-shell.tsx:160`.
+- Revisión: 0 urgent / 0 high / 3 minor / 1 descartado.
+- **DEPLOYADO 2026-09-23** (solo Frontend): front `c67ec80`, PID 660582.
+  Rollback front `d73eac0`. Verificado en el dominio público.
+
+**Minors (a pedido del usuario), Frontend #83** (merge `ecaa8e8`, carril corto
+por excepción: 4 archivos, uno la constante nueva): `src/lib/marca.ts` con
+`MARCA = 'SER&TEC'` y `NOMBRE_APP = \`Central ${MARCA}\``; login, barra y
+`layout.tsx` la usan (antes 5 literales en 3 archivos). Test nuevo
+`src/app/layout.test.tsx` (mock de `next/font/google`), visto fallar. Vitest
+94/94, 836 tests. Revisión 0/0/2 minor/2 descartados. **DEPLOYADO** (sin cambio
+visible, verificado en el dominio público): front PID 660933, rollback `c67ec80`.
+Deploy: `docs/2026-09-23-constante-nombre-app-deploy.md`.
+
+**PENDIENTES:**
+- Diagnosticar el `next build` local que falla en `next/font` (el del VPS pasa).
+- eslint preexistente en `app-shell.tsx:161` (setState dentro de un effect).
+- Minors sin tocar de #83: `layout.test.tsx` podría ser `.test.ts`; la descripción
+  se prueba con `toContain`.
