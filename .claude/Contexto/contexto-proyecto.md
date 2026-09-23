@@ -3792,7 +3792,8 @@ rechazó una tanda de herramientas por error de UI y pidió seguir ("y?").
 **DEPLOYADO 2026-09-22** a pedido del usuario: back `93729d5`, front `2991269`,
 pm2 ambos online. Detalle y rollback en `docs/2026-09-22-total-horas-dia-rotulos-deploy.md`.
 
-**(C) Cristian Urueña — diagnosticado, NO es bug.** Consulta de solo lectura en
+**(C) Cristian Urueña — diagnóstico corregido en §94** (la primera lectura
+"NO es bug" era incompleta). Consulta de solo lectura en
 `Horas_Sertec`: en la 2ª quincena de septiembre (16-30) tiene 0 hs aprobadas y
 5 filas pendientes (53.6 hs: 16, 17, 18 y 21/09). La tarjeta del operario en
 Mis registros suma solo lo aprobado → 0 hs. Las 10.5 aprobadas son del 14/09
@@ -3809,3 +3810,38 @@ junction con `cmd /c rmdir` (destino intacto, 563 entradas).
   Backend `.claude/worktrees/redisenio-central-sertec` (solo un `.git`) y
   Frontend `.claude/worktrees/redisenio-central-sertec` (falló por "Filename
   too long" en `.next`).
+
+## 94. Tarjeta corregida con el estado real de la corrección — caso Urueña (2026-09-23)
+
+**Carril corto.** Plan: `docs/superpowers/plans/2026-09-23-badge-correccion.md`.
+Deploy: `docs/2026-09-23-badge-correccion-deploy.md`.
+
+**Diagnóstico.** El usuario vio a Cristian Urueña en Mis registros con el 18/09
+"corregido 10.5 hs, aprobado" y total 0. Consulta de solo lectura en
+`Horas_Sertec`: 2988 = 13.5 hs `desaprobado` (original); 3039 = 10.5 hs,
+`lote_id_origen` = lote de la 2988, **también `desaprobado`** ("fecha mal
+informada"); 4746 = 9.5 hs `pendiente` (carga nueva). El total 0 era correcto
+(la tarjeta del operario suma solo `aprobado`); el bug era de la tarjeta:
+`TarjetaCorregida` pintaba `<StatusBadge estado="aprobado" />` fijo. Mi primera
+respuesta ("no es bug", §93) miró solo los totales y no la tarjeta.
+
+**Frontend #81** (merge `d73eac0`), `registros-cards.tsx`:
+- badge con `corregida.estado`;
+- borde y línea "Corregido de X a Y" verdes solo si la corrección está aprobada;
+- "Corrección rechazada: <motivo>" en `text-danger` si la corrección se rechazó
+  (paso 4, agregado con OK del usuario tras la revisión).
+- 3 casos nuevos en `registros-cards.test.tsx` (caso Urueña visto fallar en las
+  dos etapas). Vitest 93/93 archivos, 835 tests; tsc y eslint limpios.
+- Revisión: 2 ejes → verificador 0 urgent / 0 high / 3 minor (en el PR) / 3 descartados.
+- Una primera corrida de la suite dio 3 timeouts y solo 87 archivos con la
+  máquina cargada; solos pasaban y la segunda corrida completa dio 93/93.
+
+**DEPLOYADO 2026-09-23** (solo Frontend, a pedido): front `d73eac0`, PID
+659826; back intacto. Rollback front `2991269`.
+
+**Observación para el usuario:** el 16/09 Urueña tiene 2 cargas pendientes del
+mismo contrato (11 y 11.45 hs, 22.45 en total) — posible duplicado a revisar al
+aprobar.
+
+**PENDIENTES:**
+- Borrar a mano las carpetas sueltas de worktrees de §93.
