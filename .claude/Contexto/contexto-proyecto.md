@@ -3866,7 +3866,7 @@ Deploy: `docs/2026-09-23-nombre-ser-tec-deploy.md`.
 
 **Minors (a pedido del usuario), Frontend #83** (merge `ecaa8e8`, carril corto
 por excepción: 4 archivos, uno la constante nueva): `src/lib/marca.ts` con
-`MARCA = 'SER&TEC'` y `NOMBRE_APP = \`Central ${MARCA}\``; login, barra y
+`MARCA = 'SER&TEC'` y `NOMBRE_APP` = "Central " + `MARCA`; login, barra y
 `layout.tsx` la usan (antes 5 literales en 3 archivos). Test nuevo
 `src/app/layout.test.tsx` (mock de `next/font/google`), visto fallar. Vitest
 94/94, 836 tests. Revisión 0/0/2 minor/2 descartados. **DEPLOYADO** (sin cambio
@@ -3874,7 +3874,39 @@ visible, verificado en el dominio público): front PID 660933, rollback `c67ec80
 Deploy: `docs/2026-09-23-constante-nombre-app-deploy.md`.
 
 **PENDIENTES:**
-- Diagnosticar el `next build` local que falla en `next/font` (el del VPS pasa).
-- eslint preexistente en `app-shell.tsx:161` (setState dentro de un effect).
+- ~~`next build` local en `next/font`~~ → transitorio (ver §96).
+- ~~eslint en `app-shell.tsx`~~ → resuelto en §96.
 - Minors sin tocar de #83: `layout.test.tsx` podría ser `.test.ts`; la descripción
   se prueba con `toContain`.
+
+## 96. Pendientes de §95: build local y barra lateral con localStorage bloqueado (2026-09-23)
+
+**Build local que fallaba en `next/font`: transitorio.** El error
+(`loader.js:122`, URL de fuente sin extensión) no se reproduce: las 3 fuentes
+del layout bajan con URLs `.woff2` válidas y `origin/main` compila 2 veces
+seguidas (2.5 min / 98 s). Causa probable: Avast interceptando HTTPS
+(la variable `SSLKEYLOGFILE` apunta al proxy de Avast, `aswMonFltProxy`). Si reaparece: reintentar; si es
+frecuente, excluir Node del escaneo HTTPS de Avast.
+
+**Frontend #84** (merge `4d82676`, carril corto): `app-shell.tsx` leía/escribía
+`localStorage` ('sidebar-plegado') sin protección → con almacenamiento bloqueado
+o lleno la barra se caía. `leerPlegado()`/`guardarPlegado()` con `try/catch`; el
+effect de montaje queda (hidratación) con `eslint-disable-next-line
+react-hooks/set-state-in-effect` justificado → **eslint de la barra sin errores**.
+2 tests nuevos vistos fallar (setItem: vía "Unhandled Errors" de vitest). Suite
+835/838 (3 timeouts ajenos que solos pasan). Revisión 0/0/2 minor/2 descartados.
+**DEPLOYADO** (front PID 661764, rollback `ecaa8e8`). Deploy:
+`docs/2026-09-23-sidebar-plegado-storage-deploy.md`.
+
+**Incidente:** al quitar el worktree de diagnóstico mandé en paralelo "quitar
+el junction" y "git worktree remove"; la herramienta bloqueó el primero y el
+segundo vació el `node_modules` del Frontend. Recuperado con `npm ci` (tsc y
+tests OK). Regla: el junction se quita en una llamada separada y secuencial, y
+el remove solo después de leer la confirmación.
+
+**PENDIENTES:**
+- `src/lib/api/token.ts` (`getToken`/`setToken`/`clearToken`) no protege
+  localStorage: con almacenamiento bloqueado el login tira y `session.tsx` deja
+  una promesa rechazada sin manejar.
+- Minors de #84: el test de `setItem` detecta el bug vía el error no manejado,
+  no por su aserción; dos comentarios se superponen.
