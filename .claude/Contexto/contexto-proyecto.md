@@ -3930,3 +3930,34 @@ persistido → tras recargar B operaba como A), 3 minor sin tocar, 2 descartados
 - Minors de #85: test de regresión de `respaldo = null` tras `setItem` exitoso;
   renombrar `respaldo` → `tokenEnMemoria`.
 - Siguen los minors de #84 (§96).
+
+## 98. /login redirige a quien ya tiene sesión (2026-09-25)
+
+Pendiente de §97. **Frontend #86** (merge `3636ac4`, carril corto):
+`src/app/login/page.tsx` toma `perfil`/`loading` de `useSession()`; con sesión
+vigente hace `router.replace('/')` y no muestra el formulario; mientras la
+sesión carga tampoco lo muestra (sin parpadeo); sin sesión, igual que antes.
+**Desvío del plan:** se quitó el `router.push('/')` de `onSubmit` — con el
+effect nuevo el login exitoso navegaba dos veces; ahora sale solo por el
+`replace` (y `/login` no queda en el historial). No hay loop con
+`(protected)/layout.tsx`: condiciones excluyentes y `signOut()` borra el perfil
+antes de ir a `/login`. Detalle de test: el mock de `useRouter` tiene que ser
+una instancia estable (como el real) o el effect se re-dispara.
+2 tests nuevos vistos fallar; spec 9/9; suite 845/845 (1 timeout de tipeo por
+carga, aislado pasa); tsc/eslint limpios; `next build --webpack` OK.
+Revisión: 0 urgent, 0 high, 4 minor sin tocar, 2 descartados.
+Plan: `docs/superpowers/plans/2026-09-25-login-con-sesion.md`.
+
+**DEPLOYADO** (front PID 683862, rollback `55b3ded`). Deploy:
+`docs/2026-09-25-login-con-sesion-deploy.md`.
+
+**PENDIENTES:**
+- Minors de #86: guard espejo de `(protected)/layout.tsx` (extraer si aparece un
+  tercer uso); `return null` antes de `onSubmit` (estilo); el test del login
+  exitoso simula el perfil con `rerender`; `/login` en blanco sin "Cargando…".
+- Deuda previa en `session.tsx`: si el login sale bien pero falla
+  `fetchPerfil`, el token nuevo queda guardado y se ve "Credenciales
+  inválidas" (se limpia al recargar).
+- Siguen los minors de #84 y #85 (§96/§97).
+- Checkout local del Frontend quedó en la rama vieja `feat/horas-extra-pactadas`
+  (ya mergeada): pasarlo a `main` antes de la próxima tarea.
