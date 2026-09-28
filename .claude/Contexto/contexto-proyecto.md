@@ -18,15 +18,26 @@ liquidación que se conecta directamente a esta base de datos.
 
 ## 2. Volumen y stack
 
+> ⚠️ **Actualizado el 2026-09-28** (§99). Lo tachado era el plan inicial de julio;
+> lo vigente sale de §33 (VPS) y §39 (base dedicada).
+
 - **Usuarios:** 50–200 totales. Sin modo offline (siempre hay conexión).
-- **Base de datos:** MySQL/MariaDB propia, IP pública `191.101.235.7:3306`, base `testing`.
-- **Backend:** Node.js + NestJS + Prisma (ORM).
-- **Frontend:** Next.js.
+- **Base de datos:** MySQL/MariaDB propia, IP pública `191.101.235.7:3306`.
+  Dos bases: **`Horas_Sertec`** = producción (solo datos reales) y **`testing`** =
+  desarrollo local y pruebas. Todo DDL va a las dos (ver `CLAUDE.local.md`).
+  ~~base `testing`~~ (fue la única hasta el 2026-07-31, §39).
+- **Backend:** Node.js 22 + NestJS 11 + Prisma 7 (adapter MariaDB). Tests con Jest.
+- **Frontend:** Next.js 16 (App Router) + React 19 + TanStack Query + shadcn/base-ui +
+  Tailwind 4 + Recharts. Tests con Vitest.
 - **Auth:** JWT (token en header Authorization).
-- **Hosting testing:** Vercel (frontend) + Render (backend).
-- **Hosting producción (recomendación):** Vercel (frontend) + Railway (backend).
-  Railway es preferible a Render en producción por uptime garantizado, soporte
-  a variables de entorno secretas y escala sin cold-starts.
+- **Hosting producción:** VPS propia (Hostinger KVM 2, Ubuntu 24.04). Ambos repos en
+  `/var/www/`, procesos PM2 `forms-horas-back` (3001) y `forms-horas-front` (3000),
+  Nginx como reverse proxy (`/` → front, `/api/` → back) con SSL de Let's Encrypt en
+  `misregistros.serytec.com.ar`. DNS en Cloudflare desde 2026-08-14 (§58). Detalle en §33.
+- ~~**Hosting testing:** Vercel (frontend) + Render (backend).~~ Fueron el primer deploy
+  gratuito de julio (§33); no se usan.
+- ~~**Hosting producción (recomendación):** Vercel (frontend) + Railway (backend).~~
+  Descartado: se eligió la VPS propia.
 
 ---
 
@@ -156,13 +167,17 @@ Tablas nuevas que crea la migración:
 
 ## 8. Pendientes reales
 
-| # | Pendiente | Impacto |
-|---|-----------|---------|
-| 1 | Catálogo real de tareas por contrato (K2–K12) | Seed de `tareas_catalogo` |
-| 2 | Catálogo real de móviles (patentes/internos) | Seed de `moviles` |
-| 3 | Quiénes son los 3 Jefes de Contrato (cuil o legajo) | Seed de `usuarios` + `contratos` |
-| 4 | Qué contratos están activos hoy (cuáles de K2–K12) | Seed de `contratos` |
-| 5 | Diseño de la vista SQL para liquidación | A definir con sistemas |
+> ⚠️ **Todos resueltos** (anotado el 2026-09-28, §99). Eran los pendientes de arranque de
+> julio. Los pendientes vigentes viven en la última sección de la bitácora, bajo
+> **PENDIENTES**.
+
+| # | Pendiente | Impacto | Estado |
+|---|-----------|---------|--------|
+| 1 | Catálogo real de tareas por contrato (K2–K12) | Seed de `tareas_catalogo` | Resuelto: los maestros se cargan desde Admin (§24) |
+| 2 | Catálogo real de móviles (patentes/internos) | Seed de `moviles` | Resuelto: alta masiva (§29) y luego alta en modal con buscador (§86) |
+| 3 | Quiénes son los 3 Jefes de Contrato (cuil o legajo) | Seed de `usuarios` + `contratos` | Resuelto: M:N de jefes por contrato, ADR-012 (§45) |
+| 4 | Qué contratos están activos hoy (cuáles de K2–K12) | Seed de `contratos` | Resuelto: se administran desde Admin > Contratos (§25) |
+| 5 | Diseño de la vista SQL para liquidación | A definir con sistemas | Superado: la liquidación se hace dentro de la app (rol Liquidador, ADR-009, §35-36) y el ERP de certificaciones se unificó en NestJS (§73-77) |
 
 ---
 
@@ -3959,5 +3974,29 @@ Plan: `docs/superpowers/plans/2026-09-25-login-con-sesion.md`.
   `fetchPerfil`, el token nuevo queda guardado y se ve "Credenciales
   inválidas" (se limpia al recargar).
 - Siguen los minors de #84 y #85 (§96/§97).
-- Checkout local del Frontend quedó en la rama vieja `feat/horas-extra-pactadas`
-  (ya mergeada): pasarlo a `main` antes de la próxima tarea.
+- ~~Checkout local del Frontend quedó en la rama vieja `feat/horas-extra-pactadas`
+  (ya mergeada): pasarlo a `main` antes de la próxima tarea.~~ Resuelto (§99).
+
+---
+
+## 99. Higiene de los dos repos tras el relevamiento (2026-09-28)
+
+Relevamiento completo del proyecto y limpieza, carril corto, solo docs y git.
+Plan: `docs/superpowers/plans/2026-09-28-higiene-repos.md`.
+
+- **Ramas locales**: borradas todas las ya mergeadas en `main` (26 en Backend, 7 en
+  Frontend). Las remotas no se tocaron. Los dos checkouts quedan en `main`.
+- **`.gitignore` del Backend**: se agrega `skills-lock.json` (lock de `.claude/skills/`,
+  carpeta ya ignorada).
+- `docs/sql/2026-08-21-detalle-diario-consulta.sql` **no se commitea** por decisión del
+  usuario (no quiere esa consulta en GitHub). Queda en `.git/info/exclude`, que es local.
+- **§2 y §8** actualizados: stack y hosting reales (VPS, PM2, Nginx, `Horas_Sertec` +
+  `testing`) y pendientes de julio marcados como resueltos, con la sección que los cerró.
+- **README del Frontend**: deja de ser la plantilla de create-next-app.
+
+**Hallazgo sin resolver:** `docs/infraestructura-produccion.md` (gitignored, §33) **no está
+en disco** en esta máquina. Ahí estaban IP, accesos, rutas de Nginx y env vars de
+producción. Buscar en otra máquina o backup; hasta entonces, §33, §39 y los docs de deploy
+son la única referencia de infra.
+
+**PENDIENTES:** los de §98 salvo el del checkout del Frontend, ya resuelto.
