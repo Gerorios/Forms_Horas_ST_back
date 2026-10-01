@@ -45,6 +45,10 @@ va aparte, por claim `cert` (lectura / carga / admin).
 4. Sesión: JWT de 1 h sin refresh, en localStorage.
 5. `registros-horas.service.ts` de 1313 líneas: separar paneles cuando toque uno.
 6. Menores: `estado` sin validar en el listado de registros, CORS abierto.
+7. Seguridad de la VPS (auditoría del 2026-10-01, §101): SSH ya sin contraseñas y
+   con fail2ban. Quedan: login de la app alcanzable saltando Cloudflare y sin
+   límite de intentos, MySQL 3306 abierto a internet (lo cierra IT), clave
+   desconocida en `root`, reinicio pendiente y `.env` con permisos 644.
 
 Deuda puntual: `DROP COLUMN modalidad_pago` (§87); limpieza del portal de
 certificaciones apagado (§84: secretos, vistas, tabla `usuarios`, repo); minors
@@ -516,3 +520,33 @@ auto mode había frenado los permisos por "automodificación"; se aplicaron fuer
 de auto mode con pedido explícito del usuario.
 
 **PENDIENTES:** los de §0.
+
+---
+
+## 101. Auditoría de seguridad de la VPS: SSH sin contraseñas + fail2ban (2026-10-01)
+
+Pedido del usuario después de un ataque de fuerza bruta en otro proyecto suyo. La
+auditoría encontró lo mismo acá: del 30/08 al 01/10, 2944 contraseñas fallidas
+(916 contra root) y 2023 usuarios inexistentes, desde 39 IPs, sin ningún ingreso
+logrado. El SSH aceptaba contraseña y root podía entrar directo, porque
+`50-cloud-init.conf` de Hostinger pisaba el `PasswordAuthentication no`. No había
+fail2ban.
+
+**Aplicado con OK explícito:** `01-endurecimiento.conf` (sin contraseñas, root solo
+con clave, 3 intentos por conexión) y fail2ban con jail `sshd` (5 fallos en 10
+min → 1 h, reincidentes cada vez más). Verificado con conexiones nuevas: la clave
+entra, la contraseña es rechazada como coworker y como root. La contraseña de root
+NO se bloqueó: la pide la consola web de Hostinger, que es el acceso de
+emergencia. Antes de aplicar se comprobó que los 206 ingresos de los logs eran con
+la clave de `coworker`. Detalle, verificación y rollback:
+`docs/2026-10-01-endurecimiento-ssh.md`.
+
+**Hallazgos de la misma auditoría, sin tocar:** el login de la app se alcanza
+saltando Cloudflare, nginx no ve las IPs reales y no hay límite de intentos; MySQL
+3306 abierto a internet en el servidor de IT; clave desconocida en `root`
+(`claude-code@forms-horas-vps`); reinicio pendiente; `.env` en 644. Lo bueno: ufw
+activo solo con 22/80/443, puertos 3000/3001 cerrados desde afuera, actualizaciones
+automáticas encendidas.
+
+**PENDIENTES:** los de §0, punto 7. Que el usuario guarde una copia de la clave
+`forms_horas_vps2` y confirme si Rodrigo entra con la misma.
