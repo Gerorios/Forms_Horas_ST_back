@@ -48,7 +48,8 @@ va aparte, por claim `cert` (lectura / carga / admin).
 7. Seguridad de la VPS (auditoría del 2026-10-01, §101): SSH ya sin contraseñas y
    con fail2ban. Quedan: login de la app alcanzable saltando Cloudflare y sin
    límite de intentos, MySQL 3306 abierto a internet (lo cierra IT), clave
-   desconocida en `root`, reinicio pendiente y `.env` con permisos 644.
+   desconocida en `root` y `.env` con permisos 644. El reinicio se hizo el
+   2026-10-01.
 
 Deuda puntual: `DROP COLUMN modalidad_pago` (§87); limpieza del portal de
 certificaciones apagado (§84: secretos, vistas, tabla `usuarios`, repo); minors
@@ -547,6 +548,10 @@ saltando Cloudflare, nginx no ve las IPs reales y no hay límite de intentos; My
 (`claude-code@forms-horas-vps`); reinicio pendiente; `.env` en 644. Lo bueno: ufw
 activo solo con 22/80/443, puertos 3000/3001 cerrados desde afuera, actualizaciones
 automáticas encendidas.
+
+**Reinicio de la VPS, el mismo día (11:33, a pedido: "hacelo ya"):** activó el
+kernel 6.8.0-142. Corte de menos de un minuto; todo volvió solo (PM2, nginx,
+fail2ban, ufw, SSH por socket) y el backend llegó a la base. Detalle en el doc.
 
 **PENDIENTES:** los de §0, punto 7. Que el usuario guarde una copia de la clave
 `forms_horas_vps2` y confirme si Rodrigo entra con la misma.

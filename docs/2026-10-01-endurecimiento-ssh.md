@@ -81,5 +81,22 @@ Si se pierde el acceso por SSH: consola web de Hostinger con la contraseña de r
   `limit_req` y `@nestjs/throttler` en el login.
 - MySQL `191.101.235.7:3306` abierto a internet: pedir a IT que lo restrinja a la IP
   de la VPS y de la oficina.
-- Reinicio pendiente de la VPS (kernel actualizado sin activar); `.env` con permisos
+- ~~Reinicio pendiente de la VPS~~ HECHO el mismo día, ver abajo. `.env` con permisos
   644 (debería ser 600); `server_tokens off` en nginx.
+
+## Reinicio de la VPS (2026-10-01, 11:33 hora Argentina)
+
+Pedido explícito del usuario ("hacelo ya"), en horario de uso. Activó el kernel
+6.8.0-142 (corría el 6.8.0-134, con 8 actualizaciones y `libc6` sin activar).
+Antes se verificó que todo arrancara solo: `ssh.socket`, `pm2-root` con la lista
+guardada igual a la actual, nginx, fail2ban, ufw, y el contenedor del portal viejo
+con `unless-stopped` (siguió apagado).
+
+| Chequeo después | Resultado |
+|---|---|
+| Corte | menos de 1 minuto |
+| Kernel / reinicio pendiente | 6.8.0-142 / no |
+| `pm2` back y front | online |
+| Dominio `/login` | 200 |
+| Backend contra la base (login inexistente) | 401 "Credenciales inválidas" |
+| SSH con clave / sin contraseña / fail2ban | OK / `passwordauthentication no` / activo |
