@@ -58,7 +58,7 @@ automáticas encendidas.
 kernel 6.8.0-142. Corte de menos de un minuto; todo volvió solo (PM2, nginx,
 fail2ban, ufw, SSH por socket) y el backend llegó a la base. Detalle en el doc.
 
-**PENDIENTES:** los de §0, punto 7. Que el usuario guarde una copia de la clave
+**PENDIENTES:** los de la §0 de entonces, punto 7 (hoy en `estado.md`). Que el usuario guarde una copia de la clave
 `forms_horas_vps2` y confirme si Rodrigo entra con la misma.
 
 ---
@@ -86,7 +86,7 @@ de GitHub, los dos repos, producción = VPS + `Horas_Sertec`). El clasificador d
 auto mode había frenado los permisos por "automodificación"; se aplicaron fuera
 de auto mode con pedido explícito del usuario.
 
-**PENDIENTES:** los de §0.
+**PENDIENTES:** los de la §0 de entonces (hoy en `estado.md`).
 
 ---
 
