@@ -11,6 +11,7 @@ describe('RegistrosHorasService', () => {
     registroHoras: { findMany: jest.fn(), groupBy: jest.fn() },
     snuempleados: { findMany: jest.fn() },
     perfilLiquidacion: { findMany: jest.fn() },
+    novedad: { findMany: jest.fn() },
   };
   const empleadosMock = { findActivos: jest.fn() };
   let service: RegistrosHorasService;
@@ -23,6 +24,8 @@ describe('RegistrosHorasService', () => {
     empleadosMock.findActivos.mockResolvedValue([]);
     prismaMock.perfilLiquidacion.findMany.mockResolvedValue([]);
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
+    // Default: nadie tiene Baja de Operario (ADR-026).
+    prismaMock.novedad.findMany.mockResolvedValue([]);
     const mod = await Test.createTestingModule({
       providers: [
         RegistrosHorasService,
@@ -673,6 +676,57 @@ describe('RegistrosHorasService', () => {
 
       // 0.1 + 0.2 + 0.3 en coma flotante da 0.6000000000000001
       expect(r[0].totalHorasDia).toBe(0.6);
+    });
+  });
+
+  // ADR-026: baja de operario confirmada por HyS.
+  describe('Baja de Operario', () => {
+    const bajaConfirmada = (fecha: string) => [
+      { operarioCuil: '20-1-1', fechaInicio: new Date(`${fecha}T00:00:00Z`), estadoHys: 'aprobada' },
+    ];
+
+    beforeEach(() => {
+      prismaMock.contratoHabilitado = { findMany: jest.fn().mockResolvedValue([{ contratoId: 1 }]) };
+      prismaMock.registroHoras.groupBy = jest.fn().mockResolvedValue([]);
+      prismaMock.$transaction = jest.fn((cb: any) =>
+        cb({ registroHoras: { create: jest.fn().mockResolvedValue({ id: 1 }), findMany: jest.fn().mockResolvedValue([]) } }),
+      );
+      prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20-1-1', apellido_nombre: 'GARCIA JUAN' }]);
+    });
+
+    const cargar = (fecha: string) =>
+      service.createBatch(
+        { fecha, operarioCuils: ['20-1-1'], provinciaId: 1, lineas: [{ contratoId: 1, horas: 8, tareaIds: [1] }] } as any,
+        '20-9-9',
+      );
+
+    it('bloquea horas con fecha posterior al último día trabajado, nombrando al operario', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue(bajaConfirmada('2026-10-10'));
+      await expect(cargar('2026-10-11')).rejects.toThrow(/GARCIA JUAN \(baja el 10\/10\/2026\)/);
+    });
+
+    it('el último día trabajado todavía se puede cargar', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue(bajaConfirmada('2026-10-10'));
+      await expect(cargar('2026-10-10')).resolves.toBeDefined();
+    });
+
+    it('una baja pendiente de HyS no bloquea', async () => {
+      prismaMock.novedad.findMany.mockResolvedValue([
+        { operarioCuil: '20-1-1', fechaInicio: new Date('2026-10-10T00:00:00Z'), estadoHys: 'pendiente' },
+      ]);
+      await expect(cargar('2026-10-20')).resolves.toBeDefined();
+    });
+
+    it('sinCarga no lista a quien tiene baja confirmada anterior a la quincena', async () => {
+      empleadosMock.findActivos.mockResolvedValue([
+        { cuil: '20-1-1', apellido_nombre: 'GARCIA JUAN' },
+        { cuil: '20-2-2', apellido_nombre: 'PEREZ ANA' },
+      ]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }, { cuil: '20-2-2' }]);
+      prismaMock.novedad.findMany.mockResolvedValue(bajaConfirmada('2026-10-10'));
+      const r = await service.sinCarga(2026, 10, 2);
+      expect(r.map((e) => e.cuil)).toEqual(['20-2-2']);
     });
   });
 });

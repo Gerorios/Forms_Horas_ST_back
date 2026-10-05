@@ -37,6 +37,12 @@ function filaCongelada(overrides: Record<string, unknown> = {}) {
     novedadesTexto: '',
     salvedad: null,
     total: 10560,
+    fechaBaja: null,
+    estadoBaja: null,
+    diasAusenciaInjustificada: 0,
+    diasAusenciaJustificada: 0,
+    diasAusenciaSinResolver: 0,
+    activoEnSueldos: true,
     ...overrides,
   };
 }
@@ -114,7 +120,7 @@ describe('ExportCierreService', () => {
       return wb.getWorksheet('DIAS TRABAJADOS')!;
     };
 
-    it('arma TOTAL/NORTE/TUCUMAN/RESUMEN/DIAS TRABAJADOS con las 18 columnas', async () => {
+    it('arma TOTAL/NORTE/TUCUMAN/RESUMEN/DIAS TRABAJADOS con las 22 columnas', async () => {
       cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
 
       const { buffer, filename } = await service.generarExcelPrincipal(1);
@@ -125,7 +131,9 @@ describe('ExportCierreService', () => {
       const headerRow = wb.getWorksheet('TOTAL')!.getRow(1).values as unknown[];
       expect(headerRow).toContain('HORAS CCT');
       expect(headerRow).toContain('LOCALIDAD');
-      expect((headerRow as unknown[]).length - 1).toBe(18); // values[0] es undefined (1-based)
+      expect((headerRow as unknown[]).length - 1).toBe(22); // values[0] es undefined (1-based)
+      // ADR-026: las columnas nuevas van al final, sin correr las de siempre.
+      expect(headerRow.slice(18)).toEqual(['TOTAL', 'AUS. INJUSTIF.', 'AUS. JUSTIF.', 'AUS. SIN RESOLVER', 'FECHA BAJA']);
       expect(filename).toBe('2026_09_1q_Sueldo SERTEC_v2.xlsx');
     });
 
@@ -188,6 +196,75 @@ describe('ExportCierreService', () => {
       resumen.eachRow((r) => filasResumen.push(r.values as unknown[]));
       const totalGeneral = filasResumen.find((v) => v[1] === 'TOTAL GENERAL')!;
       expect(totalGeneral[2]).toBe(11060);
+    });
+
+    it('ADR-026: días de ausencia y fecha de baja en sus columnas; cierre viejo deja las celdas vacías', async () => {
+      const conBaja = filaCongelada({
+        cuil: '20-1-1',
+        diasAusenciaInjustificada: 2,
+        diasAusenciaJustificada: 1,
+        diasAusenciaSinResolver: 0,
+        fechaBaja: new Date('2026-09-10T00:00:00.000Z'),
+        estadoBaja: 'en_quincena',
+      });
+      const viejo = filaCongelada({
+        cuil: '20-2-2',
+        diasAusenciaInjustificada: null,
+        diasAusenciaJustificada: null,
+        diasAusenciaSinResolver: null,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([conBaja, viejo]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      const ws = wb.getWorksheet('TOTAL')!;
+
+      expect((ws.getRow(2).values as unknown[]).slice(19)).toEqual([2, 1, 0, '10/09/2026']);
+      expect((ws.getRow(3).values as unknown[]).slice(19).filter((v) => v != null)).toEqual([]);
+    });
+
+    it('ADR-026: la baja previa no va a las hojas de pago; si sigue activa en sueldos va a BAJAS A REGULARIZAR', async () => {
+      const cobra = filaCongelada({ cuil: '20-1-1', apellidoNombre: 'Cobra, Ana', total: 100 });
+      const activa = filaCongelada({
+        cuil: '20-2-2',
+        apellidoNombre: 'Activa, Baja',
+        legajo: 22,
+        estadoBaja: 'previa',
+        fechaBaja: new Date('2026-08-28T00:00:00.000Z'),
+        activoEnSueldos: true,
+        total: 0,
+      });
+      const inactiva = filaCongelada({
+        cuil: '20-3-3',
+        apellidoNombre: 'Inactiva, Baja',
+        estadoBaja: 'previa',
+        fechaBaja: new Date('2026-08-20T00:00:00.000Z'),
+        activoEnSueldos: false,
+        total: 0,
+      });
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([cobra, activa, inactiva]));
+
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+
+      expect(wb.getWorksheet('TOTAL')!.rowCount).toBe(2); // header + solo quien cobra
+      expect(wb.getWorksheet('NORTE')!.rowCount).toBe(2);
+      const reg = wb.getWorksheet('BAJAS A REGULARIZAR')!;
+      expect((reg.getRow(1).values as unknown[]).slice(1)).toEqual([
+        'Legajo', 'NOMBRE Y APELLIDO', 'CUIL', 'LOCALIDAD', 'ÚLTIMO DÍA TRABAJADO',
+      ]);
+      expect(reg.rowCount).toBe(2); // la inactiva no se informa
+      expect((reg.getRow(2).values as unknown[]).slice(1)).toEqual([22, 'Activa, Baja', '20-2-2', 'Salta Capital', '28/08/2026']);
+    });
+
+    it('ADR-026: sin bajas a regularizar no agrega la hoja', async () => {
+      cierresMock.detalle.mockResolvedValue(cabeceraBase([filaCongelada()]));
+      const { buffer } = await service.generarExcelPrincipal(1);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as any);
+      expect(wb.getWorksheet('BAJAS A REGULARIZAR')).toBeUndefined();
     });
 
     it('el sin-zona sale en TOTAL pero en ninguna hoja de zona', async () => {

@@ -32,6 +32,12 @@ function filaBase(overrides: Record<string, unknown> = {}) {
     novedadesTexto: '',
     total: 10560,
     datoFaltante: null as string | null,
+    fechaBaja: null as string | null,
+    estadoBaja: null as 'previa' | 'en_quincena' | 'sin_confirmar' | null,
+    activo: true,
+    diasAusenciaInjustificada: 0,
+    diasAusenciaJustificada: 0,
+    diasAusenciaSinResolver: 0,
     ...overrides,
   };
 }
@@ -41,6 +47,7 @@ describe('CierresService', () => {
     cierreLiquidacion: { aggregate: jest.fn(), create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     registroHoras: { groupBy: jest.fn() },
     kmPorTantos: { findMany: jest.fn() },
+    novedad: { findMany: jest.fn() },
     snuempleados: { findMany: jest.fn() },
     $transaction: jest.fn((fn: any) => fn(prismaMock)),
   };
@@ -54,6 +61,7 @@ describe('CierresService', () => {
     prismaMock.$transaction = jest.fn((fn: any) => fn(prismaMock));
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
     prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+    prismaMock.novedad.findMany.mockResolvedValue([]); // sin Bajas de Operario (ADR-026)
     prismaMock.snuempleados.findMany.mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
@@ -491,6 +499,68 @@ describe('CierresService', () => {
           include: expect.objectContaining({ detalle: { orderBy: { apellidoNombre: 'asc' } } }),
         }),
       );
+    });
+  });
+
+  // ADR-026: Baja de Operario y ausencias para el liquidador de sueldos.
+  describe('Baja de Operario', () => {
+    it('congela fecha/estado de baja y días de ausencia, y suma las salvedades nuevas', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([
+        filaBase({ cuil: 'A', estadoBaja: 'previa', fechaBaja: '2026-09-28', total: 0 }),
+        filaBase({ cuil: 'B', diasAusenciaInjustificada: 2, diasAusenciaJustificada: 1, diasAusenciaSinResolver: 1 }),
+      ]);
+      calculoMock.getAlertasQuincena.mockResolvedValue({
+        ...alertasVacias,
+        bajasSinConfirmar: [{ cuil: 'C', apellidoNombre: 'X', fechaBaja: '2026-10-03' }],
+      });
+      prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+
+      await service.crearCierre(2026, 10, 1, undefined, CUIL_LIQUIDADOR);
+
+      const data = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data;
+      expect(data.detalle.create[0]).toMatchObject({
+        fechaBaja: new Date('2026-09-28T00:00:00Z'),
+        estadoBaja: 'previa',
+        activoEnSueldos: true,
+        total: 0,
+      });
+      expect(data.detalle.create[1]).toMatchObject({
+        fechaBaja: null,
+        diasAusenciaInjustificada: 2,
+        diasAusenciaJustificada: 1,
+        diasAusenciaSinResolver: 1,
+      });
+      expect(JSON.parse(data.salvedades)).toEqual(
+        expect.arrayContaining([
+          '1 persona con baja anterior a la quincena, liquidada en $0',
+          '1 baja informada sin confirmar por HyS (no se aplicó)',
+          '1 persona con ausencias sin resolver por HyS',
+        ]),
+      );
+    });
+
+    it('días trabajados: descarta los días posteriores a la baja confirmada', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([filaBase({ cuil: 'A' })]);
+      calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+      prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+      prismaMock.registroHoras.groupBy.mockImplementation(({ by }: any) =>
+        Promise.resolve(
+          by.includes('fecha')
+            ? [
+                { operarioCuil: 'A', fecha: new Date('2026-10-05T00:00:00Z') },
+                { operarioCuil: 'A', fecha: new Date('2026-10-06T00:00:00Z') },
+              ]
+            : [],
+        ),
+      );
+      prismaMock.novedad.findMany.mockResolvedValue([
+        { operarioCuil: 'A', fechaInicio: new Date('2026-10-05T00:00:00Z'), estadoHys: 'aprobada' },
+      ]);
+
+      await service.crearCierre(2026, 10, 1, undefined, CUIL_LIQUIDADOR);
+
+      const dias = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data.diasTrabajados.createMany.data;
+      expect(dias.map((d: any) => d.fecha.toISOString().slice(0, 10))).toEqual(['2026-10-05']);
     });
   });
 });

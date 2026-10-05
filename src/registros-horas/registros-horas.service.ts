@@ -15,6 +15,14 @@ import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
 import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/quincena';
 import { duplicadosExactos } from '../common/duplicados';
+import {
+  BajaOperario,
+  bajasPorCuil,
+  claveDiaLocal,
+  claveDiaUtc,
+  esPosteriorABaja,
+  formatearClave,
+} from '../common/baja';
 
 // Umbral de advertencia (turno largo, revisar) vs. techo imposible (un día no
 // tiene más horas que esto — se bloquea la carga en vez de solo avisar).
@@ -44,6 +52,37 @@ export class RegistrosHorasService {
     private empleados: EmpleadosService,
   ) {}
 
+  /**
+   * Baja de Operario confirmada por HyS (ADR-026): no se cargan horas con
+   * fecha POSTERIOR al último día trabajado, en ningún contrato ni por ningún
+   * usuario (la baja es de la persona). El último día todavía se puede
+   * cargar. Una baja pendiente o anulada no bloquea.
+   */
+  private async verificarBaja(operarioCuils: string[], fecha: Date) {
+    const bajas = await bajasPorCuil(this.prisma, operarioCuils);
+    const dia = claveDiaUtc(fecha);
+    const bloqueados = operarioCuils.filter((c) => esPosteriorABaja(dia, bajas.get(c)));
+    if (!bloqueados.length) return;
+    const empleados = await this.prisma.snuempleados.findMany({
+      where: { cuil: { in: bloqueados } },
+      select: { cuil: true, apellido_nombre: true },
+    });
+    const nombre = new Map(empleados.map((e) => [e.cuil, e.apellido_nombre.trim()]));
+    const detalle = bloqueados
+      .map((c) => `${nombre.get(c) ?? c} (baja el ${formatearClave(bajas.get(c)!.fechaBaja)})`)
+      .join(', ');
+    throw new BadRequestException(
+      `No se pueden cargar horas del ${formatearClave(dia)} — estos operarios tienen baja confirmada y ese día es posterior a su último día trabajado: ${detalle}.`,
+    );
+  }
+
+  /** Fecha de baja ('YYYY-MM-DD') si el registro cae después de una baja
+   * confirmada; null si no. */
+  private posteriorABaja(operarioCuil: string, fecha: Date, bajas: Map<string, BajaOperario>): string | null {
+    const baja = bajas.get(operarioCuil);
+    return esPosteriorABaja(claveDiaUtc(fecha), baja) ? baja!.fechaBaja : null;
+  }
+
   async create(dto: CreateRegistroHorasDto, cargadoPorCuil: string) {
     const habilitado = await this.prisma.contratoHabilitado.findUnique({
       where: {
@@ -56,6 +95,8 @@ export class RegistrosHorasService {
     if (!habilitado) {
       throw new ForbiddenException('No tenés habilitado ese contrato');
     }
+
+    await this.verificarBaja([dto.operarioCuil], new Date(dto.fecha));
 
     const horasDelDia = await this.prisma.registroHoras.aggregate({
       where: {
@@ -120,6 +161,7 @@ export class RegistrosHorasService {
     }
 
     const fecha = new Date(dto.fecha);
+    await this.verificarBaja(dto.operarioCuils, fecha);
     const horasBatchPorOperario = dto.lineas.reduce(
       (sum, l) => sum + Number(l.horas),
       0,
@@ -373,6 +415,15 @@ export class RegistrosHorasService {
       throw new BadRequestException('Nada para corregir en ese contrato');
     }
 
+    // La corrección recrea filas YA aprobadas con la fecha original: si caen
+    // después de una baja confirmada, también se bloquean (ADR-026).
+    for (const fecha of new Set(filas.map((f) => f.fecha.toISOString()))) {
+      await this.verificarBaja(
+        filas.filter((f) => f.fecha.toISOString() === fecha).map((f) => f.operarioCuil),
+        new Date(fecha),
+      );
+    }
+
     const idsARechazar = filas.map((f) => f.id);
     const nuevoLoteId = randomUUID();
     const ahora = new Date();
@@ -540,6 +591,8 @@ export class RegistrosHorasService {
     }
 
     const fecha = dto.fecha ? new Date(dto.fecha) : registro.fecha;
+    // Siempre, no solo si cambia la fecha: editar vuelve la fila a pendiente.
+    await this.verificarBaja([registro.operarioCuil], fecha);
     const horas = dto.horas ?? Number(registro.horas);
     const previas = await this.prisma.registroHoras.aggregate({
       where: {
@@ -748,10 +801,14 @@ export class RegistrosHorasService {
       totalPorClave.set(k, (totalPorClave.get(k) ?? 0) + Number(r.horas));
     }
     const { idsDuplicados } = duplicadosExactos(filasDelDia);
+    const bajas = await bajasPorCuil(this.prisma, operarioCuils);
 
     return filas.map((f) => {
       const k = clave(f.operarioCuil, f.fecha);
       return {
+        // Fila cargada antes de informarse una baja confirmada y con fecha
+        // posterior a ella (ADR-026): no se liquida; el jefe la ve marcada.
+        posteriorABaja: this.posteriorABaja(f.operarioCuil, f.fecha, bajas),
         ...f,
         accionable: setIds.has(f.contratoId),
         cargadoPor: { cuil: f.cargadoPor.cuil, nombre: nombreUsuario(f.cargadoPor) },
@@ -937,7 +994,16 @@ export class RegistrosHorasService {
     ]);
     const cuilsJornalizados = new Set(jornalizados.map((p) => p.cuil));
     const cuilsConCarga = new Set(conCarga.map((c) => c.operarioCuil));
-    const sinCarga = activos.filter((e) => cuilsJornalizados.has(e.cuil) && !cuilsConCarga.has(e.cuil));
+    // Con baja confirmada anterior a la quincena (ADR-026) no carga porque ya
+    // no trabaja: listarlo sería un falso aviso.
+    const bajas = await bajasPorCuil(this.prisma);
+    const inicio = claveDiaLocal(desde);
+    const sinCarga = activos.filter(
+      (e) =>
+        cuilsJornalizados.has(e.cuil) &&
+        !cuilsConCarga.has(e.cuil) &&
+        !esPosteriorABaja(inicio, bajas.get(e.cuil)),
+    );
 
     // Última carga histórica (fuera de esta quincena, en cualquier contrato)
     // de cada uno — distingue "nunca cargó nada" (recién ingresado, sin
@@ -1117,6 +1183,8 @@ export class RegistrosHorasService {
       fecha: string;
       totalHoras: number;
       contratos: string[];
+      /** Fecha de baja confirmada si este día es posterior a ella (ADR-026). */
+      posteriorABaja: string | null;
       registros: {
         id: number;
         contratoId: number;
@@ -1133,6 +1201,7 @@ export class RegistrosHorasService {
       }[];
     };
     const dias = new Map<string, DiaDetalle>();
+    const bajas = await bajasPorCuil(this.prisma, [...operariosQueEntran]);
     for (const f of filas) {
       if (!operariosQueEntran.has(f.operarioCuil)) continue;
       const clave = `${f.operarioCuil}|${f.fecha.toISOString()}`;
@@ -1144,6 +1213,7 @@ export class RegistrosHorasService {
           fecha: f.fecha.toISOString().slice(0, 10),
           totalHoras: 0,
           contratos: [],
+          posteriorABaja: this.posteriorABaja(f.operarioCuil, f.fecha, bajas),
           registros: [],
         };
         dias.set(clave, d);
@@ -1271,6 +1341,7 @@ export class RegistrosHorasService {
     const nombrePorCuilControl = await this.mapaNombresPorCuil(cuilsAuditoriaControl);
     const nombreUsuarioControl = (u: { cuil: string; nombreFueraNomina: string | null }) =>
       nombrePorCuilControl.get(u.cuil) ?? u.nombreFueraNomina ?? '';
+    const bajas = await bajasPorCuil(this.prisma, [...new Set(superan.map((d) => d.operarioCuil))]);
 
     return superan
       .map((d) => {
@@ -1280,6 +1351,7 @@ export class RegistrosHorasService {
           operarioNombre: filasDia[0]?.operario.apellido_nombre ?? '',
           fecha: d.fecha.toISOString().slice(0, 10),
           totalHoras: Math.round(d.total * 100) / 100,
+          posteriorABaja: this.posteriorABaja(d.operarioCuil, d.fecha, bajas),
           contratos: [...new Set(filasDia.map((f) => f.contrato.codigo))].sort(),
           registros: filasDia.map((f) => ({
             id: f.id,

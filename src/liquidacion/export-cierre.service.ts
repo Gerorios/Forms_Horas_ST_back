@@ -43,6 +43,13 @@ const COLUMNAS_PRINCIPAL = [
   '$ PRESENTISMO',
   'NOVEDADES',
   'TOTAL',
+  // ADR-026: días a descontar y fecha de baja, en columnas numéricas para
+  // que el liquidador de sueldos haga cuentas en la planilla sin cruzar con
+  // lo que le pasa HyS. Al final, para no correr las columnas de siempre.
+  'AUS. INJUSTIF.',
+  'AUS. JUSTIF.',
+  'AUS. SIN RESOLVER',
+  'FECHA BAJA',
 ] as const;
 
 // Sin MONTO A ni horas: este archivo lo ve gente que solo debe conocer la
@@ -50,6 +57,15 @@ const COLUMNAS_PRINCIPAL = [
 // congelado (montoKmBruto / kmTotal) porque la tarifa del rango no se
 // persiste por fila.
 const COLUMNAS_POR_TANTOS = ['Legajo', 'NOMBRE Y APELLIDO', 'KM', 'PRECIO KM', 'MONTO B'] as const;
+
+/** Hoja de pedidos de baja al sistema de sueldos (ADR-026). */
+const COLUMNAS_REGULARIZAR = ['Legajo', 'NOMBRE Y APELLIDO', 'CUIL', 'LOCALIDAD', 'ÚLTIMO DÍA TRABAJADO'] as const;
+
+/** Baja confirmada anterior a la quincena: liquidada en $0, no se manda a
+ * pagar (ADR-026). */
+function esBajaPrevia(f: FilaDetalle): boolean {
+  return f.estadoBaja === 'previa';
+}
 
 function num(valor: Prisma.Decimal | number | null | undefined): number {
   return valor == null ? 0 : Number(valor);
@@ -77,6 +93,12 @@ function claveLocal(fecha: Date): string {
  * (Argentina, UTC-3): la medianoche UTC cae en el día calendario anterior. */
 function claveUtc(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);
+}
+
+/** dd/mm/aaaa de un `@db.Date` (medianoche UTC), ver `claveUtc`. */
+function fechaDdMmAaaaUtc(fecha: Date): string {
+  const [a, m, d] = claveUtc(fecha).split('-');
+  return `${d}/${m}/${a}`;
 }
 
 function fechaDdMm(fecha: Date): string {
@@ -138,6 +160,12 @@ export class ExportCierreService {
       num(f.montoPresentismo),
       f.novedadesTexto,
       this.totalPrincipal(f),
+      // null en cierres anteriores al ADR-026: la celda queda vacía (no se
+      // registró), no en 0 (que diría "no faltó").
+      numOrNull(f.diasAusenciaInjustificada),
+      numOrNull(f.diasAusenciaJustificada),
+      numOrNull(f.diasAusenciaSinResolver),
+      f.fechaBaja ? fechaDdMmAaaaUtc(f.fechaBaja) : null,
     ];
   }
 
@@ -285,6 +313,17 @@ export class ExportCierreService {
     return ws;
   }
 
+  /** BAJAS A REGULARIZAR: personas con baja confirmada por HyS anterior a la
+   * quincena que `snuempleados` sigue mostrando activas al cerrar. */
+  private agregarHojaRegularizar(wb: ExcelJS.Workbook, filas: FilaDetalle[]) {
+    const ws = wb.addWorksheet('BAJAS A REGULARIZAR');
+    ws.addRow([...COLUMNAS_REGULARIZAR]);
+    for (const f of filas) {
+      ws.addRow([f.legajo, f.apellidoNombre, f.cuil, f.localidad, f.fechaBaja ? fechaDdMmAaaaUtc(f.fechaBaja) : null]);
+    }
+    return ws;
+  }
+
   async generarExcelPrincipal(cierreId: number): Promise<{ buffer: Buffer; filename: string }> {
     const cabecera = await this.cierres.detalle(cierreId);
     // Ordenada por empleado (y por fecha dentro de cada uno) para que las filas
@@ -295,12 +334,20 @@ export class ExportCierreService {
     });
 
     const wb = new ExcelJS.Workbook();
-    const detalle = cabecera.detalle;
+    // Al liquidador de sueldos le llega solo quien tiene algo para cobrar: la
+    // baja previa (en $0) queda en el cierre de la app pero no en las hojas de
+    // pago (ADR-026).
+    const detalle = cabecera.detalle.filter((f) => !esBajaPrevia(f));
     this.agregarHojaPrincipal(wb, 'TOTAL', detalle);
     this.agregarHojaPrincipal(wb, 'NORTE', detalle.filter((f) => f.zona === 'norte'));
     this.agregarHojaPrincipal(wb, 'TUCUMAN', detalle.filter((f) => f.zona === 'sur'));
     this.agregarHojaResumen(wb, detalle);
     this.agregarHojaDiasTrabajados(wb, dias, cabecera.anio, cabecera.mes, cabecera.quincena);
+    // Bajas previas que la base de sueldos todavía tiene activas: se le pide
+    // al liquidador que las regularice. Las ya inactivas no se informan
+    // (no hay nada que hacer). Sin casos, la hoja no se agrega.
+    const aRegularizar = cabecera.detalle.filter((f) => esBajaPrevia(f) && f.activoEnSueldos !== false);
+    if (aRegularizar.length) this.agregarHojaRegularizar(wb, aRegularizar);
 
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
     return { buffer, filename: `${this.nombreBase(cabecera)}_Sueldo SERTEC_v${cabecera.version}.xlsx` };
@@ -308,7 +355,7 @@ export class ExportCierreService {
 
   async generarExcelPorTantos(cierreId: number): Promise<{ buffer: Buffer; filename: string }> {
     const cabecera = await this.cierres.detalle(cierreId);
-    const porTantos = cabecera.detalle.filter((f) => f.regimen === 'por_tantos');
+    const porTantos = cabecera.detalle.filter((f) => f.regimen === 'por_tantos' && !esBajaPrevia(f));
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('POR TANTOS B');

@@ -14,10 +14,20 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     bonoNoRemunerativo: { findMany: jest.fn() },
     rangoKmPorTantos: { findMany: jest.fn() },
     plusIndividual: { findMany: jest.fn() },
-    registroHoras: { groupBy: jest.fn() },
+    registroHoras: { groupBy: jest.fn(), findMany: jest.fn() },
     novedad: { findMany: jest.fn() },
   };
   let service: CalculoService;
+
+  /** El cálculo consulta novedades dos veces: las Bajas de Operario (ADR-026)
+   * y las solapadas a la quincena. El mock no aplica el where, así que se
+   * separan acá por el filtro de tipo. */
+  const mockNovedades = (novedades: any[], bajas: any[] = []) =>
+    prismaMock.novedad.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(where?.tipoNovedad?.nombre === 'Baja de Operario' ? bajas : novedades),
+    );
+  const whereNovedades = () =>
+    prismaMock.novedad.findMany.mock.calls.find((c: any[]) => !c[0].where.tipoNovedad)[0].where;
 
   const PERFIL_POR_TANTOS = {
     cuil: '20999999999',
@@ -35,7 +45,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     prismaMock.bonoNoRemunerativo.findMany.mockResolvedValue([]);
     prismaMock.plusIndividual.findMany.mockResolvedValue([]);
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
-    prismaMock.novedad.findMany.mockResolvedValue([]);
+    mockNovedades([]);
 
     const mod = await Test.createTestingModule({
       providers: [CalculoService, { provide: PrismaService, useValue: prismaMock }],
@@ -358,14 +368,14 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('sin novedades: mantiene presentismo', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([]);
+      mockNovedades([]);
       const [fila] = await service.calcularQuincena(2026, 8, 1);
       expect(fila.tienePresentismo).toBe(true);
       expect(fila.montoPresentismo).toBe(fila.totalBruto * 0.2);
     });
 
     it('Ausencia PENDIENTE (todavía sin resolver por HyS) también hace perder presentismo', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -382,7 +392,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('Ausencia APROBADA sin pierdePresentismoHys cargado (legado, previo a ADR-022) hace perder presentismo por defecto', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -400,7 +410,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('Ausencia APROBADA con pierdePresentismoHys=true hace perder presentismo', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -418,7 +428,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('Ausencia APROBADA con pierdePresentismoHys=false (ej. licencia especial) MANTIENE presentismo (ADR-022)', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -436,7 +446,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('Ausencia DESAPROBADA (injustificada) sigue haciendo perder presentismo (sin cambios)', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -453,7 +463,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     });
 
     it('Suspensión sigue haciendo perder presentismo (sin cambios)', async () => {
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 6,
@@ -472,13 +482,13 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
     it('Ausencia ANULADA no se trae de la query (where filtra estado: activa) y no hace perder presentismo', async () => {
       // Simula lo que Prisma devolvería en producción: la anulada nunca llega
       // porque el where ya filtra estado: 'activa'.
-      prismaMock.novedad.findMany.mockResolvedValue([]);
+      mockNovedades([]);
 
       const [fila] = await service.calcularQuincena(2026, 8, 1);
 
       expect(fila.tienePresentismo).toBe(true);
       expect(fila.montoPresentismo).toBe(fila.totalBruto * 0.2);
-      const where = prismaMock.novedad.findMany.mock.calls[0][0].where;
+      const where = whereNovedades();
       expect(where.estado).toBe('activa');
     });
   });
@@ -663,7 +673,7 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
 
     it('novedad con plus pero sin monto vigente del período: datoFaltante, monto en 0', async () => {
       prismaMock.tipoNovedad.findMany.mockResolvedValue([{ id: 5, nombre: 'Guardia Pasiva', generaPlus: true }]);
-      prismaMock.novedad.findMany.mockResolvedValue([
+      mockNovedades([
         {
           operarioCuil: PERFIL_JORNALIZADO.cuil,
           tipoNovedadId: 5,
@@ -698,6 +708,125 @@ describe('CalculoService — fórmula de "por tantos" (ADR-015)', () => {
       expect(fila.plusIndividualMotivo).toBeNull();
     });
   });
+
+  // ADR-026: Baja de Operario confirmada por HyS. Fechas de novedad como las
+  // devuelve Prisma (@db.Date = medianoche UTC).
+  describe('Baja de Operario (ADR-026)', () => {
+    const utc = (d: string) => new Date(`${d}T00:00:00Z`);
+    const perfil = (regimen: string, activo = 'S') => ({
+      cuil: '20555555555',
+      regimen,
+      categoriaUocraId: 1,
+      horasExtraPactadas: 0,
+      zonaOverride: null,
+      empleado: { apellido_nombre: 'BAJA TEST', legajo: 7, cargo: 'Oficial', provincia: 'SALTA', activo },
+      categoria: { id: 1, nombre: 'Oficial' },
+    });
+    const baja = (fecha: string, estadoHys = 'aprobada') => [
+      { operarioCuil: '20555555555', fechaInicio: utc(fecha), estadoHys },
+    ];
+    const novedad = (tipo: string, ini: string, fin: string | null, estadoHys = 'no_aplica', extra: any = {}) => ({
+      operarioCuil: '20555555555',
+      tipoNovedadId: tipo === 'Guardia Pasiva' ? 5 : 1,
+      fechaInicio: utc(ini),
+      fechaFin: fin ? utc(fin) : null,
+      estadoHys,
+      estado: 'activa',
+      pierdePresentismoHys: null,
+      tipoNovedad: { nombre: tipo },
+      ...extra,
+    });
+
+    beforeEach(() => {
+      prismaMock.kmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.rangoKmPorTantos.findMany.mockResolvedValue([]);
+      prismaMock.tarifaCategoriaUocra.findMany.mockResolvedValue([{ categoriaUocraId: 1, importeHora: 1000 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+    });
+
+    it('baja confirmada ANTERIOR a la quincena: un fijo liquida $0 en todo', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo')]);
+      prismaMock.plusIndividual.findMany.mockResolvedValue([{ cuil: '20555555555', monto: 5000, motivo: 'x' }]);
+      mockNovedades([], baja('2026-09-28'));
+
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+
+      expect(fila).toMatchObject({
+        total: 0, totalBruto: 0, horasTotal: 0, montoPresentismo: 0, plusIndividual: null,
+        estadoBaja: 'previa', fechaBaja: '2026-09-28', activo: true, novedadesTexto: 'BAJA 28/09/2026',
+      });
+    });
+
+    it('baja previa con snuempleados ya inactivo: igual $0, marcado como inactivo (gris)', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo', 'N')]);
+      mockNovedades([], baja('2026-09-28'));
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+      expect(fila).toMatchObject({ total: 0, estadoBaja: 'previa', activo: false });
+    });
+
+    it('baja DENTRO de la quincena: un fijo cobra igual (lo prorratea el liquidador), con la fecha de baja', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo')]);
+      mockNovedades([], baja('2026-10-05'));
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+      expect(fila).toMatchObject({ totalBruto: 88000, estadoBaja: 'en_quincena', fechaBaja: '2026-10-05' });
+      expect(fila.novedadesTexto).toContain('BAJA 05/10/2026');
+    });
+
+    it('baja dentro: no se liquidan horas, plus ni ausencias posteriores al último día trabajado', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('jornalizado')]);
+      prismaMock.tipoNovedad.findMany.mockResolvedValue([{ id: 5, nombre: 'Guardia Pasiva', generaPlus: true }]);
+      prismaMock.montoNovedadPlus.findMany.mockResolvedValue([{ tipoNovedadId: 5, montoPorDia: 1000 }]);
+      prismaMock.registroHoras.groupBy.mockResolvedValue([{ operarioCuil: '20555555555', _sum: { horas: 40 } }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { operarioCuil: '20555555555', fecha: utc('2026-10-05'), horas: 8 },
+        { operarioCuil: '20555555555', fecha: utc('2026-10-07'), horas: 8 },
+      ]);
+      mockNovedades(
+        [
+          novedad('Guardia Pasiva', '2026-10-03', null),
+          novedad('Guardia Pasiva', '2026-10-08', null),
+          novedad('Ausencia', '2026-10-09', null, 'desaprobada'),
+        ],
+        baja('2026-10-05'),
+      );
+
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+
+      expect(fila.horasTotal).toBe(32); // 40 - las 8 del 07/10
+      expect(fila.plus).toEqual([{ tipoNovedadId: 5, nombre: 'Guardia Pasiva', dias: 1, monto: 1000 }]);
+      expect(fila.tienePresentismo).toBe(true); // la ausencia del 09/10 es posterior a la baja
+      expect(fila.diasAusenciaInjustificada).toBe(0);
+    });
+
+    it('baja pendiente de HyS: sin efecto en montos, solo la marca', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo')]);
+      mockNovedades([], baja('2026-09-28', 'pendiente'));
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+      expect(fila).toMatchObject({ totalBruto: 88000, estadoBaja: 'sin_confirmar', fechaBaja: '2026-09-28' });
+    });
+
+    it('baja con fecha posterior a la quincena: no marca nada', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo')]);
+      mockNovedades([], baja('2026-10-20'));
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+      expect(fila).toMatchObject({ estadoBaja: null, fechaBaja: null, totalBruto: 88000 });
+    });
+
+    it('días de ausencia por estado HyS, corridos y recortados a la quincena', async () => {
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([perfil('fijo')]);
+      mockNovedades([
+        novedad('Ausencia', '2026-09-29', '2026-10-02', 'desaprobada'), // 1 y 2 de oct
+        novedad('Ausencia', '2026-10-06', '2026-10-08', 'aprobada', { pierdePresentismoHys: false }),
+        novedad('Ausencia', '2026-10-15', null, 'pendiente'),
+      ]);
+      const [fila] = await service.calcularQuincena(2026, 10, 1);
+      expect(fila).toMatchObject({
+        diasAusenciaInjustificada: 2,
+        diasAusenciaJustificada: 3,
+        diasAusenciaSinResolver: 1,
+      });
+    });
+  });
 });
 
 describe('CalculoService — alertas de perfil (ADR-023: sin modalidad de pago)', () => {
@@ -705,6 +834,7 @@ describe('CalculoService — alertas de perfil (ADR-023: sin modalidad de pago)'
     perfilLiquidacion: { findMany: jest.fn() },
     snuempleados: { findMany: jest.fn() },
     registroHoras: { groupBy: jest.fn() },
+    novedad: { findMany: jest.fn() },
   };
   let service: CalculoService;
 
@@ -712,6 +842,7 @@ describe('CalculoService — alertas de perfil (ADR-023: sin modalidad de pago)'
     jest.clearAllMocks();
     prismaMock.registroHoras.groupBy.mockResolvedValue([]);
     prismaMock.snuempleados.findMany.mockResolvedValue([]);
+    prismaMock.novedad.findMany.mockResolvedValue([]); // sin Bajas de Operario
 
     const mod = await Test.createTestingModule({
       providers: [CalculoService, { provide: PrismaService, useValue: prismaMock }],
@@ -775,5 +906,22 @@ describe('CalculoService — alertas de perfil (ADR-023: sin modalidad de pago)'
     const { perfilIncompleto } = await service.getAlertasQuincena(2026, 8, 1);
 
     expect(perfilIncompleto).toHaveLength(0);
+  });
+
+  // ADR-026: con baja confirmada anterior a la quincena la fila sale en $0,
+  // así que no es un "jornalizado sin horas" ni un perfil a completar.
+  it('baja previa confirmada: fuera de sinHorasAprobadas y perfilIncompleto; la pendiente va a bajasSinConfirmar', async () => {
+    prismaMock.perfilLiquidacion.findMany.mockResolvedValue([
+      perfil({ cuil: 'A', regimen: 'jornalizado', categoriaUocraId: null }),
+      perfil({ cuil: 'B', regimen: 'jornalizado' }),
+    ]);
+    prismaMock.novedad.findMany.mockResolvedValue([
+      { operarioCuil: 'A', fechaInicio: new Date('2026-09-28T00:00:00Z'), estadoHys: 'aprobada' },
+      { operarioCuil: 'B', fechaInicio: new Date('2026-10-03T00:00:00Z'), estadoHys: 'pendiente' },
+    ]);
+    const r = await service.getAlertasQuincena(2026, 10, 1);
+    expect(r.sinHorasAprobadas.map((x) => x.cuil)).toEqual(['B']);
+    expect(r.perfilIncompleto.map((x) => x.cuil)).toEqual([]);
+    expect(r.bajasSinConfirmar).toEqual([{ cuil: 'B', apellidoNombre: 'TEST', fechaBaja: '2026-10-03' }]);
   });
 });
