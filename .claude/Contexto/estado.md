@@ -2,22 +2,15 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-04**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-05**.
 
 ## En curso
 
-- **Backups automáticos de `Horas_Sertec`** (sin plan todavía; prioridad 1 de la auditoría del 2026-09-28): pausado
-  en la fase 0 (entrevista). Ya se explicó al usuario qué es y cómo funciona; no repetirlo. Enfoque aceptado: dump
-  nocturno con transacción → `zstd` → `gpg` simétrico con frase larga → copia local 14 días + Google Drive con
-  `rclone` (90 días + una mensual por un año) → restore probado en `testing` → procedimiento escrito sin la clave.
-  Hechos de la VPS: no hay cliente MySQL (instalar `mariadb-client`), hay `gpg`, `zstd` y `rsync`, no hay `rclone`,
-  90 GB libres, sin cron propio. La base pesa 14,6 MB; los adjuntos, 11 MB.
+Nada en curso.
 
 ## Próximo paso
 
-Retomar la entrevista de backups en la pregunta 1: destino externo (recomendado: Google Drive de una cuenta de la
-empresa con `rclone`; el usuario hace la autorización en su navegador). Después: qué cuenta, hora (recomendado 03:00
-de Argentina) y retención (recomendado 14 días local, 90 en Drive + mensual).
+Ninguno definido: esperar el próximo pedido del usuario.
 
 ## Pendientes del usuario
 
@@ -25,15 +18,18 @@ de Argentina) y retención (recomendado 14 días local, 90 en Drive + mensual).
   SSH y no tiene frase de protección). Confirmar con Rodrigo cómo entra, y averiguar de quién es la clave
   `claude-code@forms-horas-vps` cargada en `root` (no es de la PC del usuario).
 - **Pedido a IT:** restringir MySQL `191.101.235.7:3306` (hoy abierto a internet) a la IP de la VPS y la de la oficina.
-- **Liquidación:** recerrar las quincenas que necesite por feriados (hoja DIAS TRABAJADOS, §88); verificar que el bono
-  no remunerativo de septiembre esté cargado en producción; cargar a MACCHIAROLA como `fijo` + 12 horas pactadas.
-- **Ausencias ADR-022:** reabrir y re-justificar 3 ausencias de la 2ª quincena de agosto (dijo que lo revisa él).
-- **Certificaciones:** cargar los 4 PDFs reales de agosto con la carga controlada y probar fila manual y edición de ítem.
 - **Rediseño:** recorrida visual con Liquidador/Admin de los tableros de análisis, resumen y analytics.
 
 ## A futuro
 
 Por prioridad de la auditoría del 2026-09-28 y la de seguridad del 2026-10-01:
+
+- **Backups automáticos de `Horas_Sertec` (prioridad 1):** pospuesto por el usuario el 2026-10-05; no traerlo como
+  en curso ni pendiente hasta que lo pida. Quedó en la entrevista, pregunta 1 (destino externo). Ya se le explicó qué
+  es; no repetirlo. Enfoque aceptado: dump nocturno con transacción → `zstd` → `gpg` simétrico con frase larga →
+  copia local 14 días + Google Drive con `rclone` (90 días + una mensual por un año) → restore probado en `testing` →
+  procedimiento escrito sin la clave. VPS: falta `mariadb-client` y `rclone`; hay `gpg`, `zstd`, `rsync`, 90 GB
+  libres. La base pesa 14,6 MB; los adjuntos, 11 MB.
 
 - **Credenciales (prioridad 2):** alta masiva y reset usan el CUIL como contraseña, sin cambio forzado al primer
   ingreso ni límite de intentos. Juntarlo con el login de abajo.
