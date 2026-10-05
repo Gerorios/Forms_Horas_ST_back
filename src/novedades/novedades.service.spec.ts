@@ -851,4 +851,28 @@ describe('NovedadesService — Baja de Operario', () => {
     prismaMock.novedad.update.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
     await expect(service.anular(1, 'Reingreso', { cuil: '20333333333', rol: 'HyS' })).resolves.toBeDefined();
   });
+
+  it('reabrir una baja rechazada cuando el operario ya tiene otra vigente: rechaza y no actualiza', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'desaprobada', operarioCuil: '20222222222', tipoNovedad: { nombre: 'Baja de Operario' },
+    });
+    prismaMock.novedad.findFirst.mockResolvedValue({ id: 7 });
+    await expect(service.reabrir(1, { cuil: '20333333333', rol: 'HyS' })).rejects.toThrow(BadRequestException);
+    expect(prismaMock.novedad.findFirst.mock.calls[0][0].where).toMatchObject({
+      operarioCuil: '20222222222',
+      id: { not: 1 },
+    });
+    expect(prismaMock.novedad.update).not.toHaveBeenCalled();
+  });
+
+  it('reabrir una baja rechazada sin otra vigente la vuelve a pendiente', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'desaprobada', operarioCuil: '20222222222', tipoNovedad: { nombre: 'Baja de Operario' },
+    });
+    prismaMock.novedad.findFirst.mockResolvedValue(null);
+    prismaMock.novedad.update.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
+    await service.reabrir(1, { cuil: '20333333333', rol: 'HyS' });
+    expect(prismaMock.novedad.findFirst).toHaveBeenCalledTimes(1);
+    expect(prismaMock.novedad.update.mock.calls[0][0].data.estadoHys).toBe('pendiente');
+  });
 });

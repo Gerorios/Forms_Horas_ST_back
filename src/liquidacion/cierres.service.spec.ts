@@ -539,6 +539,22 @@ describe('CierresService', () => {
       );
     });
 
+    it('no congela la fecha de una baja sin confirmar (no tiene efecto en el pago)', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([
+        filaBase({ cuil: 'A', estadoBaja: 'sin_confirmar', fechaBaja: '2026-10-05' }),
+      ]);
+      calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);
+      prismaMock.cierreLiquidacion.aggregate.mockResolvedValue({ _max: { version: null } });
+
+      await service.crearCierre(2026, 10, 1, undefined, CUIL_LIQUIDADOR);
+
+      const data = prismaMock.cierreLiquidacion.create.mock.calls[0][0].data;
+      expect(data.detalle.create[0]).toMatchObject({
+        fechaBaja: null,
+        estadoBaja: 'sin_confirmar',
+      });
+    });
+
     it('días trabajados: descarta los días posteriores a la baja confirmada', async () => {
       calculoMock.calcularQuincena.mockResolvedValue([filaBase({ cuil: 'A' })]);
       calculoMock.getAlertasQuincena.mockResolvedValue(alertasVacias);

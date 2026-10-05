@@ -189,8 +189,13 @@ export class CierresService {
       salvedad,
       total: fila.total,
       // ADR-026: se congela lo que el liquidador de sueldos necesita para
-      // descontar sin cruzar con HyS.
-      fechaBaja: fila.fechaBaja ? new Date(`${fila.fechaBaja}T00:00:00Z`) : null,
+      // descontar sin cruzar con HyS. La fecha solo se congela si la baja
+      // está confirmada: una informada sin confirmar no tiene efecto en el
+      // pago y el Excel no debe mostrarla en FECHA BAJA (sí queda su estado).
+      fechaBaja:
+        fila.fechaBaja && (fila.estadoBaja === 'previa' || fila.estadoBaja === 'en_quincena')
+          ? new Date(`${fila.fechaBaja}T00:00:00Z`)
+          : null,
       estadoBaja: fila.estadoBaja,
       diasAusenciaInjustificada: fila.diasAusenciaInjustificada,
       diasAusenciaJustificada: fila.diasAusenciaJustificada,

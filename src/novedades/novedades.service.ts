@@ -487,9 +487,13 @@ export class NovedadesService {
   /** Reabre una novedad ya resuelta por HyS: vuelve a `pendiente` y limpia la
    * resolución previa (mismo criterio que reabrir en registros-horas). */
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
-    const novedad = await this.prisma.novedad.findUnique({ where: { id } });
+    const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
+
+    // Unicidad de la Baja (ADR-026) también al reabrir: reabrir una baja
+    // rechazada cuando ya hay otra vigente dejaría dos fechas de baja.
+    if (novedad.tipoNovedad?.nombre === TIPO_BAJA) await this.verificarBajaUnica(novedad.operarioCuil, id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
