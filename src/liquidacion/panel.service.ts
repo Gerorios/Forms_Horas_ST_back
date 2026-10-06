@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena } from '../common/quincena';
 import { duplicadosExactos } from '../common/duplicados';
+import { claveDiaUtc, TIPO_BAJA } from '../common/baja';
 
 export interface QuincenaResumen {
   anio: number;
@@ -149,6 +150,11 @@ export class PanelService {
     return nombrePorCuil.get(u.cuil) ?? u.nombreFueraNomina ?? '';
   }
 
+  /** ¿La fecha (un @db.Date) cae después de la baja confirmada de esa fila? */
+  private despuesDeBaja(fila: { estadoBaja: string | null; fechaBaja: string | null } | undefined, fecha: Date): boolean {
+    return fila?.estadoBaja === 'en_quincena' && claveDiaUtc(fecha) > fila.fechaBaja!;
+  }
+
   async getDetalleQuincena(anio: number, mes: number, quincena: number) {
     const { desde, hasta } = rangoQuincena(anio, mes, quincena);
 
@@ -219,6 +225,9 @@ export class PanelService {
         horas: this.num(Number(r.horas)),
         cargadoPor: this.nombreUsuario(r.cargadoPor, nombrePorCuilCargador),
         importeEstimado,
+        // Día posterior a la baja confirmada (ADR-026): el cálculo no lo
+        // liquida; se muestra para que el jefe lo desapruebe.
+        posteriorABaja: this.despuesDeBaja(fila, r.fecha),
       };
       if (!diasPorCuil.has(r.operarioCuil)) diasPorCuil.set(r.operarioCuil, []);
       diasPorCuil.get(r.operarioCuil)!.push(item);
@@ -228,7 +237,18 @@ export class PanelService {
     for (const n of novedades) {
       const fila = calculo.find((c) => c.cuil === n.operarioCuil);
       let efecto: string;
-      if (n.tipoNovedad.nombre === 'Ausencia') {
+      if (n.tipoNovedad.nombre === TIPO_BAJA) {
+        efecto =
+          n.estadoHys === 'aprobada'
+            ? 'baja confirmada (último día trabajado)'
+            : n.estadoHys === 'desaprobada'
+              ? 'baja rechazada por HyS (sin efecto)'
+              : 'baja informada, sin confirmar por HyS (sin efecto)';
+      } else if (this.despuesDeBaja(fila, n.fechaInicio)) {
+        // ADR-026: nada que arranque después del último día trabajado se
+        // liquida (ni plus, ni pérdida de presentismo).
+        efecto = 'no se liquida (posterior a la baja)';
+      } else if (n.tipoNovedad.nombre === 'Ausencia') {
         // Pendiente o desaprobada: siempre pierde presentismo. Aprobada
         // (justificada): depende de lo que HyS decidió caso por caso al
         // justificar (ADR-022) — ver CalculoService#calcularQuincena.
@@ -291,6 +311,15 @@ export class PanelService {
       // zona" en vivo (no solo en el detalle congelado). Viene resuelta del
       // cálculo, que ya contempló la excepción del perfil.
       zona: r.zona,
+      // Baja de Operario (ADR-026): el color de la fila sale de estadoBaja +
+      // activo (previa con activo = rojo, previa sin activo = gris,
+      // en_quincena = amarillo, sin_confirmar = solo leyenda).
+      fechaBaja: r.fechaBaja,
+      estadoBaja: r.estadoBaja,
+      activo: r.activo,
+      diasAusenciaInjustificada: r.diasAusenciaInjustificada,
+      diasAusenciaJustificada: r.diasAusenciaJustificada,
+      diasAusenciaSinResolver: r.diasAusenciaSinResolver,
       pendientesAprobacion: pendientesPorCuil.get(r.cuil) ?? 0,
       duplicadoCruzado: cuilesConDuplicado.has(r.cuil),
       dias: diasPorCuil.get(r.cuil) ?? [],

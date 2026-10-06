@@ -487,7 +487,7 @@ describe('NovedadesService#resolverHys', () => {
   });
 
   it('resuelve una novedad activa sin problemas', async () => {
-    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa', estadoHys: 'pendiente' });
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa', estadoHys: 'pendiente', tipoNovedad: { nombre: 'Ausencia' } });
     prismaMock.novedad.update.mockResolvedValue({
       id: 1,
       estadoHys: 'aprobada',
@@ -507,6 +507,7 @@ describe('NovedadesService#resolverHys', () => {
       estado: 'activa',
       estadoHys: 'pendiente',
       pierdePresentismoHys: null,
+      tipoNovedad: { nombre: 'Ausencia' },
     });
     prismaMock.novedad.update.mockResolvedValue({
       id: 1,
@@ -539,6 +540,7 @@ describe('NovedadesService#resolverHys', () => {
       estado: 'activa',
       estadoHys: 'pendiente',
       pierdePresentismoHys: null,
+      tipoNovedad: { nombre: 'Ausencia' },
     });
     prismaMock.novedad.update.mockResolvedValue({
       id: 1,
@@ -778,5 +780,99 @@ describe('NovedadesService#resumenAusencias', () => {
     prismaMock.novedad.findMany.mockResolvedValue([]);
     const resumen = await service.resumenAusencias(2026, 8, 1);
     expect(resumen).toEqual([]);
+  });
+});
+
+// ADR-026: Baja de Operario — una sola vigente por persona, sin fechaFin, la
+// confirma HyS sin preguntar presentismo.
+describe('NovedadesService — Baja de Operario', () => {
+  const prismaMock: any = {
+    tipoNovedad: { findUnique: jest.fn() },
+    novedad: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    auditoria: { create: jest.fn() },
+    snuempleados: { findMany: jest.fn() },
+    $transaction: jest.fn((fn: any) => fn(prismaMock)),
+  };
+  let service: NovedadesService;
+  const supervisor = { cuil: '20111111111', rol: 'Supervisor' };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prismaMock.$transaction.mockImplementation((fn: any) => fn(prismaMock));
+    prismaMock.snuempleados.findMany.mockResolvedValue([]);
+    prismaMock.tipoNovedad.findUnique.mockResolvedValue({ id: 9, nombre: 'Baja de Operario', requiereAprobacionHys: true });
+    prismaMock.novedad.create.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
+    const mod = await Test.createTestingModule({
+      providers: [
+        NovedadesService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: CalculoService, useValue: { diasClip: jest.fn() } },
+        { provide: NOVEDAD_ADJUNTO_STORAGE, useValue: {} },
+      ],
+    }).compile();
+    service = mod.get(NovedadesService);
+  });
+
+  const dto = { operarioCuil: '20222222222', tipoNovedadId: 9, fechaInicio: '2026-10-10', fechaFin: '2026-10-20' } as any;
+
+  it('rechaza una segunda baja vigente para la misma persona', async () => {
+    prismaMock.novedad.findFirst.mockResolvedValue({ id: 7 });
+    await expect(service.create(dto, undefined, supervisor)).rejects.toThrow(BadRequestException);
+    expect(prismaMock.novedad.create).not.toHaveBeenCalled();
+  });
+
+  it('la carga queda pendiente de HyS y sin fechaFin', async () => {
+    prismaMock.novedad.findFirst.mockResolvedValue(null);
+    await service.create(dto, undefined, supervisor);
+    const data = prismaMock.novedad.create.mock.calls[0][0].data;
+    expect(data.estadoHys).toBe('pendiente');
+    expect(data.fechaFin).toBeNull();
+  });
+
+  it('HyS confirma la baja sin indicar presentismo (queda null, sin auditarlo)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'pendiente', pierdePresentismoHys: null, tipoNovedad: { nombre: 'Baja de Operario' },
+    });
+    prismaMock.novedad.update.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
+    await service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000');
+    expect(prismaMock.novedad.update.mock.calls[0][0].data.pierdePresentismoHys).toBeNull();
+    expect(prismaMock.auditoria.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('justificar una Ausencia sin indicar presentismo sigue siendo un error', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'pendiente', tipoNovedad: { nombre: 'Ausencia' },
+    });
+    await expect(service.resolverHys(1, { estadoHys: 'aprobada' }, '20000000000')).rejects.toThrow(BadRequestException);
+  });
+
+  it('HyS puede anular una baja (reingreso o fecha mal informada)', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({ id: 1, estado: 'activa', tipoNovedad: { nombre: 'Baja de Operario' } });
+    prismaMock.novedad.update.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
+    await expect(service.anular(1, 'Reingreso', { cuil: '20333333333', rol: 'HyS' })).resolves.toBeDefined();
+  });
+
+  it('reabrir una baja rechazada cuando el operario ya tiene otra vigente: rechaza y no actualiza', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'desaprobada', operarioCuil: '20222222222', tipoNovedad: { nombre: 'Baja de Operario' },
+    });
+    prismaMock.novedad.findFirst.mockResolvedValue({ id: 7 });
+    await expect(service.reabrir(1, { cuil: '20333333333', rol: 'HyS' })).rejects.toThrow(BadRequestException);
+    expect(prismaMock.novedad.findFirst.mock.calls[0][0].where).toMatchObject({
+      operarioCuil: '20222222222',
+      id: { not: 1 },
+    });
+    expect(prismaMock.novedad.update).not.toHaveBeenCalled();
+  });
+
+  it('reabrir una baja rechazada sin otra vigente la vuelve a pendiente', async () => {
+    prismaMock.novedad.findUnique.mockResolvedValue({
+      id: 1, estado: 'activa', estadoHys: 'desaprobada', operarioCuil: '20222222222', tipoNovedad: { nombre: 'Baja de Operario' },
+    });
+    prismaMock.novedad.findFirst.mockResolvedValue(null);
+    prismaMock.novedad.update.mockResolvedValue({ id: 1, cargadoPor: { cuil: supervisor.cuil, nombreFueraNomina: null } });
+    await service.reabrir(1, { cuil: '20333333333', rol: 'HyS' });
+    expect(prismaMock.novedad.findFirst).toHaveBeenCalledTimes(1);
+    expect(prismaMock.novedad.update.mock.calls[0][0].data.estadoHys).toBe('pendiente');
   });
 });

@@ -149,6 +149,52 @@ diálogo donde ya deja el `descargoHys` (que es también donde escribe el
 motivo de esta decisión puntual). Se resetea a `null` al reabrir la
 novedad. Ver ADR-022.
 
+**Baja de Operario** (2026-10-05):
+Novedad con la que un supervisor informa que una persona dejó de trabajar,
+porque la base de sueldos (`snuempleados.activo`) tarda en reflejarlo o no lo
+refleja nunca. Una sola vigente por persona. Ver ADR-026.
+_Avoid_: egreso, desvinculación (no distinguen nada acá); "dar de baja" como
+sinónimo de anular una novedad.
+
+**Fecha de baja**:
+El **último día trabajado** — no el primero sin trabajar. Ese día todavía se
+cargan y se liquidan horas; desde el siguiente, no. Es la fecha de inicio de
+la novedad; la fecha de fin no aplica.
+_Avoid_: fecha de egreso, primer día sin trabajar.
+
+**Baja informada / baja confirmada**:
+Informada = cargada por el supervisor, pendiente de HyS: se ve, pero no tiene
+ningún efecto. Confirmada = aprobada por HyS: bloquea la carga de horas
+posteriores en todos los contratos y pega en la liquidación. Rechazada = sin
+efecto. Para corregir la fecha o registrar un reingreso, HyS anula la baja.
+
+**Baja dentro de la quincena** (amarillo):
+Baja confirmada cuya fecha cae dentro de la quincena que se liquida: es la
+**liquidación final** de esa persona y corresponde pagarla. Los montos no se
+tocan, salvo que nada con fecha posterior a la baja se liquida (horas, plus
+de novedades, ausencias). Un fijo sale con sus 88 hs y la fecha de baja: el
+prorrateo lo hace el liquidador de sueldos.
+
+**Baja previa** (rojo / gris):
+Baja confirmada anterior al primer día de la quincena: esa persona no trabajó
+ni un día, y se liquida **$0 en todo**, sea cual sea su régimen. La fila sigue
+apareciendo para que nadie la pierda de vista: en rojo mientras
+`snuempleados` la tenga activa, en gris cuando ya figura `activo = 'N'`.
+Nadie entra ni sale de la liquidación por `activo`. El cierre la congela, pero
+el **Excel no la manda a pagar**: las hojas de pago llevan solo a quien tiene
+algo para cobrar. Las rojas (activas en sueldos) van a la hoja **BAJAS A
+REGULARIZAR**, para que el liquidador de sueldos las dé de baja en su
+sistema; las grises no se informan, porque ya están regularizadas.
+_Avoid_: excluir de la liquidación (en la app la fila no desaparece, sale en $0).
+
+**Días de ausencia** (de una fila de liquidación):
+Días corridos de Ausencia dentro de la quincena (y hasta la baja), separados
+por estado HyS: injustificada, justificada y sin resolver. Se congelan en el
+cierre y salen en columnas propias del Excel para que el liquidador de sueldos
+descuente sin cruzar con lo que le pasa HyS — sin ellas, a un fijo se le
+pagaba el sueldo completo más los días caídos. El sistema **informa**, no
+descuenta.
+
 ### Control general (panel del Jefe de Contrato)
 
 **Mis contratos** (de un jefe):

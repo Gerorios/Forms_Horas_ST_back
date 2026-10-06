@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { rangoQuincena, rangoVentanaDiasTrabajados } from '../common/quincena';
+import { bajasPorCuil, claveDiaUtc, esPosteriorABaja } from '../common/baja';
 
 type FilaCalculo = Awaited<ReturnType<CalculoService['calcularQuincena']>>[number];
 type Alertas = Awaited<ReturnType<CalculoService['getAlertasQuincena']>>;
@@ -88,6 +89,37 @@ export class CierresService {
     if (sinZona > 0) {
       salvedades.push(this.pluralizar(sinZona, 'empleado sin zona', 'empleados sin zona'));
     }
+    // Baja de Operario (ADR-026).
+    const bajasPrevias = filas.filter((f) => f.estadoBaja === 'previa').length;
+    if (bajasPrevias > 0) {
+      salvedades.push(
+        this.pluralizar(
+          bajasPrevias,
+          'persona con baja anterior a la quincena, liquidada en $0',
+          'personas con baja anterior a la quincena, liquidadas en $0',
+        ),
+      );
+    }
+    const bajasSinConfirmar = alertas.bajasSinConfirmar?.length ?? 0;
+    if (bajasSinConfirmar > 0) {
+      salvedades.push(
+        this.pluralizar(
+          bajasSinConfirmar,
+          'baja informada sin confirmar por HyS (no se aplicó)',
+          'bajas informadas sin confirmar por HyS (no se aplicaron)',
+        ),
+      );
+    }
+    const conAusenciasSinResolver = filas.filter((f) => (f.diasAusenciaSinResolver ?? 0) > 0).length;
+    if (conAusenciasSinResolver > 0) {
+      salvedades.push(
+        this.pluralizar(
+          conAusenciasSinResolver,
+          'persona con ausencias sin resolver por HyS',
+          'personas con ausencias sin resolver por HyS',
+        ),
+      );
+    }
     return salvedades;
   }
 
@@ -156,6 +188,19 @@ export class CierresService {
       novedadesTexto: fila.novedadesTexto,
       salvedad,
       total: fila.total,
+      // ADR-026: se congela lo que el liquidador de sueldos necesita para
+      // descontar sin cruzar con HyS. La fecha solo se congela si la baja
+      // está confirmada: una informada sin confirmar no tiene efecto en el
+      // pago y el Excel no debe mostrarla en FECHA BAJA (sí queda su estado).
+      fechaBaja:
+        fila.fechaBaja && (fila.estadoBaja === 'previa' || fila.estadoBaja === 'en_quincena')
+          ? new Date(`${fila.fechaBaja}T00:00:00Z`)
+          : null,
+      estadoBaja: fila.estadoBaja,
+      diasAusenciaInjustificada: fila.diasAusenciaInjustificada,
+      diasAusenciaJustificada: fila.diasAusenciaJustificada,
+      diasAusenciaSinResolver: fila.diasAusenciaSinResolver,
+      activoEnSueldos: fila.activo,
     };
   }
 
@@ -187,7 +232,7 @@ export class CierresService {
     // OJO: la salvedad de pendientes (abajo) NO usa la ventana — sigue
     // mirando solo `desde`/`hasta` de la quincena que se cierra, que es lo
     // que el liquidador está por pagar.
-    const [dias, kmsPorTantos, pendientesPorOperario] = await Promise.all([
+    const [diasCrudos, kmsPorTantos, pendientesPorOperario] = await Promise.all([
       this.prisma.registroHoras.groupBy({
         by: ['operarioCuil', 'fecha'],
         where: { fecha: { gte: desdeVentana, lte: hasta }, estado: { not: 'desaprobado' } },
@@ -202,6 +247,12 @@ export class CierresService {
     ]);
     const kmPorCuil = new Map(kmsPorTantos.map((k) => [k.cuil, Number(k.kmTotal)]));
     const empleadosConPendientes = pendientesPorOperario.length;
+
+    // Los días posteriores a una baja confirmada no son días trabajados
+    // (ADR-026), aunque haya registros cargados antes de informarla. Vale
+    // también para cuils sin perfil, por eso se consulta aparte del cálculo.
+    const bajas = await bajasPorCuil(this.prisma, [...new Set(diasCrudos.map((d) => d.operarioCuil))]);
+    const dias = diasCrudos.filter((d) => !esPosteriorABaja(claveDiaUtc(d.fecha), bajas.get(d.operarioCuil)));
 
     // Localidad (se congela junto a provincia, spec §2.2) para todo cuil que
     // vaya a aparecer en detalle o en días trabajados.

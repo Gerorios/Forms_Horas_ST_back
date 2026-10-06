@@ -513,6 +513,17 @@ model CierreLiquidacionDetalle {
 
   cierre CierreLiquidacion @relation(fields: [cierreId], references: [id])
 
+  // ADR-026 (Baja de Operario + ausencias para el liquidador de sueldos).
+  // Nullables: los cierres anteriores no los registraron (vacío ≠ 0).
+  fechaBaja                 DateTime? @map("fecha_baja") @db.Date
+  estadoBaja                String?   @map("estado_baja") @db.VarChar(20)
+  diasAusenciaInjustificada Int?      @map("dias_ausencia_injustificada")
+  diasAusenciaJustificada   Int?      @map("dias_ausencia_justificada")
+  diasAusenciaSinResolver   Int?      @map("dias_ausencia_sin_resolver")
+  // snuempleados.activo al cerrar: separa la baja previa que hay que pedir
+  // regularizar (activo) de la que ya está regularizada (inactivo).
+  activoEnSueldos           Boolean?  @map("activo_en_sueldos")
+
   @@unique([cierreId, cuil])
   @@index([cuil])
   @@map("sth_cierre_liquidacion_detalle")

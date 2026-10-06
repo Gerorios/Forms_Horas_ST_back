@@ -1,5 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BajaOperario, bajasPorCuil, claveDiaLocal, claveDiaUtc, esPosteriorABaja, formatearClave } from '../common/baja';
+
+export type EstadoBaja = 'previa' | 'en_quincena' | 'sin_confirmar';
+
+/** Días corridos de una novedad dentro de [desdeK, hastaK] (claves
+ * 'YYYY-MM-DD'). Por claves y no por Date: la novedad es un @db.Date en UTC y
+ * el rango de la quincena se arma en hora local. */
+function diasEnRango(fechaInicio: Date, fechaFin: Date | null, desdeK: string, hastaK: string): number {
+  const ini = claveDiaUtc(fechaInicio);
+  const fin = claveDiaUtc(fechaFin ?? fechaInicio);
+  const a = ini > desdeK ? ini : desdeK;
+  const b = fin < hastaK ? fin : hastaK;
+  if (a > b) return 0;
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000) + 1;
+}
+import { RegimenLiquidacion, ZonaLiquidacion } from '@prisma/client';
 import { zonaDePerfil } from '../common/zona';
 import { rangoQuincena } from '../common/quincena';
 
@@ -73,7 +89,7 @@ export class CalculoService {
     const perfiles = await this.prisma.perfilLiquidacion.findMany({
       where: { regimen: { not: 'administrativo' } },
       include: {
-        empleado: { select: { apellido_nombre: true, legajo: true, cargo: true, provincia: true } },
+        empleado: { select: { apellido_nombre: true, legajo: true, cargo: true, provincia: true, activo: true } },
         categoria: { select: { id: true, nombre: true } },
       },
       orderBy: { cuil: 'asc' },
@@ -112,6 +128,30 @@ export class CalculoService {
     });
     const horasAprobadasPorCuil = new Map(horasAprobadas.map((h) => [h.operarioCuil, Number(h._sum.horas ?? 0)]));
 
+    // Baja de Operario (ADR-026). Solo la CONFIRMADA por HyS tiene efecto:
+    // anterior a la quincena → $0 en todo; dentro → nada con fecha posterior
+    // al último día trabajado se liquida (horas, plus de novedades,
+    // ausencias). Plus individual y km por tantos se respetan: los carga el
+    // Liquidador a mano para esta quincena, ya sabiendo de la baja.
+    const bajas = await bajasPorCuil(this.prisma, cuils);
+    const desdeK = claveDiaLocal(desde);
+    const hastaK = claveDiaLocal(hasta);
+    const cuilsConCorte = [...bajas.entries()]
+      .filter(([, b]) => b.confirmada && b.fechaBaja >= desdeK && b.fechaBaja < hastaK)
+      .map(([cuil]) => cuil);
+    if (cuilsConCorte.length) {
+      // Horas aprobadas posteriores a la baja (cargadas antes de informarla):
+      // se descuentan del total sumado arriba.
+      const posteriores = await this.prisma.registroHoras.findMany({
+        where: { operarioCuil: { in: cuilsConCorte }, estado: 'aprobado', fecha: { gte: desde, lte: hasta } },
+        select: { operarioCuil: true, fecha: true, horas: true },
+      });
+      for (const r of posteriores) {
+        if (!esPosteriorABaja(claveDiaUtc(r.fecha), bajas.get(r.operarioCuil))) continue;
+        horasAprobadasPorCuil.set(r.operarioCuil, (horasAprobadasPorCuil.get(r.operarioCuil) ?? 0) - Number(r.horas));
+      }
+    }
+
     // Novedades solapadas al rango, para todos los perfiles en una sola query.
     const novedades = await this.prisma.novedad.findMany({
       where: {
@@ -135,6 +175,44 @@ export class CalculoService {
     const resultado = [];
 
     for (const perfil of perfiles) {
+      const baja = bajas.get(perfil.cuil);
+      const estadoBaja = this.estadoBaja(baja, desdeK, hastaK);
+      const datosBaja = {
+        fechaBaja: estadoBaja ? baja!.fechaBaja : null,
+        estadoBaja,
+        activo: perfil.empleado.activo === 'S',
+      };
+
+      // Baja confirmada ANTES de la quincena: no trabajó ni un día, no se
+      // liquida nada (ADR-026). La fila igual sale — en rojo/gris — para que
+      // nadie la pierda de vista; nunca desaparece en silencio.
+      if (estadoBaja === 'previa') {
+        resultado.push({
+          ...this.filaBase(perfil),
+          precioBruto: null,
+          montoKmBruto: null,
+          horasTotal: 0,
+          horasCct: 0,
+          totalBruto: 0,
+          horasExtra: 0,
+          montoHorasExtra: 0,
+          tienePresentismo: false,
+          montoPresentismo: 0,
+          plus: [],
+          noRemunerativo: 0,
+          plusIndividual: null,
+          plusIndividualMotivo: null,
+          novedadesTexto: `BAJA ${formatearClave(baja!.fechaBaja)}`,
+          total: 0,
+          datoFaltante: null,
+          diasAusenciaInjustificada: 0,
+          diasAusenciaJustificada: 0,
+          diasAusenciaSinResolver: 0,
+          ...datosBaja,
+        });
+        continue;
+      }
+
       const tarifaHora = perfil.categoriaUocraId
         ? (tarifas.find((t) => t.categoriaUocraId === perfil.categoriaUocraId)?.importeHora ?? null)
         : null;
@@ -240,7 +318,21 @@ export class CalculoService {
         }
       }
 
-      const novedadesCuil = novedadesPorCuil.get(perfil.cuil) ?? [];
+      // Con baja confirmada dentro de la quincena, las novedades que arrancan
+      // después del último día trabajado no cuentan (ni presentismo, ni plus,
+      // ni días de ausencia).
+      const corteK = estadoBaja === 'en_quincena' ? baja!.fechaBaja : hastaK;
+      const novedadesCuil = (novedadesPorCuil.get(perfil.cuil) ?? []).filter(
+        (n) => claveDiaUtc(n.fechaInicio) <= corteK,
+      );
+
+      // Días de ausencia para que el liquidador de sueldos descuente sin
+      // tener que cruzar con lo que le pasa HyS (ADR-026): días corridos,
+      // recortados a la quincena y a la baja, separados por estado HyS.
+      const diasAusencia = (estado: string) =>
+        novedadesCuil
+          .filter((n) => n.tipoNovedad.nombre === 'Ausencia' && n.estadoHys === estado)
+          .reduce((s, n) => s + diasEnRango(n.fechaInicio, n.fechaFin, desdeK, corteK), 0);
 
       // Presentismo: 20% del básico, salvo Ausencia o Suspensión en el
       // período. Una Ausencia pendiente o desaprobada (injustificada)
@@ -301,17 +393,10 @@ export class CalculoService {
       const etiquetas: string[] = [];
       for (const p of plus) etiquetas.push(p.nombre.toUpperCase());
 
+      if (estadoBaja === 'en_quincena') etiquetas.push(`BAJA ${formatearClave(baja!.fechaBaja)}`);
+
       resultado.push({
-        cuil: perfil.cuil,
-        apellidoNombre: perfil.empleado.apellido_nombre,
-        legajo: perfil.empleado.legajo,
-        categoria: perfil.categoria?.nombre ?? null,
-        regimen: perfil.regimen,
-        provincia: perfil.empleado.provincia,
-        // Resuelta acá y una sola vez: el panel, los cierres y el Excel la
-        // leen de la fila. Así la excepción del perfil no se saltea en
-        // ninguno de los tres. Ver zonaDePerfil().
-        zona: zonaDePerfil(perfil.empleado.provincia, perfil.zonaOverride),
+        ...this.filaBase(perfil),
         precioBruto: tarifaHoraNum,
         montoKmBruto,
         horasTotal,
@@ -328,10 +413,48 @@ export class CalculoService {
         novedadesTexto: etiquetas.join(' y '),
         total,
         datoFaltante,
+        diasAusenciaInjustificada: diasAusencia('desaprobada'),
+        diasAusenciaJustificada: diasAusencia('aprobada'),
+        diasAusenciaSinResolver: diasAusencia('pendiente'),
+        ...datosBaja,
       });
     }
 
     return resultado;
+  }
+
+  /** Identidad y zona de la fila, comunes a la liquidada y a la de baja previa. */
+  private filaBase(perfil: {
+    cuil: string;
+    regimen: RegimenLiquidacion;
+    zonaOverride: ZonaLiquidacion | null;
+    empleado: { apellido_nombre: string; legajo: number; provincia: string };
+    categoria: { nombre: string } | null;
+  }) {
+    return {
+      cuil: perfil.cuil,
+      apellidoNombre: perfil.empleado.apellido_nombre,
+      legajo: perfil.empleado.legajo,
+      categoria: perfil.categoria?.nombre ?? null,
+      regimen: perfil.regimen,
+      provincia: perfil.empleado.provincia,
+      // Resuelta acá y una sola vez: el panel, los cierres y el Excel la
+      // leen de la fila. Así la excepción del perfil no se saltea en
+      // ninguno de los tres. Ver zonaDePerfil().
+      zona: zonaDePerfil(perfil.empleado.provincia, perfil.zonaOverride),
+    };
+  }
+
+  /** Cómo pega una Baja de Operario en la quincena [desdeK, hastaK] (ADR-026):
+   * - 'previa': confirmada y anterior a la quincena → $0 (rojo/gris).
+   * - 'en_quincena': confirmada dentro → liquidación final (amarillo).
+   * - 'sin_confirmar': pendiente de HyS con fecha hasta el fin de la
+   *   quincena → solo leyenda, sin efecto.
+   * - null: sin baja, o con una fecha posterior a esta quincena. */
+  private estadoBaja(baja: BajaOperario | undefined, desdeK: string, hastaK: string): EstadoBaja | null {
+    if (!baja || baja.fechaBaja > hastaK) return null;
+    if (!baja.confirmada) return 'sin_confirmar';
+    return baja.fechaBaja < desdeK ? 'previa' : 'en_quincena';
   }
 
   /**
@@ -359,10 +482,17 @@ export class CalculoService {
       horasPorCuil.set(r.operarioCuil, actual);
     }
 
-    const perfiles = await this.prisma.perfilLiquidacion.findMany({
+    const todosLosPerfiles = await this.prisma.perfilLiquidacion.findMany({
       include: { empleado: { select: { apellido_nombre: true } } },
     });
-    const perfilPorCuil = new Map(perfiles.map((p) => [p.cuil, p]));
+    const perfilPorCuil = new Map(todosLosPerfiles.map((p) => [p.cuil, p]));
+
+    // Baja confirmada anterior a la quincena (ADR-026): la fila sale en $0,
+    // así que ni "sin horas" ni "perfil incompleto" son avisos reales.
+    const bajas = await bajasPorCuil(this.prisma);
+    const desdeK = claveDiaLocal(desde);
+    const hastaK = claveDiaLocal(hasta);
+    const perfiles = todosLosPerfiles.filter((p) => this.estadoBaja(bajas.get(p.cuil), desdeK, hastaK) !== 'previa');
 
     const empleadosConHoras = await this.prisma.snuempleados.findMany({
       where: { cuil: { in: [...horasPorCuil.keys()] } },
@@ -410,6 +540,13 @@ export class CalculoService {
       })
       .filter((x): x is NonNullable<typeof x> => x != null);
 
-    return { sinPerfil, perfilIncompleto, sinHorasAprobadas };
+    // Bajas informadas por un supervisor que HyS todavía no confirmó, con
+    // fecha hasta el fin de esta quincena: hasta que se confirmen no tienen
+    // efecto en la liquidación (ADR-026).
+    const bajasSinConfirmar = todosLosPerfiles
+      .filter((p) => this.estadoBaja(bajas.get(p.cuil), desdeK, hastaK) === 'sin_confirmar')
+      .map((p) => ({ cuil: p.cuil, apellidoNombre: p.empleado.apellido_nombre, fechaBaja: bajas.get(p.cuil)!.fechaBaja }));
+
+    return { sinPerfil, perfilIncompleto, sinHorasAprobadas, bajasSinConfirmar };
   }
 }

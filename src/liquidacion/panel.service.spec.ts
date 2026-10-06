@@ -109,6 +109,64 @@ describe('PanelService', () => {
       datoFaltante: null,
     };
 
+    // ADR-026: la fila viaja con lo necesario para pintarla y las novedades
+    // posteriores a la baja se muestran como no liquidadas.
+    it('Baja de Operario: campos de baja en la fila, efecto de la baja y de lo posterior, día marcado', async () => {
+      calculoMock.calcularQuincena.mockResolvedValue([
+        {
+          ...filaBase,
+          fechaBaja: '2026-08-05',
+          estadoBaja: 'en_quincena',
+          activo: true,
+          diasAusenciaInjustificada: 0,
+          diasAusenciaJustificada: 0,
+          diasAusenciaSinResolver: 0,
+        },
+      ]);
+      prismaMock.registroHoras.groupBy.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          fecha: new Date('2026-08-07T00:00:00Z'),
+          horas: 8,
+          estado: 'aprobado',
+          loteId: 'L1',
+          contrato: { codigo: 'CTR1' },
+          tareas: [],
+          moviles: [],
+          cargadoPor: { cuil: 'U1', email: 'u1@x.com', nombreFueraNomina: null },
+        },
+      ]);
+      prismaMock.novedad.findMany.mockResolvedValue([
+        {
+          operarioCuil: '20-1-1',
+          fechaInicio: new Date('2026-08-05T00:00:00Z'),
+          fechaFin: null,
+          estadoHys: 'aprobada',
+          tipoNovedad: { nombre: 'Baja de Operario', generaPlus: false },
+        },
+        {
+          operarioCuil: '20-1-1',
+          fechaInicio: new Date('2026-08-09T00:00:00Z'),
+          fechaFin: null,
+          estadoHys: 'pendiente',
+          tipoNovedad: { nombre: 'Ausencia', generaPlus: false },
+        },
+      ]);
+      prismaMock.snuempleados.findMany.mockResolvedValue([]);
+      prismaMock.perfilLiquidacion.findMany.mockResolvedValue([{ cuil: '20-1-1' }]);
+
+      const r = await service.getDetalleQuincena(2026, 8, 1);
+      const fila = r.filas[0] as any;
+
+      expect(fila).toMatchObject({ fechaBaja: '2026-08-05', estadoBaja: 'en_quincena', activo: true });
+      expect(fila.novedades.map((n: any) => n.efecto)).toEqual([
+        'baja confirmada (último día trabajado)',
+        'no se liquida (posterior a la baja)',
+      ]);
+      expect(fila.dias[0].posteriorABaja).toBe(true);
+    });
+
     it('arma la fila con días solo aprobados y su importe estimado (horas x tarifa)', async () => {
       calculoMock.calcularQuincena.mockResolvedValue([filaBase]);
       prismaMock.registroHoras.groupBy

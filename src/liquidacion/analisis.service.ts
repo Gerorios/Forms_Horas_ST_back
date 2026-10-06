@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculoService } from './calculo.service';
 import { quincenaAnterior, quincenasHaciaAtras, rangoQuincena } from '../common/quincena';
+import { claveDiaUtc } from '../common/baja';
 
 /**
  * Análisis de la quincena liquidada (plan 2026-08-12): KPIs, composición del
@@ -80,8 +81,13 @@ export class AnalisisService {
     const corridas = await Promise.all(
       periodos.map((p) => this.calculo.calcularQuincena(p.anio, p.mes, p.quincena)),
     );
+    // Una baja anterior a la quincena sale en $0 en la preliquidación
+    // (ADR-026), pero no es un empleado de ese período: contarla bajaría el
+    // costo promedio y la mostraría como "nueva" o con -100%.
     const filasDe = (a: number, m: number, q: number): FilaCalculo[] =>
-      corridas[periodos.findIndex((p) => p.anio === a && p.mes === m && p.quincena === q)] ?? [];
+      (corridas[periodos.findIndex((p) => p.anio === a && p.mes === m && p.quincena === q)] ?? []).filter(
+        (f) => f.estadoBaja !== 'previa',
+      );
     const filas = filasDe(anio, mes, quincena);
     // La anterior siempre está entre las 8 del histórico (es la penúltima).
     const filasAnt = filasDe(ant.anio, ant.mes, ant.quincena);
@@ -97,8 +103,16 @@ export class AnalisisService {
       select: { operarioCuil: true, fecha: true },
       distinct: ['operarioCuil', 'fecha'],
     });
+    // Los días posteriores a una baja confirmada no son días trabajados (ADR-026).
+    const fechaBajaPorCuil = new Map(
+      filas.filter((f) => f.estadoBaja === 'en_quincena').map((f) => [f.cuil, f.fechaBaja!]),
+    );
     const diasPorCuil = new Map<string, number>();
-    for (const r of diasRegistros) diasPorCuil.set(r.operarioCuil, (diasPorCuil.get(r.operarioCuil) ?? 0) + 1);
+    for (const r of diasRegistros) {
+      const fechaBaja = fechaBajaPorCuil.get(r.operarioCuil);
+      if (fechaBaja && claveDiaUtc(r.fecha) > fechaBaja) continue;
+      diasPorCuil.set(r.operarioCuil, (diasPorCuil.get(r.operarioCuil) ?? 0) + 1);
+    }
 
     // Prorrateo por contrato: horas aprobadas por (cuil, contrato).
     const horasPorContrato = await this.prisma.registroHoras.groupBy({

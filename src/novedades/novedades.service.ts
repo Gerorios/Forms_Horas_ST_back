@@ -4,6 +4,7 @@ import { CreateNovedadDto } from './dto/create-novedad.dto';
 import { UpdateNovedadDto } from './dto/update-novedad.dto';
 import { ResolverNovedadDto } from './dto/resolver-novedad.dto';
 import { rangoQuincena } from '../common/quincena';
+import { TIPO_BAJA } from '../common/baja';
 import { CalculoService } from '../liquidacion/calculo.service';
 import { NOVEDAD_ADJUNTO_STORAGE, NovedadAdjuntoStorage } from './storage/novedad-adjunto-storage.interface';
 
@@ -190,6 +191,11 @@ export class NovedadesService {
       }
     }
 
+    // Baja de Operario (ADR-026): fechaInicio = último día trabajado, sin
+    // fechaFin; una sola vigente por persona.
+    const esBaja = tipo.nombre === TIPO_BAJA;
+    if (esBaja) await this.verificarBajaUnica(dto.operarioCuil);
+
     const estadoHys = tipo.requiereAprobacionHys ? 'pendiente' : 'no_aplica';
     const cargadoPorCuil = usuario.cuil;
 
@@ -202,7 +208,7 @@ export class NovedadesService {
         operarioCuil: dto.operarioCuil,
         tipoNovedadId: dto.tipoNovedadId,
         fechaInicio: new Date(dto.fechaInicio),
-        fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
+        fechaFin: dto.fechaFin && !esBaja ? new Date(dto.fechaFin) : null,
         cargadoPorCuil,
         justificacionTexto: dto.justificacionTexto,
         estadoHys: estadoHys as any,
@@ -265,8 +271,30 @@ export class NovedadesService {
    * cuando la edición cambia el tipo.
    */
   private verificarAlcanceTipo(tipoNombre: string, usuario: { rol: string }) {
-    if (usuario.rol === 'HyS' && tipoNombre !== 'Ausencia') {
-      throw new ForbiddenException('HyS solo puede editar/anular novedades de tipo Ausencia');
+    // Baja de Operario (ADR-026): la confirma HyS, así que también la puede
+    // corregir/anular (reingreso o fecha mal informada = anular la baja).
+    if (usuario.rol === 'HyS' && tipoNombre !== 'Ausencia' && tipoNombre !== TIPO_BAJA) {
+      throw new ForbiddenException('HyS solo puede editar/anular novedades de tipo Ausencia o Baja de Operario');
+    }
+  }
+
+  /** Una sola Baja de Operario vigente (activa, no desaprobada) por persona
+   * (ADR-026): así nunca hay que elegir entre dos fechas de baja. Corregir la
+   * fecha = anular la baja y cargar otra. */
+  private async verificarBajaUnica(operarioCuil: string, excluirId?: number) {
+    const existente = await this.prisma.novedad.findFirst({
+      where: {
+        operarioCuil,
+        tipoNovedad: { nombre: TIPO_BAJA },
+        estado: 'activa',
+        estadoHys: { not: 'desaprobada' },
+        ...(excluirId ? { id: { not: excluirId } } : {}),
+      },
+    });
+    if (existente) {
+      throw new BadRequestException(
+        'Ese operario ya tiene una Baja de Operario informada. Para corregir la fecha, anulá la anterior y cargá una nueva.',
+      );
     }
   }
 
@@ -303,6 +331,15 @@ export class NovedadesService {
     // criterio que CargasCombustibleService#puedeModificar).
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
+    // Unicidad de la Baja (ADR-026) también al editar: aplica si el resultado
+    // de la edición es una Baja (por tipo destino o porque ya lo era).
+    const tipoFinal =
+      dto.tipoNovedadId && dto.tipoNovedadId !== novedad.tipoNovedadId
+        ? await this.prisma.tipoNovedad.findUnique({ where: { id: dto.tipoNovedadId } })
+        : novedad.tipoNovedad;
+    const esBaja = tipoFinal?.nombre === TIPO_BAJA;
+    if (esBaja) await this.verificarBajaUnica(dto.operarioCuil ?? novedad.operarioCuil, id);
+
     const yaResuelta = novedad.estadoHys === 'aprobada' || novedad.estadoHys === 'desaprobada';
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -312,7 +349,7 @@ export class NovedadesService {
           operarioCuil: dto.operarioCuil ?? undefined,
           tipoNovedadId: dto.tipoNovedadId ?? undefined,
           fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
-          fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
+          fechaFin: esBaja ? null : dto.fechaFin ? new Date(dto.fechaFin) : undefined,
           justificacionTexto: dto.justificacionTexto ?? undefined,
           // Reabrir por edición deja la novedad igual que reabrir(): sin
           // pierdePresentismoHys, que por ADR-022 solo tiene valor cuando
@@ -389,14 +426,20 @@ export class NovedadesService {
   }
 
   async resolverHys(id: number, dto: ResolverNovedadDto, aprobadoPorCuil: string) {
-    const novedad = await this.prisma.novedad.findUnique({ where: { id } });
+    const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
 
-    // pierdePresentismoHys (ADR-022) solo tiene sentido al justificar — para
-    // 'desaprobada' se ignora lo que venga en el DTO y queda null, esa
-    // siempre pierde presentismo por regla fija (ver CalculoService).
-    const pierdePresentismoHys = dto.estadoHys === 'aprobada' ? dto.pierdePresentismoHys : null;
+    // pierdePresentismoHys (ADR-022) solo tiene sentido al justificar una
+    // Ausencia — para 'desaprobada' se ignora lo que venga en el DTO y queda
+    // null, esa siempre pierde presentismo por regla fija (ver
+    // CalculoService). Para cualquier otro tipo (ej. confirmar una Baja de
+    // Operario, ADR-026) tampoco aplica y queda null.
+    const esAusencia = novedad.tipoNovedad.nombre === 'Ausencia';
+    if (esAusencia && dto.estadoHys === 'aprobada' && typeof dto.pierdePresentismoHys !== 'boolean') {
+      throw new BadRequestException('Al justificar una ausencia hay que indicar si pierde presentismo');
+    }
+    const pierdePresentismoHys = esAusencia && dto.estadoHys === 'aprobada' ? dto.pierdePresentismoHys! : null;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
@@ -422,7 +465,7 @@ export class NovedadesService {
           valorNuevo: dto.estadoHys,
         },
       });
-      if (dto.estadoHys === 'aprobada') {
+      if (esAusencia && dto.estadoHys === 'aprobada') {
         await tx.auditoria.create({
           data: {
             tabla: 'sth_novedades',
@@ -444,9 +487,13 @@ export class NovedadesService {
   /** Reabre una novedad ya resuelta por HyS: vuelve a `pendiente` y limpia la
    * resolución previa (mismo criterio que reabrir en registros-horas). */
   async reabrir(id: number, usuario: { cuil: string; rol: string }) {
-    const novedad = await this.prisma.novedad.findUnique({ where: { id } });
+    const novedad = await this.prisma.novedad.findUnique({ where: { id }, include: { tipoNovedad: true } });
     if (!novedad) throw new NotFoundException('Novedad no encontrada');
     if (novedad.estado === 'anulada') throw new BadRequestException('La novedad está anulada');
+
+    // Unicidad de la Baja (ADR-026) también al reabrir: reabrir una baja
+    // rechazada cuando ya hay otra vigente dejaría dos fechas de baja.
+    if (novedad.tipoNovedad?.nombre === TIPO_BAJA) await this.verificarBajaUnica(novedad.operarioCuil, id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.novedad.update({
