@@ -2,7 +2,7 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-05**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-06**.
 
 ## En curso
 
@@ -13,6 +13,9 @@ Nada en curso.
 Ninguno definido: esperar el próximo pedido del usuario.
 
 ## Pendientes del usuario
+
+- **Baja de Operario (§103):** que HyS revise las 2 bajas que quedaron pendientes en su bandeja (últimos días
+  trabajados 29/09 y 05/10) y las confirme o rechace. Probar la feature en producción.
 
 - **Clave SSH:** guardar una copia de `~/.ssh/forms_horas_vps2` en un lugar seguro (es la única forma de entrar por
   SSH y no tiene frase de protección). Confirmar con Rodrigo cómo entra, y averiguar de quién es la clave
@@ -45,6 +48,10 @@ Por prioridad de la auditoría del 2026-09-28 y la de seguridad del 2026-10-01:
 - **Portal de certificaciones apagado (§84):** rotar `AZURE_CLIENT_SECRET`, `OPENAI_API_KEY` y `HORAS_JWT_SECRET`;
   borrar vistas de compatibilidad y la tabla `usuarios` en `Horas_Sertec`; limpiar `testing`; archivar el repo.
   Irreversible: pedir OK por cada paso.
+- **Deuda de Baja de Operario:** 9 minor de la revisión de #105/#88 (§103, comentario en los PRs). Los más
+  relevantes: alta de baja sin transacción ni índice único, bajas confirmadas en las pestañas
+  Justificadas/Injustificadas de `/ausencias`, conteo de bajas sin confirmar distinto entre front y back con
+  administrativos.
 - **Deuda de Frontend:** minors de #84-#86 (§96-§98); `session.tsx` deja guardado el token si falla `fetchPerfil`.
 - **Codex como tercer revisor:** idea conversada (usa el plan ChatGPT del usuario vía Codex CLI, solo lectura, en la
   fase 4 de `flujo-sertec`). No arrancó: falta que el usuario lo pida.

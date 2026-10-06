@@ -9,6 +9,38 @@
 > Hasta la §101, cada sección cerraba con sus **PENDIENTES**; desde la §102, los pendientes viven solo en
 > `estado.md`.
 
+## 103. Baja de Operario: bloquea horas, $0 si es previa, ausencias en el Excel (2026-10-06)
+
+PRs: Backend #105 (merge `5b701cc`) y Frontend #88 (merge `9c3d65b`). Los escribió Rodrigo Carrazana (ADR-026,
+`docs/adr/2026-10-05-adr-026-baja-de-operario.md`). Esta sesión los revisó, los arregló, los mergeó y los deployó, a
+pedido del usuario.
+
+**Qué hace:** la novedad "Baja de Operario" (fecha = último día trabajado) la confirma HyS. Confirmada:
+- rechaza horas posteriores en todos los contratos;
+- marca las ya cargadas;
+- liquida $0 si la baja es anterior a la quincena, o liquidación final si cae dentro;
+- informa días de ausencia por estado HyS.
+
+El cierre congela fecha, estado, ausencias y si seguía activo en sueldos. El Excel suma 4 columnas al final y la
+hoja BAJAS A REGULARIZAR. En el front: formulario con confirmación, botones de HyS, colores en la preliquidación y
+chips en aprobaciones. Además, la columna Plus suma el plus individual.
+
+**Revisión** (Standards y Spec en paralelo, después el verificador): 1 urgent y 1 high, arreglados en `74809db`
+con su test, que se vio fallar antes del arreglo:
+- R1: el cierre congelaba la fecha de una baja **sin confirmar**, y el Excel la mostraba en FECHA BAJA.
+- R2: `reabrir()` no validaba que hubiera una sola baja vigente.
+
+Segunda ronda sobre los arreglos: limpia. Quedaron 9 minor sin tocar, listados en los comentarios de los dos PRs.
+Plan: `docs/superpowers/plans/2026-10-05-revision-baja-de-operario.md`.
+
+**Verificación:** Backend 791 tests OK, `tsc` y build. Frontend 856 de 856 y `tsc`. La primera corrida dio 5
+fallas flaky por carga, porque corría a la vez que la suite del back; en la segunda pasó entera.
+
+**Deploy (2026-10-06):** DDL en `Horas_Sertec` con precondiciones y backup
+(`/var/www/backups/baja-pre-ddl-2026-10-06.json`). Quedaron las 6 columnas, el tipo pasó a requerir HyS y las 2
+bajas cargadas (ids 160 y 187) pasaron a pendientes. Después, back y front. Leer un cierre viejo con el cliente
+nuevo funciona. Detalle: `docs/2026-10-06-baja-de-operario-deploy.md`.
+
 ## 102. Estado vivo + bitácora con lo hecho (2026-10-04)
 
 Se aplicó el esquema que el usuario usa en Inspecciones K11, con tres adaptaciones para este proyecto:
