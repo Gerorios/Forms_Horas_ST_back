@@ -9,8 +9,9 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 - **Autogestión de la Seguridad** (rama `feature/autogestion-seguridad-todos`): diseño cerrado en entrevista el
   2026-10-07. Vocabulario en `CONTEXT.md` (sección propia) y modelo de puntos en ADR-027 (estado *Propuesto*).
   **Etapa 1 (DDL + backend) hecha**: `docs/sql/2026-10-07-autogestion-seguridad.sql` aplicado en `testing` (NO en
-  producción), módulo `src/seguridad/` con tests y prueba de punta a punta contra `testing`. Falta: Etapa 2 (front
-  celular) y Etapa 3 (front PC). Mapa de calor y metadatos de fotos de galería, descartados por ahora (sin librerías
+  producción), módulo `src/seguridad/` con tests y prueba de punta a punta contra `testing`. **Etapa 2 (front
+  celular) hecha** en la rama homónima del Frontend: nuevo reporte, mis reportes y puntos, acceso en el inicio. Falta
+  Etapa 3 (front PC: panel de HyS, ranking y tableros, períodos, catálogos en Admin). Mapa de calor y metadatos de fotos de galería, descartados por ahora (sin librerías
   nuevas en el front). Tablas previstas: `sth_seg_reportes`, `_reporte_involucrados`, `_reporte_fotos`,
   `_movimientos_puntos`, `_periodos`, `_naturalezas`, `_motivos_paralizacion`.
   Las fotos guardan su origen (cámara o galería) y latitud, longitud y error, para el mapa de calor. Maqueta para
@@ -18,7 +19,7 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-Etapa 2: frontend del celular (nuevo reporte, mis reportes y puntos) en una rama nueva del Frontend desde `main`.
+Etapa 3: frontend de PC para HyS y Admin (panel con calificación, ranking y tableros, períodos, catálogos).
 En paralelo, traer el feedback de HyS sobre el ADR-027 (accidente y tolerancia 0, cómo se califica una propuesta).
 
 ## Pendientes del usuario
