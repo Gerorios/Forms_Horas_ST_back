@@ -2,15 +2,21 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-06**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-07**.
 
 ## En curso
 
-Nada en curso.
+- **Autogestión de la Seguridad** (rama `feature/autogestion-seguridad-todos`): diseño cerrado en entrevista el
+  2026-10-07. Vocabulario en `CONTEXT.md` (sección propia) y modelo de puntos en ADR-027 (estado *Propuesto*). Sin
+  código ni DDL todavía. Tablas previstas: `sth_seg_reportes`, `_reporte_involucrados`, `_reporte_fotos`,
+  `_movimientos_puntos`, `_periodos`, `_naturalezas`, `_motivos_paralizacion`.
+  Las fotos guardan su origen (cámara o galería) y latitud, longitud y error, para el mapa de calor. Maqueta para
+  mostrar a HyS: https://claude.ai/artifact/EwxEXG2cjjyioMXSVcWSdc
 
 ## Próximo paso
 
-Ninguno definido: esperar el próximo pedido del usuario.
+Traer el feedback de HyS sobre el ADR-027 (accidente y tolerancia 0, cómo se califica una propuesta de mejora),
+ajustar el ADR y presentar el plan de implementación (DDL, back, front) antes de tocar código.
 
 ## Pendientes del usuario
 
