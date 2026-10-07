@@ -9,6 +9,26 @@
 > Hasta la §101, cada sección cerraba con sus **PENDIENTES**; desde la §102, los pendientes viven solo en
 > `estado.md`.
 
+## 104. Hotfix: confirmar antes de desactivar + bandeja HyS con todas las pendientes; rama `dev` (2026-10-07)
+
+PR Frontend #89 (hotfix a `main`, merge `efda0f0`) y #90 (`main` → `dev`, `ae7225e`). **Sin deploy todavía.**
+Origen: revisión de diseño del 2026-10-05 (A1 y B2), arreglados ya por pedido del usuario.
+
+- **Pastilla "Activo"** (`features/admin/pill-activo.tsx`, 7 catálogos): un clic desactivaba (en la revisión dejó
+  inactiva a SALAS MARIA JOSE en `testing`). Ahora abre una confirmación que nombra el registro y el efecto; en
+  Usuarios, "No va a poder entrar al sistema".
+- **Bandeja de HyS** (`ausencias/page.tsx`): la pestaña Pendientes solo mostraba la quincena elegida, así que una
+  ausencia vieja sin resolver se liquidaba como injustificada. Ahora trae las pendientes de todas las quincenas;
+  el resto sigue por quincena. R1: si la consulta falla, error con "Reintentar" en vez de bandeja vacía.
+
+Verificación: tests nuevos vistos en rojo; admin 123/123, ausencias 34/34, suite 859/861 (2 flaky de `reporte`,
+solos 8/8), `tsc` y build OK. Revisión: 1 urgent (R1) arreglado, 4 minor en el PR. Plan:
+`docs/superpowers/plans/2026-10-07-hotfix-pastilla-activo-y-bandeja-hys.md`.
+
+**Flujo de ramas nuevo:** desde hoy `main` = producción y `dev` = integración, en los dos repos
+(`docs/flujo-de-ramas.md`). Features desde `dev`; urgencias como `hotfix/` a `main` y se traen a `dev`. Este fue
+el primer hotfix con ese flujo.
+
 ## 103. Baja de Operario: bloquea horas, $0 si es previa, ausencias en el Excel (2026-10-06)
 
 PRs: Backend #105 (merge `5b701cc`) y Frontend #88 (merge `9c3d65b`). Los escribió Rodrigo Carrazana (ADR-026,
