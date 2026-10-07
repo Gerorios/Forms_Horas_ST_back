@@ -7,16 +7,19 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 ## En curso
 
 - **Autogestión de la Seguridad** (rama `feature/autogestion-seguridad-todos`): diseño cerrado en entrevista el
-  2026-10-07. Vocabulario en `CONTEXT.md` (sección propia) y modelo de puntos en ADR-027 (estado *Propuesto*). Sin
-  código ni DDL todavía. Tablas previstas: `sth_seg_reportes`, `_reporte_involucrados`, `_reporte_fotos`,
+  2026-10-07. Vocabulario en `CONTEXT.md` (sección propia) y modelo de puntos en ADR-027 (estado *Propuesto*).
+  **Etapa 1 (DDL + backend) hecha**: `docs/sql/2026-10-07-autogestion-seguridad.sql` aplicado en `testing` (NO en
+  producción), módulo `src/seguridad/` con tests y prueba de punta a punta contra `testing`. Falta: Etapa 2 (front
+  celular) y Etapa 3 (front PC). Mapa de calor y metadatos de fotos de galería, descartados por ahora (sin librerías
+  nuevas en el front). Tablas previstas: `sth_seg_reportes`, `_reporte_involucrados`, `_reporte_fotos`,
   `_movimientos_puntos`, `_periodos`, `_naturalezas`, `_motivos_paralizacion`.
   Las fotos guardan su origen (cámara o galería) y latitud, longitud y error, para el mapa de calor. Maqueta para
   mostrar a HyS: https://claude.ai/artifact/EwxEXG2cjjyioMXSVcWSdc
 
 ## Próximo paso
 
-Traer el feedback de HyS sobre el ADR-027 (accidente y tolerancia 0, cómo se califica una propuesta de mejora),
-ajustar el ADR y presentar el plan de implementación (DDL, back, front) antes de tocar código.
+Etapa 2: frontend del celular (nuevo reporte, mis reportes y puntos) en una rama nueva del Frontend desde `main`.
+En paralelo, traer el feedback de HyS sobre el ADR-027 (accidente y tolerancia 0, cómo se califica una propuesta).
 
 ## Pendientes del usuario
 
