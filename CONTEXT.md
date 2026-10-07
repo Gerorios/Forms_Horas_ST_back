@@ -465,11 +465,11 @@ _Avoid_: adjunto, certificado (eso es de las novedades), registro fotográfico.
 
 **Punto del reporte** (en el mapa):
 La ubicación geográfica de lo reportado (latitud, longitud y error en
-metros), para el mapa de calor de HyS. Sale de las fotos, nunca del momento
-de envío (se puede reportar desde casa algo visto ayer): de las sacadas con
-la cámara desde la app, la de menor error; si todas son de galería, de los
-metadatos de ubicación de la foto, solo si su fecha coincide con la fecha
-del reporte. Sin una foto así, el reporte no tiene punto. El sistema lo toma
+metros), para un futuro mapa de calor de HyS. Sale de las fotos, nunca del
+momento de envío (se puede reportar desde casa algo visto ayer): de las
+sacadas con la cámara desde la app, la de menor error. Las de galería no dan
+punto (leer sus metadatos de ubicación quedó para más adelante). Sin una
+foto de cámara, el reporte no tiene punto. El sistema lo toma
 solo, sin preguntarle nada al autor (más allá del permiso que el navegador
 pide una vez), nunca lo sigue fuera de ese momento, y lo ven solo HyS y
 Admin.

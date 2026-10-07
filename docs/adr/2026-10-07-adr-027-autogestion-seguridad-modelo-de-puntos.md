@@ -42,14 +42,16 @@ Vocabulario en `CONTEXT.md`, sección "Autogestión de la Seguridad".
    aprobación. Por eso el ranking de un período puede cambiar mientras HyS
    siga aprobando reportes atrasados: los períodos no se congelan.
 
-5. **El punto en el mapa sale de las fotos, no del envío.** La ubicación se
-   guarda en cada foto: con latitud, longitud y error si se sacó con la
-   cámara desde la app (dos botones, "Sacar foto" y "Elegir de galería",
-   más un control de que el archivo es de hace pocos minutos), o con los
-   metadatos de ubicación de la propia foto si es de galería y su fecha
-   coincide con la fecha del reporte. El punto del reporte es el de la foto
-   de cámara con menor error y, a falta de una, el de los metadatos. El
-   autor no declara nada.
+5. **El punto en el mapa sale de las fotos, no del envío.** Cada foto
+   sacada con la cámara desde la app (dos botones, "Sacar foto" y "Elegir de
+   galería", más un control de que el archivo es de hace pocos minutos)
+   guarda latitud, longitud y error; las de galería no guardan ubicación. El
+   punto del reporte es el de la foto de cámara con menor error. El autor no
+   declara nada. El mapa de calor y la lectura de metadatos de las fotos de
+   galería quedan para más adelante: suman dependencias nuevas al frontend
+   (`leaflet`, `exifr`), y el usuario prefirió no sumarlas todavía. Los
+   puntos se guardan igual desde el principio, así que el mapa tendrá
+   historia cuando se agregue.
 
 ## Alternativas descartadas
 
@@ -87,10 +89,9 @@ Vocabulario en `CONTEXT.md`, sección "Autogestión de la Seguridad".
   el ranking desfasado.
 - Antes de anunciar ganadores, HyS tiene que aprobar todo lo pendiente del
   período. El panel avisa cuántos pendientes quedan.
-- El mapa tiene menos puntos que reportes (las fotos son opcionales, y
-  muchos celulares no guardan la ubicación en las fotos de galería, o la
-  borran al compartirlas). Los metadatos se leen en el celular **antes** de
-  achicar la foto, y la foto guardada no los conserva.
+- Habrá menos puntos que reportes: las fotos son opcionales y las de
+  galería no dan punto. La foto se achica en el celular antes de subir y no
+  conserva sus metadatos.
 - La ubicación de un empleado es un dato personal (Ley 25.326). Ninguna web
   puede saltear el permiso del navegador, que se pide una vez; la
   capacitación tiene que aclarar que la app solo toma la ubicación al sacar
