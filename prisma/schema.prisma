@@ -50,6 +50,7 @@ model Rol {
   id       Int       @id @default(autoincrement())
   nombre   String    @unique
   usuarios Usuario[]
+  modulosPiloto ModuloPilotoRol[]
 
   @@map("sth_roles")
 }
@@ -93,6 +94,10 @@ model Usuario {
   reportesCalificados SegReporte[] @relation("SegReporteCalificador")
   inspectorSeguridad  SegInspector?  @relation("SegInspector")
   inspectoresHabilitados SegInspector[] @relation("SegInspectorHabilitador")
+
+  // Lanzamiento de módulos (ADR-028)
+  modulosPiloto       ModuloPilotoUsuario[]
+  modulosActualizados ModuloLanzamiento[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1097,4 +1102,54 @@ model SegInspector {
   habilitadoPor Usuario @relation("SegInspectorHabilitador", fields: [habilitadoPorCuil], references: [cuil], map: "fk_seg_inspector_habilitador")
 
   @@map("sth_seg_inspectores")
+}
+
+// ------------------------------------------------------------
+// LANZAMIENTO DE MÓDULOS (ADR-028; DDL manual en
+// docs/sql/2026-10-08-lanzamiento-de-modulos.sql)
+// ------------------------------------------------------------
+
+enum EstadoLanzamiento {
+  interno
+  todos
+}
+
+/// Un módulo con lanzamiento: interno (lo ven Admin y el piloto) o para
+/// todos. Los módulos que no tienen fila acá se ven como siempre.
+model ModuloLanzamiento {
+  /// Clave del código: @Modulo('seguridad') y `modulo` en NAV_ITEMS.
+  modulo             String            @id @db.VarChar(40)
+  nombre             String            @db.VarChar(80)
+  estado             EstadoLanzamiento @default(interno)
+  actualizadoPorCuil String?           @map("actualizado_por_cuil") @db.Char(13)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.DateTime(3)
+
+  actualizadoPor Usuario?              @relation(fields: [actualizadoPorCuil], references: [cuil], map: "fk_modulo_actualizado_por")
+  roles          ModuloPilotoRol[]
+  usuarios       ModuloPilotoUsuario[]
+
+  @@map("sth_modulos_lanzamiento")
+}
+
+model ModuloPilotoRol {
+  modulo String @db.VarChar(40)
+  rolId  Int    @map("rol_id")
+
+  lanzamiento ModuloLanzamiento @relation(fields: [modulo], references: [modulo], map: "fk_piloto_rol_modulo")
+  rol         Rol               @relation(fields: [rolId], references: [id], map: "fk_piloto_rol_rol")
+
+  @@id([modulo, rolId])
+  @@map("sth_modulos_piloto_roles")
+}
+
+model ModuloPilotoUsuario {
+  modulo String @db.VarChar(40)
+  cuil   String @db.Char(13)
+
+  lanzamiento ModuloLanzamiento @relation(fields: [modulo], references: [modulo], map: "fk_piloto_usuario_modulo")
+  usuario     Usuario           @relation(fields: [cuil], references: [cuil], map: "fk_piloto_usuario_cuil")
+
+  @@id([modulo, cuil])
+  @@map("sth_modulos_piloto_usuarios")
 }

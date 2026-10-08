@@ -42,8 +42,8 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
      `testing`; a `Horas_Sertec` recién con el merge final.
   Módulos: Operación, Personal, Liquidación (Quincenas, Cierres, Perfiles, Tarifas, Tablero de costos), Facturación
   (Certificaciones con Incidencia de MO; Tablero de certificaciones), Flota, Administración. Vocabulario nuevo →
-  **ADR-028** (reemplaza las áreas del ADR-025; era "ADR-027", pero ese número lo tomó Autogestión de la Seguridad,
-  que entra antes) y `CONTEXT.md` ("Área", "Grupo de novedad").
+  **ADR-029** (reemplaza las áreas del ADR-025; era "ADR-027"; el 027 es Autogestión de la Seguridad y el 028, Lanzamiento de
+  módulos, que entran antes) y `CONTEXT.md` ("Área", "Grupo de novedad").
   **Al retomar, sumar el módulo Seguridad** (área `seguridad` de la rama `feat/autogestion-seguridad`: Nuevo
   reporte y Mis reportes y puntos para todos; Panel, Ranking y tableros e Inspectores para HyS/Admin) y decidir qué
   pasa con su acceso directo en el Inicio ("¿Viste un riesgo en campo? → Reportar"), que choca con "sin
@@ -94,7 +94,7 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
    Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra Autogestión de la
-   Seguridad (módulo nuevo, ADR-028 en vez de 027).
+   Seguridad (módulo nuevo, ADR-029 en vez de 027).
 
 ## Pendientes del usuario
 

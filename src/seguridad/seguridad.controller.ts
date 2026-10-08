@@ -20,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Modulo, ModuloGuard } from '../lanzamientos/modulo.guard';
 import { ReportesService } from './reportes.service';
 import { PuntosService } from './puntos.service';
 import { InspectoresService } from './inspectores.service';
@@ -45,7 +46,9 @@ function catalogoValido(c: string): Catalogo {
  * Admin, y los catálogos, solo de Admin. Puntos, ranking y tableros se
  * consultan por rango de fechas (por defecto, el año en curso).
  */
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Lanzamiento (ADR-028): mientras esté interno, solo lo ven Admin y el piloto.
+@UseGuards(JwtAuthGuard, RolesGuard, ModuloGuard)
+@Modulo('seguridad')
 @Controller('seguridad')
 export class SeguridadController {
   constructor(

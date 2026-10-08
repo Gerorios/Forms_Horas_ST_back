@@ -228,11 +228,11 @@ Por mes, la regla de "resuelto" es la misma de `liquidacion.service.ts`: una fil
 - El **Inicio pasa a la Etapa 5**, no a la 2: sus enlaces llevan a pantallas que se crean en las etapas 2 a 4 (Personal por grupo, revisar una carga puntual de Aprobaciones, Quincenas, Tarifas por mes). Hacerlo antes obliga a rehacer los enlaces o deja enlaces rotos en la rama.
 - Los backends del Inicio y de Tarifas pueden avanzar en paralelo antes.
 
-### Etapa 0 — Rama de integración, ADR-028 y glosario (S)
+### Etapa 0 — Rama de integración, ADR-029 y glosario (S)
 
 - **0.1 (orquestador)**: crear `dev` desde `origin/main` en los dos repos y pushearla.
-- **0.2 Backend**, rama `docs/rediseno-erp-adr-028`, PR a `dev`:
-  - `docs/adr/AAAA-MM-DD-adr-028-modulos-del-erp.md`. Antes, listar los ADR **en el BE** para confirmar el número 028 (el 027 lo tomó Autogestión de la Seguridad).
+- **0.2 Backend**, rama `docs/rediseno-erp-adr-029`, PR a `dev`:
+  - `docs/adr/AAAA-MM-DD-adr-029-modulos-del-erp.md`. Antes, listar los ADR **en el BE** para confirmar el número 028 (el 027 lo tomó Autogestión de la Seguridad).
   - El ADR cubre: los seis módulos y sus pantallas; menú de dos niveles sin pestañas; tableros dentro de su módulo; Personal por **Grupo** (solo presentación: las reglas siguen por nombre y por marcas); Flota como módulo propio; Inicio "Mi trabajo"; visibilidad por rol y claim sin cambios; URLs que se conservan y las nuevas (`/personal/*`, `/liquidacion/tarifas/[periodo]`).
   - Alternativas descartadas: un módulo de Análisis aparte; Personal por nombre de tipo (renombrarlo lo rompe, como avisa ADR-026); seguir con pestañas.
   - Consecuencias: ADR-025 sigue vigente en nombre e identidad, pero queda reemplazado en la agrupación por áreas.
@@ -365,7 +365,7 @@ UPDATE sth_tipos_novedad SET grupo = 'operativa'    WHERE nombre IN ('Viáticos'
 
 **2B.2 — `prisma/schema.prisma`.**
 - `enum GrupoNovedad { ausencias bajas suspensiones operativa }`.
-- `TipoNovedad.grupo GrupoNovedad @default(operativa)`, con un comentario "presentación, ADR-028".
+- `TipoNovedad.grupo GrupoNovedad @default(operativa)`, con un comentario "presentación, ADR-029".
 - `npx prisma validate` y `npx prisma generate`, en el BE con `node_modules` propio.
 
 **2B.3 — Par novedades** (`src/novedades/{novedades.controller.ts, novedades.service.ts}` + `novedades.service.spec.ts`, y `src/common/grupo-novedad.ts` con `GRUPOS_NOVEDAD`).

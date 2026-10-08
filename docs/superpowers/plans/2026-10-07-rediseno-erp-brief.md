@@ -111,4 +111,4 @@ hechos a mano); pastilla de estado de solo lectura; formato humano de fechas, im
   "Cargado" y "Aprobado" de la quincena en curso (hoy no hay un endpoint único); el cálculo del estado de cada mes
   en Tarifas; el orden y el corte de las etapas.
 - `DESIGN.md` se actualiza con los componentes nuevos (menú de dos niveles, lista + detalle, ConfirmDialog) al
-  cerrar la etapa base. ADR-028 (módulos, reemplaza las áreas del ADR-025) y `CONTEXT.md` ("Grupo de novedad").
+  cerrar la etapa base. ADR-029 (módulos, reemplaza las áreas del ADR-025) y `CONTEXT.md` ("Grupo de novedad").

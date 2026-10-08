@@ -5,8 +5,10 @@ import { PuntosService } from './puntos.service';
 import { InspectoresService } from './inspectores.service';
 import { CatalogosSeguridadService } from './catalogos-seguridad.service';
 import { FsNovedadAdjuntoStorage } from '../novedades/storage/fs-novedad-adjunto-storage.service';
+import { LanzamientosModule } from '../lanzamientos/lanzamientos.module';
 
 @Module({
+  imports: [LanzamientosModule],
   providers: [
     ReportesService,
     PuntosService,

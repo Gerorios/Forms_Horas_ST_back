@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { AccesosService } from '../certificaciones/accesos.service';
+import { LanzamientosService } from '../lanzamientos/lanzamientos.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private accesosService: AccesosService,
+    private lanzamientos: LanzamientosService,
   ) {}
 
   // El acceso al módulo de certificaciones se degrada (cert: null) si
@@ -83,11 +85,15 @@ export class AuthService {
     });
 
     const cert = await this.resolverCert(cuil);
+    // Módulos con lanzamiento (ADR-028): cuáles ve esta persona. Los no
+    // registrados no aparecen y se muestran como siempre.
+    const modulos = await this.lanzamientos.visibles({ cuil, rol: usuario.rol.nombre });
 
     const { nombreFueraNomina, ...resto } = usuario;
     return {
       ...resto,
       cert,
+      modulos,
       empleado: empleado ?? {
         apellido_nombre: nombreFueraNomina ?? '',
         legajo: null,

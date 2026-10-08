@@ -18,7 +18,7 @@ describe('AuthService.login', () => {
     } as any;
     const jwt = { sign: jest.fn().mockReturnValue('token') } as any;
     const accesos = { obtenerAcceso: jest.fn().mockResolvedValue(accesoResuelto) } as any;
-    const service = new AuthService(prisma, jwt, accesos);
+    const service = new AuthService(prisma, jwt, accesos, { visibles: jest.fn().mockResolvedValue({}) } as any);
     return { service, prisma, jwt, accesos };
   }
 
@@ -53,7 +53,7 @@ describe('AuthService.login', () => {
     const accesos = {
       obtenerAcceso: jest.fn().mockRejectedValue(new Error('relation "sth_certificaciones_acceso" does not exist')),
     } as any;
-    const service = new AuthService(prisma, jwt, accesos);
+    const service = new AuthService(prisma, jwt, accesos, { visibles: jest.fn().mockResolvedValue({}) } as any);
 
     await expect(
       service.login({ email: usuarioBase.email, password: 'x' } as any),
@@ -84,7 +84,7 @@ describe('AuthService.perfil', () => {
     } as any;
     const jwt = {} as any;
     const accesos = { obtenerAcceso: jest.fn().mockResolvedValue(accesoResuelto) } as any;
-    const service = new AuthService(prisma, jwt, accesos);
+    const service = new AuthService(prisma, jwt, accesos, { visibles: jest.fn().mockResolvedValue({}) } as any);
     return { service, accesos };
   }
 

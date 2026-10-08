@@ -29,6 +29,15 @@ persona no se muestra.
 _Avoid_: sección, categoría del menú, "Dinero" (nombre descartado del área de
 resultados).
 
+**Lanzamiento** (de un módulo, 2026-10-08):
+Si un módulo nuevo está **interno** (lo ven Admin y los roles y personas que
+Admin habilita para probarlo) o **para todos**. Lo decide solo Admin, desde
+Administración → Lanzamientos, sin deploy. Decide si el módulo **se ve**; lo
+que cada uno puede hacer adentro lo siguen decidiendo los roles. Los módulos
+no registrados se ven como siempre. Ver ADR-028.
+_Avoid_: feature flag, beta (no son palabras del negocio), piloto como estado
+(el estado es "interno"; el piloto es la gente que lo prueba).
+
 ### Precios y liquidación
 
 **Período de tarifas**:
