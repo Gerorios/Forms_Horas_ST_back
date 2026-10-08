@@ -39,6 +39,12 @@ describe('reglas de Autogestión de la Seguridad', () => {
       expect(erroresDeCampos({ tipo: 'aviso_riesgo', naturalezaId: 1, controlRiesgo: 'x' })).toEqual([]);
     });
 
+    it('una paralización sin GPS pasa si se indica la referencia del lugar', () => {
+      const base = { tipo: 'paralizacion' as const, motivoParalizacionId: 2, controlRiesgo: 'x', sinUbicacion: true };
+      expect(erroresDeCampos({ ...base, ubicacion: '  ' })).toEqual(['Sin ubicación GPS, contá en la referencia del lugar dónde fue']);
+      expect(erroresDeCampos({ ...base, ubicacion: 'Obra K6, calle Belgrano 1200, dentro del pozo' })).toEqual([]);
+    });
+
     it('la propuesta de mejora no lleva control, naturaleza ni involucrados', () => {
       expect(erroresDeCampos({ tipo: 'propuesta_mejora' })).toEqual([]);
       expect(

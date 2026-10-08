@@ -469,7 +469,10 @@ La ubicación geográfica de lo reportado (latitud, longitud y error en
 metros), para saber de qué obra se trata y para un futuro mapa de calor.
 Manda el **punto GPS** que el autor toma con el botón "Tomar mi ubicación"
 (2026-10-08: obligatorio en la paralización, opcional en el resto); sin él,
-la foto sacada con la cámara desde la app con menor error. Nunca sale del
+la foto sacada con la cámara desde la app con menor error. Si el celular no
+consigue ubicación (sin señal GPS, permiso negado), la paralización igual se
+envía **sin ubicación**, con la referencia del lugar obligatoria: el reporte
+más urgente nunca queda trabado. Nunca sale del
 momento de envío (se puede reportar desde casa algo visto ayer) ni de fotos
 de galería. El navegador pide el permiso una vez; la app nunca sigue a nadie,
 y el punto lo ven solo el autor, HyS y Admin.

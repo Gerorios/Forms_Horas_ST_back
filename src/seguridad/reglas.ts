@@ -54,6 +54,10 @@ export interface CamposReporte {
   involucrados?: string[] | null;
   /** Si trae el punto GPS propio (latitud y longitud). */
   tienePunto?: boolean;
+  /** El autor no pudo tomar la ubicación (sin señal GPS, permiso negado):
+   * vale como reemplazo del punto solo con una referencia del lugar escrita. */
+  sinUbicacion?: boolean;
+  ubicacion?: string | null;
 }
 
 /** Errores de forma según el tipo (vacío = válido). No mira catálogos ni la
@@ -73,7 +77,12 @@ export function erroresDeCampos(c: CamposReporte): string[] {
   if (!reglas.controlRiesgo && tiene(c.controlRiesgo)) errores.push('Una propuesta de mejora no lleva control del riesgo');
   if (reglas.involucrados === 'obligatorio' && involucrados.length === 0) errores.push('Una inspección necesita al menos una persona observada');
   if (reglas.involucrados === 'no' && involucrados.length > 0) errores.push('Este tipo de reporte no lleva personas involucradas');
-  if (reglas.puntoGps === 'obligatorio' && !c.tienePunto) errores.push('Falta tomar la ubicación: hay que saber de qué obra se trata');
+  if (reglas.puntoGps === 'obligatorio' && !c.tienePunto) {
+    // Sin GPS (dentro de una obra, en una zanja, permiso negado) la paralización
+    // no puede quedar trabada: alcanza con decir dónde fue (2026-10-08).
+    if (!c.sinUbicacion) errores.push('Falta tomar la ubicación: hay que saber de qué obra se trata');
+    else if (!tiene(c.ubicacion)) errores.push('Sin ubicación GPS, contá en la referencia del lugar dónde fue');
+  }
   return errores;
 }
 

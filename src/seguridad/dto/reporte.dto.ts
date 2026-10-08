@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  IsBoolean,
   IsArray,
   IsDateString,
   IsIn,
@@ -51,6 +52,11 @@ export class ReporteDto {
 
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   errorMetros?: number;
+
+  /** No se pudo tomar la ubicación: reemplaza al punto GPS obligatorio de la
+   * paralización si viene la referencia del lugar (`ubicacion`). */
+  @IsOptional() @IsBoolean()
+  sinUbicacion?: boolean;
 
   @IsString() @IsNotEmpty()
   descripcion: string;
