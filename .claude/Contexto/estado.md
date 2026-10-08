@@ -2,25 +2,22 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-07**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-08**.
 
 ## En curso
 
-- **Autogestión de la Seguridad** (rama `feature/autogestion-seguridad-todos`): diseño cerrado en entrevista el
-  2026-10-07. Vocabulario en `CONTEXT.md` (sección propia) y modelo de puntos en ADR-027 (estado *Propuesto*).
-  **Etapa 1 (DDL + backend) hecha**: `docs/sql/2026-10-07-autogestion-seguridad.sql` aplicado en `testing` (NO en
-  producción), módulo `src/seguridad/` con tests y prueba de punta a punta contra `testing`. **Etapa 2 (front
-  celular) hecha** en la rama homónima del Frontend: nuevo reporte, mis reportes y puntos, acceso en el inicio. Falta
-  Etapa 3 (front PC: panel de HyS, ranking y tableros, períodos, catálogos en Admin). Mapa de calor y metadatos de fotos de galería, descartados por ahora (sin librerías
-  nuevas en el front). Tablas previstas: `sth_seg_reportes`, `_reporte_involucrados`, `_reporte_fotos`,
-  `_movimientos_puntos`, `_periodos`, `_naturalezas`, `_motivos_paralizacion`.
-  Las fotos guardan su origen (cámara o galería) y latitud, longitud y error, para el mapa de calor. Maqueta para
-  mostrar a HyS: https://claude.ai/artifact/EwxEXG2cjjyioMXSVcWSdc
+- **Autogestión de la Seguridad** (rama `feature/autogestion-seguridad-todos` en back y front, sin push): etapas 1–3
+  hechas y revisión del 2026-10-08 tras la primera prueba con HyS (ADR-027, sección "Revisión 2026-10-08"): GPS del
+  reporte obligatorio en paralización, HyS corrige en cualquier estado (recalcula puntos), inspectores habilitados por
+  persona, rangos de fechas en vez de períodos, colores de aprobar/quitar. DDL aplicado en `testing`:
+  `2026-10-07-autogestion-seguridad.sql` y `2026-10-08-seguridad-ajustes.sql` (en producción, NINGUNO todavía; van en
+  ese orden). Mapa de calor y metadatos de fotos de galería, descartados por ahora.
 
 ## Próximo paso
 
-Etapa 3: frontend de PC para HyS y Admin (panel con calificación, ranking y tableros, períodos, catálogos).
-En paralelo, traer el feedback de HyS sobre el ADR-027 (accidente y tolerancia 0, cómo se califica una propuesta).
+Segunda vuelta de prueba con HyS en local contra `testing`. Con el OK: PRs de back y front, doc de deploy
+(`SEGURIDAD_FOTOS_DIR` en la VPS dentro del backup, los dos SQL en orden) y aplicar en producción.
+Abierto con HyS: accidente y tolerancia 0; una pantalla de auditoría para ver las correcciones de HyS.
 
 ## Pendientes del usuario
 
