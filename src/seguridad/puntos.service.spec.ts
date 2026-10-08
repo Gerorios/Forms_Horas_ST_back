@@ -6,9 +6,9 @@ import { PrismaService } from '../prisma/prisma.service';
 describe('PuntosService', () => {
   const prismaMock: any = {
     segMovimientoPuntos: { findMany: jest.fn() },
-    segReporte: { count: jest.fn() },
+    segReporte: { count: jest.fn(), findMany: jest.fn() },
     usuario: { findMany: jest.fn() },
-    snuempleados: { findMany: jest.fn() },
+    snuempleados: { findMany: jest.fn(), count: jest.fn() },
   };
   let service: PuntosService;
   const RANGO = { desde: '2026-07-01', hasta: '2026-12-31' };
@@ -78,6 +78,55 @@ describe('PuntosService', () => {
       { fecha: '2026-10-05', naturaleza: 'E.P.P', contrato: 'K8', descripcion: 'Sin casco en la zanja', puntos: -6 },
     ]);
     expect(m.movimientos[0].reporteId).toBeNull();
+  });
+
+  describe('tableros', () => {
+    const rep = (autorCuil: string, tipo: string, estado: string, puntaje: number | null = null) => ({
+      tipo,
+      estado,
+      autorCuil,
+      puntaje,
+      fechaReporte: new Date('2026-10-05T00:00:00Z'),
+      createdAt: new Date('2026-10-05T12:00:00Z'),
+      calificadoEn: null,
+      provincia: { nombre: 'Salta' },
+      contrato: { codigo: 'K2' },
+      tarea: { nombre: 'Conexión' },
+      naturaleza: null,
+      motivoParalizacion: null,
+      involucrados: tipo === 'inspeccion' ? [{ cuil: 'D' }] : [],
+      latitud: null,
+      longitud: null,
+      errorMetros: null,
+      fotos: [],
+    });
+
+    beforeEach(() => {
+      prismaMock.snuempleados.count.mockResolvedValue(120);
+      prismaMock.segReporte.findMany.mockResolvedValue([
+        rep('A', 'aviso_riesgo', 'aprobado', 8),
+        rep('A', 'incidente', 'pendiente'),
+        rep('A', 'aviso_riesgo', 'desaprobado'),
+        rep('B', 'aviso_riesgo', 'aprobado', 10),
+        // Inspecciones: una de HyS y dos de un supervisor inspector.
+        rep('HYS', 'inspeccion', 'aprobado', 6),
+        rep('SUP', 'inspeccion', 'aprobado', 4),
+        rep('SUP', 'inspeccion', 'pendiente'),
+      ]);
+    });
+
+    it('quiénes más reportan: cuenta envíos (sin inspecciones), no puntos', async () => {
+      const t = await service.tableros(RANGO);
+      expect(t.masReportan.map((r) => [r.nombre, r.enviados, r.aprobados, r.puntos])).toEqual([
+        ['Pérez', 3, 1, 8],
+        ['Gómez', 1, 1, 10],
+      ]);
+    });
+
+    it('inspecciones de HyS contra las de los inspectores habilitados', async () => {
+      const t = await service.tableros(RANGO);
+      expect(t.inspeccionesPorOrigen).toEqual({ hys: 1, inspectores: 2 });
+    });
   });
 
   it('HyS ve sus puntos pero no tiene posición: no compite', async () => {

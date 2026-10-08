@@ -182,7 +182,37 @@ export class PuntosService {
       }
     }
     const topInspeccionados = [...inspeccionados.entries()].sort((a, b) => b[1].cantidad - a[1].cantidad).slice(0, 10);
-    const nombres = await mapaNombres(this.prisma, topInspeccionados.map(([c]) => c));
+
+    // Quiénes más reportan (sin inspecciones): mide participación, no puntos.
+    const porAutor = new Map<string, { enviados: number; aprobados: number; puntos: number }>();
+    for (const r of deLaGente) {
+      const acc = porAutor.get(r.autorCuil) ?? { enviados: 0, aprobados: 0, puntos: 0 };
+      acc.enviados++;
+      if (r.estado === 'aprobado') {
+        acc.aprobados++;
+        acc.puntos += r.puntaje ?? 0;
+      }
+      porAutor.set(r.autorCuil, acc);
+    }
+    const topReportan = [...porAutor.entries()]
+      .sort((a, b) => b[1].enviados - a[1].enviados || b[1].aprobados - a[1].aprobados)
+      .slice(0, 10);
+
+    // Inspecciones de HyS vs. de los inspectores habilitados: muestra si el
+    // resto se compromete, y si HyS sale a campo. Se mira el rol actual de
+    // quien la cargó.
+    const autoresInspeccion = [...new Set(inspecciones.map((r) => r.autorCuil))];
+    const hysAutores = new Set(
+      (
+        await this.prisma.usuario.findMany({
+          where: { cuil: { in: autoresInspeccion }, rol: { nombre: ROL_HYS } },
+          select: { cuil: true },
+        })
+      ).map((u) => u.cuil),
+    );
+    const deHys = inspecciones.filter((r) => hysAutores.has(r.autorCuil)).length;
+
+    const nombres = await mapaNombres(this.prisma, [...topInspeccionados.map(([c]) => c), ...topReportan.map(([c]) => c)]);
 
     const porMes = new Map<string, { reportes: number; inspecciones: number }>();
     for (const r of reportes) {
@@ -225,6 +255,8 @@ export class PuntosService {
         .sort((a, b) => b.reportes + b.inspecciones - (a.reportes + a.inspecciones)),
       porMes: [...porMes.entries()].map(([mes, v]) => ({ mes, ...v })).sort((a, b) => a.mes.localeCompare(b.mes)),
       masInspeccionados: topInspeccionados.map(([cuil, v]) => ({ cuil, nombre: nombres.get(cuil) ?? '', ...v })),
+      masReportan: topReportan.map(([cuil, v]) => ({ cuil, nombre: nombres.get(cuil) ?? '', ...v })),
+      inspeccionesPorOrigen: { hys: deHys, inspectores: inspecciones.length - deHys },
     };
   }
 }
