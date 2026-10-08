@@ -15,7 +15,7 @@ export const TIPOS_REPORTE: TipoReporte[] = [
   'inspeccion',
 ];
 
-/** El único tipo que resta puntos, y el único que solo carga HyS. */
+/** El único tipo que resta puntos: lo cargan HyS y los inspectores. */
 export const TIPO_INSPECCION: TipoReporte = 'inspeccion';
 export const ROL_HYS = 'HyS';
 
@@ -31,16 +31,19 @@ interface CamposDelTipo {
   /** Involucrados: 'no' (no se cargan), 'opcional' u 'obligatorio'. */
   involucrados: 'no' | 'opcional' | 'obligatorio';
   fotosControl: boolean;
+  /** Punto GPS del reporte ("Tomar mi ubicación"). En la paralización es
+   * obligatorio: hay que saber de qué obra se trata (2026-10-08). */
+  puntoGps: 'obligatorio' | 'opcional';
 }
 
 export const CAMPOS_POR_TIPO: Record<TipoReporte, CamposDelTipo> = {
-  aviso_riesgo: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'opcional', fotosControl: true },
-  incidente: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'opcional', fotosControl: true },
-  paralizacion: { naturaleza: false, motivoParalizacion: true, controlRiesgo: true, involucrados: 'opcional', fotosControl: true },
+  aviso_riesgo: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'opcional', fotosControl: true, puntoGps: 'opcional' },
+  incidente: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'opcional', fotosControl: true, puntoGps: 'opcional' },
+  paralizacion: { naturaleza: false, motivoParalizacion: true, controlRiesgo: true, involucrados: 'opcional', fotosControl: true, puntoGps: 'obligatorio' },
   // Una idea: no hay riesgo, ni control, ni personas en la situación.
-  propuesta_mejora: { naturaleza: false, motivoParalizacion: false, controlRiesgo: false, involucrados: 'no', fotosControl: false },
+  propuesta_mejora: { naturaleza: false, motivoParalizacion: false, controlRiesgo: false, involucrados: 'no', fotosControl: false, puntoGps: 'opcional' },
   // Mismo formulario que el aviso; los involucrados son quienes pierden puntos.
-  inspeccion: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'obligatorio', fotosControl: true },
+  inspeccion: { naturaleza: true, motivoParalizacion: false, controlRiesgo: true, involucrados: 'obligatorio', fotosControl: true, puntoGps: 'opcional' },
 };
 
 export interface CamposReporte {
@@ -49,6 +52,8 @@ export interface CamposReporte {
   motivoParalizacionId?: number | null;
   controlRiesgo?: string | null;
   involucrados?: string[] | null;
+  /** Si trae el punto GPS propio (latitud y longitud). */
+  tienePunto?: boolean;
 }
 
 /** Errores de forma según el tipo (vacío = válido). No mira catálogos ni la
@@ -68,6 +73,7 @@ export function erroresDeCampos(c: CamposReporte): string[] {
   if (!reglas.controlRiesgo && tiene(c.controlRiesgo)) errores.push('Una propuesta de mejora no lleva control del riesgo');
   if (reglas.involucrados === 'obligatorio' && involucrados.length === 0) errores.push('Una inspección necesita al menos una persona observada');
   if (reglas.involucrados === 'no' && involucrados.length > 0) errores.push('Este tipo de reporte no lleva personas involucradas');
+  if (reglas.puntoGps === 'obligatorio' && !c.tienePunto) errores.push('Falta tomar la ubicación: hay que saber de qué obra se trata');
   return errores;
 }
 
@@ -97,8 +103,13 @@ export function movimientosDe(r: {
   return [{ cuil: r.autorCuil, puntos: r.puntaje }];
 }
 
+/** Cargan inspecciones HyS (siempre) y los inspectores que habilitó. */
+export function puedeInspeccionar(rol: string, esInspector: boolean): boolean {
+  return rol === ROL_HYS || esInspector;
+}
+
 /** Nadie califica su propio reporte (HyS no es juez y parte). La inspección
- * es la excepción: su autora no suma puntos, así que no hay conflicto. */
+ * es la excepción: quien la carga no suma puntos, así que no hay conflicto. */
 export function puedeCalificar(r: { tipo: TipoReporte; autorCuil: string }, calificadorCuil: string): boolean {
   return r.tipo === TIPO_INSPECCION || r.autorCuil !== calificadorCuil;
 }
@@ -151,21 +162,40 @@ export interface FotoConUbicacion {
   errorMetros: number | null;
 }
 
-/** Punto del reporte: la foto de CÁMARA con menor error. Las de galería no
- * cuentan (pueden ser de otro día y otro lugar). Sin error informado, va
- * después de las que sí lo informan. */
-export function puntoDelReporte(fotos: FotoConUbicacion[]): { latitud: number; longitud: number; errorMetros: number | null } | null {
+export interface Punto {
+  latitud: number;
+  longitud: number;
+  errorMetros: number | null;
+  /** De dónde salió: el botón GPS del reporte o una foto de cámara. */
+  origen: 'gps' | 'foto';
+}
+
+/** Punto del reporte: manda el GPS que el autor tomó con el botón; si no
+ * hay, la foto de CÁMARA con menor error. Las de galería no cuentan (pueden
+ * ser de otro día y otro lugar). Sin error informado, va después de las que
+ * sí lo informan. */
+export function puntoDelReporte(
+  fotos: FotoConUbicacion[],
+  propio?: { latitud: number | null; longitud: number | null; errorMetros: number | null },
+): Punto | null {
+  if (propio && propio.latitud !== null && propio.longitud !== null) {
+    return { latitud: propio.latitud, longitud: propio.longitud, errorMetros: propio.errorMetros, origen: 'gps' };
+  }
   const candidatas = fotos.filter((f) => f.origen === 'camara' && f.latitud !== null && f.longitud !== null);
   if (candidatas.length === 0) return null;
   const mejor = candidatas.reduce((a, b) => ((b.errorMetros ?? Infinity) < (a.errorMetros ?? Infinity) ? b : a));
-  return { latitud: mejor.latitud!, longitud: mejor.longitud!, errorMetros: mejor.errorMetros };
+  return { latitud: mejor.latitud!, longitud: mejor.longitud!, errorMetros: mejor.errorMetros, origen: 'foto' };
 }
 
-// --------------------------------------------------------------- períodos
+// ------------------------------------------------------------------ rangos
 
-/** Dos rangos de días 'YYYY-MM-DD' (bordes incluidos) se superponen. */
-export function seSuperponen(a: { desde: string; hasta: string }, b: { desde: string; hasta: string }): boolean {
-  return a.desde <= b.hasta && b.desde <= a.hasta;
+/** Rango de una consulta de puntos (bordes incluidos, 'YYYY-MM-DD'). No hay
+ * períodos guardados (2026-10-08): cada uno filtra por fechas, y por
+ * defecto es el año en curso. */
+export function rangoConsulta(desde: string | undefined, hasta: string | undefined, hoy: string): { desde: string; hasta: string } {
+  const d = desde?.slice(0, 10) ?? `${hoy.slice(0, 4)}-01-01`;
+  const h = hasta?.slice(0, 10) ?? hoy;
+  return { desde: d, hasta: h };
 }
 
 // ------------------------------------------------------------------ fechas

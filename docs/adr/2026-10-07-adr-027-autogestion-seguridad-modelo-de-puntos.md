@@ -1,7 +1,7 @@
 # ADR-027 — Autogestión de la Seguridad: un solo reporte, la inspección como tipo y los puntos como movimientos
 
 **Fecha:** 2026-10-07
-**Estado:** Propuesto (pendiente del feedback de HyS)
+**Estado:** Propuesto, revisado el 2026-10-08 tras la primera prueba con HyS
 **Afecta:** módulo nuevo; tablas `sth_seg_*` (DDL manual en `docs/sql/`), sin
 tocar tablas existentes.
 
@@ -99,3 +99,33 @@ Vocabulario en `CONTEXT.md`, sección "Autogestión de la Seguridad".
 - Quedan abiertos, a la espera de HyS: si *accidente* y *tolerancia 0* son
   tipos (y qué campos piden), y la competencia por grupos de trabajo (no
   existe un dato confiable de cuadrilla, ver ADR-001).
+
+## Revisión 2026-10-08 (primera prueba con HyS)
+
+Cambia cuatro decisiones de arriba:
+
+- **Sin períodos guardados (reemplaza la 4).** HyS no quiso administrar
+  períodos: cada uno consulta puntos, ranking y tableros por un rango de
+  fechas libre (atajos mes, trimestre, semestre, año), con el año en curso por
+  defecto. Se borra `sth_seg_periodos`. Sigue valiendo que manda la **fecha
+  del reporte**.
+- **Punto GPS propio del reporte (amplía la 5).** Para saber de qué obra se
+  trata una paralización hace falta el punto aunque no haya foto: el autor lo
+  toma con un botón ("Tomar mi ubicación") y queda en el reporte
+  (`latitud`, `longitud`, `error_metros`). Es obligatorio en la paralización
+  y opcional en el resto; si falta, sigue valiendo la foto de cámara con
+  menor error. Sin mapa para corregir el pin: sumaba una librería (Leaflet), y
+  al aire libre el GPS da 5–15 m, que alcanza para identificar la obra.
+- **HyS corrige reportes ajenos, en cualquier estado.** Antes HyS solo
+  calificaba y nunca editaba lo que el autor declaró. En la práctica los
+  operarios confunden tipos (un aviso que es una propuesta), y que HyS lo
+  reabra para que el autor lo corrija era demasiado circuito. Si el reporte
+  estaba aprobado, los movimientos se recalculan en la misma transacción (un
+  cambio de tipo a inspección, o de involucrados, mueve puntos). La auditoría
+  guarda el antes y el después.
+- **Inspectores habilitados por persona.** Además de HyS, pueden cargar
+  inspecciones los usuarios que HyS habilite uno por uno (hoy, algunos
+  supervisores). Se guarda en una tabla propia del módulo
+  (`sth_seg_inspectores`) y no como columna de `sth_usuarios`, para no tocar
+  la tabla de acceso compartida. Se descartó habilitar roles enteros: no sirve
+  para "este supervisor sí y aquel no".

@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { SeguridadController } from './seguridad.controller';
 import { ReportesService, SEG_FOTO_STORAGE } from './reportes.service';
 import { PuntosService } from './puntos.service';
-import { PeriodosService } from './periodos.service';
+import { InspectoresService } from './inspectores.service';
 import { CatalogosSeguridadService } from './catalogos-seguridad.service';
 import { FsNovedadAdjuntoStorage } from '../novedades/storage/fs-novedad-adjunto-storage.service';
 
@@ -10,7 +10,7 @@ import { FsNovedadAdjuntoStorage } from '../novedades/storage/fs-novedad-adjunto
   providers: [
     ReportesService,
     PuntosService,
-    PeriodosService,
+    InspectoresService,
     CatalogosSeguridadService,
     {
       provide: SEG_FOTO_STORAGE,

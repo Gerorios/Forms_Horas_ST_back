@@ -14,6 +14,7 @@ import {
   hoyAr,
   movimientosDe,
   puedeCalificar,
+  puedeInspeccionar,
   puntoDelReporte,
 } from './reglas';
 import { mapaNombres } from './nombres';
@@ -70,6 +71,9 @@ function snapshot(r: {
   contratoId: number;
   tareaId: number;
   ubicacion: string | null;
+  latitud: unknown;
+  longitud: unknown;
+  errorMetros: number | null;
   descripcion: string;
   naturalezaId: number | null;
   motivoParalizacionId: number | null;
@@ -83,6 +87,7 @@ function snapshot(r: {
     contratoId: r.contratoId,
     tareaId: r.tareaId,
     ubicacion: r.ubicacion,
+    punto: r.latitud === null ? null : [Number(r.latitud), Number(r.longitud), r.errorMetros],
     descripcion: r.descripcion,
     naturalezaId: r.naturalezaId,
     motivoParalizacionId: r.motivoParalizacionId,
@@ -140,7 +145,7 @@ export class ReportesService {
         controlRiesgo: r.controlRiesgo,
         involucrados: r.involucrados.map((i) => ({ cuil: i.cuil, nombre: nombres.get(i.cuil) ?? '' })),
         fotos: fotos.map(({ latitud, longitud, errorMetros, ...f }) => ({ ...f, conUbicacion: latitud !== null })),
-        punto: puntoDelReporte(fotos),
+        punto: puntoDelReporte(fotos, { latitud: num(r.latitud), longitud: num(r.longitud), errorMetros: r.errorMetros }),
         puntaje: r.puntaje,
         comentarioHys: r.comentarioHys,
         calificadoPor: verCalificador && r.calificadoPorCuil ? { cuil: r.calificadoPorCuil, nombre: nombres.get(r.calificadoPorCuil) ?? '' } : null,
@@ -175,12 +180,25 @@ export class ReportesService {
 
   // ---------------------------------------------------------- validaciones
 
-  private async validar(dto: ReporteDto, usuario: Usuario) {
-    if (dto.tipo === TIPO_INSPECCION && usuario.rol !== ROL_HYS) {
-      throw new ForbiddenException('Solo HyS carga inspecciones de seguridad');
+  /** Habilitado por HyS para cargar inspecciones (ADR-027, 2026-10-08). */
+  async esInspector(cuil: string): Promise<boolean> {
+    return (await this.prisma.segInspector.findUnique({ where: { cuil }, select: { cuil: true } })) != null;
+  }
+
+  /** `correccion`: la hace HyS/Admin sobre un reporte ajeno; puede llevarlo a
+   * inspección aunque el autor no sea inspector (es una reclasificación). */
+  private async validar(dto: ReporteDto, usuario: Usuario, correccion = false) {
+    if (dto.tipo === TIPO_INSPECCION && !correccion && !puedeInspeccionar(usuario.rol, await this.esInspector(usuario.cuil))) {
+      throw new ForbiddenException('Solo HyS y los inspectores habilitados cargan inspecciones de seguridad');
+    }
+    const tienePunto = dto.latitud !== undefined || dto.longitud !== undefined;
+    if (tienePunto && (dto.latitud === undefined || dto.longitud === undefined)) {
+      throw new BadRequestException('La ubicación necesita latitud y longitud');
     }
     const involucrados = [...new Set(dto.involucrados ?? [])];
-    const errores = erroresDeCampos({ ...dto, involucrados });
+    // Al corregir, HyS no está en la obra: no se le exige el punto GPS (si
+    // pasa un aviso a paralización, el punto queda el que haya).
+    const errores = erroresDeCampos({ ...dto, involucrados, tienePunto: tienePunto || correccion });
     if (errores.length) throw new BadRequestException(errores.join('. '));
 
     const fecha = dto.fechaReporte.slice(0, 10);
@@ -215,6 +233,9 @@ export class ReportesService {
         contratoId: dto.contratoId,
         tareaId: dto.tareaId,
         ubicacion: dto.ubicacion?.trim() || null,
+        latitud: tienePunto ? dto.latitud! : null,
+        longitud: tienePunto ? dto.longitud! : null,
+        errorMetros: tienePunto && dto.errorMetros !== undefined ? Math.round(dto.errorMetros) : null,
         descripcion: dto.descripcion.trim(),
         naturalezaId: dto.naturalezaId ?? null,
         motivoParalizacionId: dto.motivoParalizacionId ?? null,
@@ -261,6 +282,58 @@ export class ReportesService {
           usuarioCuil: usuario.cuil,
           accion: 'editar',
           campo: 'reporte',
+          valorAnterior: JSON.stringify(snapshot(actual)),
+          valorNuevo: JSON.stringify(snapshot({ ...nuevo, involucrados: involucrados.map((cuil) => ({ cuil })) })),
+        },
+      });
+    });
+    return this.detalle(id, usuario);
+  }
+
+  /**
+   * HyS (o Admin) corrige un reporte ajeno, en cualquier estado salvo
+   * anulado (ADR-027, revisión 2026-10-08): los operarios confunden tipos.
+   * Lo que el tipo nuevo no admite se descarta (las fotos del control, con
+   * baja lógica), y si estaba aprobado los movimientos se recalculan en la
+   * misma transacción. La auditoría guarda el antes y el después.
+   */
+  async corregir(id: number, dto: ReporteDto, usuario: Usuario) {
+    const actual = await this.cargar(id);
+    if (actual.estado === 'anulado') throw new BadRequestException('El reporte está anulado: no se corrige');
+    const { data, involucrados } = await this.validar(dto, usuario, true);
+    const sacarFotosControl = !CAMPOS_POR_TIPO[dto.tipo].fotosControl && actual.fotos.some((f) => f.grupo === 'control');
+    const movimientos =
+      actual.estado === 'aprobado'
+        ? movimientosDe({ tipo: dto.tipo, estado: 'aprobado', autorCuil: actual.autorCuil, puntaje: actual.puntaje, involucrados })
+        : null;
+
+    await this.prisma.$transaction(async (tx) => {
+      const nuevo = await tx.segReporte.update({ where: { id }, data });
+      await tx.segReporteInvolucrado.deleteMany({ where: { reporteId: id } });
+      if (involucrados.length) {
+        await tx.segReporteInvolucrado.createMany({ data: involucrados.map((cuil) => ({ reporteId: id, cuil })) });
+      }
+      if (sacarFotosControl) {
+        await tx.segReporteFoto.updateMany({
+          where: { reporteId: id, grupo: 'control', eliminadoEn: null },
+          data: { eliminadoEn: new Date(), eliminadoPorCuil: usuario.cuil },
+        });
+      }
+      if (movimientos) {
+        await tx.segMovimientoPuntos.deleteMany({ where: { reporteId: id } });
+        if (movimientos.length) {
+          await tx.segMovimientoPuntos.createMany({
+            data: movimientos.map((m) => ({ reporteId: id, cuil: m.cuil, fecha: data.fechaReporte, puntos: m.puntos })),
+          });
+        }
+      }
+      await tx.auditoria.create({
+        data: {
+          tabla: TABLA,
+          registroId: id,
+          usuarioCuil: usuario.cuil,
+          accion: 'editar',
+          campo: 'correccion_hys',
           valorAnterior: JSON.stringify(snapshot(actual)),
           valorNuevo: JSON.stringify(snapshot({ ...nuevo, involucrados: involucrados.map((cuil) => ({ cuil })) })),
         },

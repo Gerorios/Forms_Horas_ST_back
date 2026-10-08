@@ -91,7 +91,8 @@ model Usuario {
   // Autogestión de la Seguridad (ADR-027)
   reportesSeguridad   SegReporte[] @relation("SegReporteAutor")
   reportesCalificados SegReporte[] @relation("SegReporteCalificador")
-  periodosSeguridad   SegPeriodo[]
+  inspectorSeguridad  SegInspector?  @relation("SegInspector")
+  inspectoresHabilitados SegInspector[] @relation("SegInspectorHabilitador")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -955,23 +956,6 @@ model SegMotivoParalizacion {
   @@map("sth_seg_motivos_paralizacion")
 }
 
-/// Período de medición que define HyS. La no superposición la valida el
-/// código (MySQL no tiene restricciones de exclusión por rango).
-model SegPeriodo {
-  id            Int      @id @default(autoincrement())
-  nombre        String   @unique(map: "uq_seg_periodo_nombre") @db.VarChar(80)
-  desde         DateTime @db.Date
-  hasta         DateTime @db.Date
-  creadoPorCuil String   @map("creado_por_cuil") @db.Char(13)
-  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
-
-  creadoPor Usuario @relation(fields: [creadoPorCuil], references: [cuil], map: "fk_seg_periodo_creador")
-
-  @@index([desde, hasta], map: "idx_seg_periodo_rango")
-  @@map("sth_seg_periodos")
-}
-
 enum SegTipoReporte {
   aviso_riesgo
   incidente
@@ -999,6 +983,11 @@ model SegReporte {
   contratoId           Int              @map("contrato_id")
   tareaId              Int              @map("tarea_id")
   ubicacion            String?          @db.VarChar(200)
+  /// Punto GPS tomado con "Tomar mi ubicación" (ADR-027, revisión
+  /// 2026-10-08): manda sobre el de las fotos. Las tres juntas o vacías.
+  latitud              Decimal?         @db.Decimal(9, 6)
+  longitud             Decimal?         @db.Decimal(9, 6)
+  errorMetros          Int?             @map("error_metros") @db.UnsignedInt
   descripcion          String           @db.Text
   naturalezaId         Int?             @map("naturaleza_id")
   motivoParalizacionId Int?             @map("motivo_paralizacion_id")
@@ -1095,4 +1084,17 @@ model SegMovimientoPuntos {
   @@index([fecha, cuil], map: "idx_seg_movimiento_ranking")
   @@index([cuil, fecha], map: "idx_seg_movimiento_persona")
   @@map("sth_seg_movimientos_puntos")
+}
+
+/// Usuario que, sin ser HyS, puede cargar inspecciones (lo habilita HyS, uno
+/// por uno). Tabla propia para no tocar sth_usuarios (ADR-027, 2026-10-08).
+model SegInspector {
+  cuil              String   @id @db.Char(13)
+  habilitadoPorCuil String   @map("habilitado_por_cuil") @db.Char(13)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  usuario       Usuario @relation("SegInspector", fields: [cuil], references: [cuil], map: "fk_seg_inspector_usuario")
+  habilitadoPor Usuario @relation("SegInspectorHabilitador", fields: [habilitadoPorCuil], references: [cuil], map: "fk_seg_inspector_habilitador")
+
+  @@map("sth_seg_inspectores")
 }

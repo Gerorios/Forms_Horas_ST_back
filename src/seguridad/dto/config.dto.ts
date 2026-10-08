@@ -1,24 +1,8 @@
-import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
-/** Período de medición que define HyS ("2º semestre 2026"). */
-export class PeriodoDto {
-  @IsString() @IsNotEmpty() @MaxLength(80)
-  nombre: string;
-
-  @IsDateString()
-  desde: string;
-
-  @IsDateString()
-  hasta: string;
-}
-
-/** Rango de consulta: un período guardado, o desde/hasta libres (solo el
- * panel de HyS). Sin nada, el período actual. */
+/** Rango de consulta de puntos, ranking y tableros. Sin nada, el año en
+ * curso (no hay períodos guardados, ADR-027 revisión 2026-10-08). */
 export class RangoDto {
-  @IsOptional() @Type(() => Number) @IsInt()
-  periodoId?: number;
-
   @IsOptional() @IsDateString()
   desde?: string;
 
@@ -33,4 +17,10 @@ export class CatalogoDto {
 
   @IsOptional() @IsBoolean()
   activo?: boolean;
+}
+
+/** Habilitar a un usuario como inspector (HyS/Admin). */
+export class InspectorDto {
+  @IsString() @Matches(/^\d{11}$/, { message: 'CUIL inválido: 11 dígitos sin guiones' })
+  cuil: string;
 }

@@ -5,7 +5,8 @@ import {
   movimientosDe,
   puedeCalificar,
   puntoDelReporte,
-  seSuperponen,
+  puedeInspeccionar,
+  rangoConsulta,
 } from './reglas';
 
 describe('reglas de Autogestión de la Seguridad', () => {
@@ -25,10 +26,17 @@ describe('reglas de Autogestión de la Seguridad', () => {
     });
 
     it('la paralización pide motivo y no naturaleza', () => {
-      expect(erroresDeCampos({ tipo: 'paralizacion', motivoParalizacionId: 2, controlRiesgo: 'Bajamos la cuadrilla' })).toEqual([]);
-      expect(erroresDeCampos({ tipo: 'paralizacion', naturalezaId: 1, motivoParalizacionId: 2, controlRiesgo: 'x' })).toEqual([
+      expect(erroresDeCampos({ tipo: 'paralizacion', motivoParalizacionId: 2, controlRiesgo: 'Bajamos la cuadrilla', tienePunto: true })).toEqual([]);
+      expect(erroresDeCampos({ tipo: 'paralizacion', naturalezaId: 1, motivoParalizacionId: 2, controlRiesgo: 'x', tienePunto: true })).toEqual([
         'Este tipo de reporte no lleva naturaleza',
       ]);
+    });
+
+    it('la paralización exige el punto GPS: hay que saber de qué obra se trata', () => {
+      expect(erroresDeCampos({ tipo: 'paralizacion', motivoParalizacionId: 2, controlRiesgo: 'x' })).toEqual([
+        'Falta tomar la ubicación: hay que saber de qué obra se trata',
+      ]);
+      expect(erroresDeCampos({ tipo: 'aviso_riesgo', naturalezaId: 1, controlRiesgo: 'x' })).toEqual([]);
     });
 
     it('la propuesta de mejora no lleva control, naturaleza ni involucrados', () => {
@@ -89,6 +97,14 @@ describe('reglas de Autogestión de la Seguridad', () => {
 
     it('la autora de una inspección sí la aprueba: no suma nada', () => {
       expect(puedeCalificar({ tipo: 'inspeccion', autorCuil: 'HYS1' }, 'HYS1')).toBe(true);
+    });
+  });
+
+  describe('puedeInspeccionar', () => {
+    it('HyS siempre; el resto, solo si está habilitado como inspector', () => {
+      expect(puedeInspeccionar('HyS', false)).toBe(true);
+      expect(puedeInspeccionar('Supervisor', false)).toBe(false);
+      expect(puedeInspeccionar('Supervisor', true)).toBe(true);
     });
   });
 
@@ -155,13 +171,24 @@ describe('reglas de Autogestión de la Seguridad', () => {
         latitud: -26.2,
         longitud: -65,
         errorMetros: 8,
+        origen: 'foto',
       });
+    });
+
+    it('el GPS tomado con el botón manda sobre las fotos', () => {
+      expect(puntoDelReporte([camara(-26.2, 3)], { latitud: -24.7, longitud: -65.4, errorMetros: 12 })).toEqual({
+        latitud: -24.7,
+        longitud: -65.4,
+        errorMetros: 12,
+        origen: 'gps',
+      });
+      expect(puntoDelReporte([camara(-26.2, 3)], { latitud: null, longitud: null, errorMetros: null })?.origen).toBe('foto');
     });
 
     it('ignora las de galería aunque traigan coordenadas', () => {
       expect(
         puntoDelReporte([{ origen: 'galeria', latitud: -24, longitud: -65, errorMetros: 1 }, camara(-26.8, 40)]),
-      ).toEqual({ latitud: -26.8, longitud: -65, errorMetros: 40 });
+      ).toEqual({ latitud: -26.8, longitud: -65, errorMetros: 40, origen: 'foto' });
     });
 
     it('sin fotos de cámara con ubicación no hay punto', () => {
@@ -174,17 +201,12 @@ describe('reglas de Autogestión de la Seguridad', () => {
     });
   });
 
-  describe('seSuperponen', () => {
-    const s1 = { desde: '2026-01-01', hasta: '2026-06-30' };
-
-    it('detecta superposición, incluso de un solo día', () => {
-      expect(seSuperponen(s1, { desde: '2026-06-30', hasta: '2026-12-31' })).toBe(true);
-      expect(seSuperponen(s1, { desde: '2026-03-01', hasta: '2026-03-31' })).toBe(true);
+  describe('rangoConsulta', () => {
+    it('por defecto, el año en curso hasta hoy', () => {
+      expect(rangoConsulta(undefined, undefined, '2026-10-08')).toEqual({ desde: '2026-01-01', hasta: '2026-10-08' });
     });
-
-    it('períodos contiguos o con hueco no se superponen', () => {
-      expect(seSuperponen(s1, { desde: '2026-07-01', hasta: '2026-12-31' })).toBe(false);
-      expect(seSuperponen(s1, { desde: '2026-09-01', hasta: '2026-12-31' })).toBe(false);
+    it('respeta el rango pedido', () => {
+      expect(rangoConsulta('2026-07-01', '2026-09-30T00:00:00Z', '2026-10-08')).toEqual({ desde: '2026-07-01', hasta: '2026-09-30' });
     });
   });
 

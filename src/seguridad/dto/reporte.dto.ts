@@ -41,6 +41,17 @@ export class ReporteDto {
   @IsOptional() @IsString() @MaxLength(200)
   ubicacion?: string;
 
+  /** Punto GPS tomado con "Tomar mi ubicación": obligatorio en la
+   * paralización, opcional en el resto (ADR-027, revisión 2026-10-08). */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(-90) @Max(90)
+  latitud?: number;
+
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(-180) @Max(180)
+  longitud?: number;
+
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
+  errorMetros?: number;
+
   @IsString() @IsNotEmpty()
   descripcion: string;
 

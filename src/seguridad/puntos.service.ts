@@ -1,15 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Rango } from './periodos.service';
+
+/** Rango de consulta, bordes incluidos ('YYYY-MM-DD'). Ver `rangoConsulta`:
+ * sin períodos guardados, por defecto el año en curso. */
+export interface Rango {
+  desde: string;
+  hasta: string;
+}
 import { ROL_HYS, TIPO_INSPECCION, armarRanking, dateADia, diaADate, puntoDelReporte } from './reglas';
 import { mapaNombres } from './nombres';
 
 function filtroFecha(rango: Rango) {
-  if (!rango.desde && !rango.hasta) return {};
-  return {
-    ...(rango.desde ? { gte: diaADate(rango.desde) } : {}),
-    ...(rango.hasta ? { lte: diaADate(rango.hasta) } : {}),
-  };
+  return { gte: diaADate(rango.desde), lte: diaADate(rango.hasta) };
 }
 
 /** Puntaje, ranking y tableros. Todo sale de sumar movimientos (ADR-027):
@@ -96,7 +98,7 @@ export class PuntosService {
     const menos = movimientos.filter((m) => m.puntos < 0).reduce((s, m) => s - m.puntos, 0);
 
     return {
-      periodo: rango.periodo,
+      ...rango,
       puntos: { total: mas - menos, mas, menos },
       // null: no compite (HyS, fuera de nómina) o no tiene movimientos.
       posicion: mia ? { puesto: mia.puesto, de: filas.length } : null,
@@ -140,6 +142,9 @@ export class PuntosService {
         naturaleza: { select: { nombre: true } },
         motivoParalizacion: { select: { nombre: true } },
         involucrados: { select: { cuil: true } },
+        latitud: true,
+        longitud: true,
+        errorMetros: true,
         fotos: {
           where: { eliminadoEn: null, origen: 'camara', latitud: { not: null } },
           select: { origen: true, latitud: true, longitud: true, errorMetros: true },
@@ -204,7 +209,12 @@ export class PuntosService {
       respuestaHysDias: horasRespuesta.length
         ? Math.round((horasRespuesta.reduce((s, h) => s + h, 0) / horasRespuesta.length / 24) * 10) / 10
         : null,
-      conPunto: reportes.filter((r) => puntoDelReporte(r.fotos.map((f) => ({ ...f, latitud: Number(f.latitud), longitud: Number(f.longitud) })))).length,
+      conPunto: reportes.filter((r) =>
+        puntoDelReporte(
+          r.fotos.map((f) => ({ ...f, latitud: Number(f.latitud), longitud: Number(f.longitud) })),
+          { latitud: r.latitud === null ? null : Number(r.latitud), longitud: r.longitud === null ? null : Number(r.longitud), errorMetros: r.errorMetros },
+        ),
+      ).length,
       porTipo: contar(reportes.map((r) => r.tipo)),
       porContrato: contar(reportes.map((r) => r.contrato.codigo)),
       porTarea: contar(reportes.map((r) => `${r.contrato.codigo} › ${r.tarea.nombre}`)).slice(0, 15),

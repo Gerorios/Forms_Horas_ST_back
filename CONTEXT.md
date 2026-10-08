@@ -382,8 +382,9 @@ Fijo, no un catálogo: cada tipo tiene campos y reglas propias, así que sumar
 uno siempre es desarrollo. **Aviso de riesgo** e **incidente** (evento sin
 baja) piden naturaleza y control del riesgo; **paralización de trabajos**
 pide motivo de paralización y control; **propuesta de mejora** es una idea,
-sin riesgo ni control. **Inspección de seguridad** la carga solo HyS, con
-el mismo formulario, y resta puntos a sus involucrados. *Accidente* y
+sin riesgo ni control. **Inspección de seguridad** la cargan HyS y los
+**inspectores** que habilite, con el mismo formulario, y resta puntos a sus
+involucrados. La paralización exige además el **punto GPS**. *Accidente* y
 *tolerancia 0* esperan definición de HyS (¿el accidente con baja va por acá?,
 ¿tolerancia 0 es un tipo o un caso de inspección?).
 
@@ -465,14 +466,13 @@ _Avoid_: adjunto, certificado (eso es de las novedades), registro fotográfico.
 
 **Punto del reporte** (en el mapa):
 La ubicación geográfica de lo reportado (latitud, longitud y error en
-metros), para un futuro mapa de calor de HyS. Sale de las fotos, nunca del
-momento de envío (se puede reportar desde casa algo visto ayer): de las
-sacadas con la cámara desde la app, la de menor error. Las de galería no dan
-punto (leer sus metadatos de ubicación quedó para más adelante). Sin una
-foto de cámara, el reporte no tiene punto. El sistema lo toma
-solo, sin preguntarle nada al autor (más allá del permiso que el navegador
-pide una vez), nunca lo sigue fuera de ese momento, y lo ven solo HyS y
-Admin.
+metros), para saber de qué obra se trata y para un futuro mapa de calor.
+Manda el **punto GPS** que el autor toma con el botón "Tomar mi ubicación"
+(2026-10-08: obligatorio en la paralización, opcional en el resto); sin él,
+la foto sacada con la cámara desde la app con menor error. Nunca sale del
+momento de envío (se puede reportar desde casa algo visto ayer) ni de fotos
+de galería. El navegador pide el permiso una vez; la app nunca sigue a nadie,
+y el punto lo ven solo el autor, HyS y Admin.
 _Avoid_: ubicación (es el texto libre), geolocalización del usuario (no se
 ubica a la persona, se ubica el riesgo).
 
@@ -489,9 +489,12 @@ que restan, no un color por nota).
 **Pendiente** (recién enviado), **aprobado** (con su puntaje),
 **desaprobado** (0 puntos, con motivo) o **anulado** (el autor lo retiró
 mientras estaba pendiente, con motivo: duplicado o error). Solo mientras está
-pendiente el autor puede editarlo; calificado, queda fijo. HyS puede
-**reabrirlo** (volver a pendiente), lo que borra su movimiento de puntos. HyS
-califica y comenta, pero nunca edita lo que declaró el autor.
+pendiente el autor puede editarlo; calificado, queda fijo para él. HyS puede
+**reabrirlo** (volver a pendiente), lo que borra su movimiento de puntos, y
+puede **corregirlo** en cualquier estado (2026-10-08: los operarios confunden,
+p. ej., un aviso con una propuesta): si estaba aprobado, sus movimientos se
+recalculan en el acto. Cada corrección queda en auditoría con el antes y el
+después.
 _Avoid_: descartado (desaprobar es una decisión de calidad; el error o el
 duplicado se anulan).
 
@@ -504,12 +507,18 @@ reporte es el registro, no el canal de aviso.
 _Avoid_: notificación (el sistema no envía nada fuera de la app).
 
 **Inspección de seguridad**:
-Tipo de reporte que carga solo HyS en campo, con el mismo formulario que
-cualquier otro. Sigue el mismo circuito: queda pendiente y HyS, ya en el
+Tipo de reporte que cargan en campo HyS y los **inspectores**, con el mismo
+formulario que cualquier otro. Sigue el mismo circuito: queda pendiente y HyS, ya en el
 panel, la aprueba poniéndole el puntaje a restar (0 a 10), que pierde cada
-involucrado. HyS, como autora, no suma nada. No tiene relación con los reportes de las personas
+involucrado. Quien la carga no suma nada. No tiene relación con los reportes de las personas
 observadas: alguien que nunca reportó nada puede tener puntos negativos.
 _Avoid_: descuento, sanción (suenan disciplinarios o de RRHH), observación.
+
+**Inspector** (de seguridad):
+Usuario que, sin ser HyS, puede cargar inspecciones porque HyS lo habilitó
+uno por uno (al 2026-10-08, algunos supervisores). HyS siempre puede. La
+habilitación es por persona, no por rol, y no le da acceso al panel: sus
+inspecciones las aprueba HyS.
 
 **Movimiento de puntos**:
 Cada vez que una persona gana o pierde puntos: un + para el autor de un
@@ -518,23 +527,24 @@ genera el sistema al aprobar, recalificar o desaprobar, nunca se carga a
 mano. El **puntaje** de una persona en un período es la suma de sus
 movimientos; nunca se guarda un total.
 
-**Período** (de los puntos):
-El rango de fechas, con nombre, que define HyS para medir y premiar (en
-principio, semestral). Los períodos no se superponen y puede haber huecos;
-el **período actual** es el que contiene la fecha de hoy. Un período
-terminado no se congela. Los puntos caen en el período de la **fecha del reporte** (cuando
-pasó), no en el de la aprobación. Por eso el ranking de un período puede
-cambiar mientras HyS siga aprobando reportes atrasados de ese período.
+**Rango** (de los puntos):
+Las fechas desde/hasta con que se consultan puntos, ranking y tableros:
+cada uno elige el que quiere (mes, trimestre, semestre, año o libre), y por
+defecto es el año en curso. No hay períodos guardados (2026-10-08: se
+descartaron). Los puntos caen según la **fecha del reporte** (cuando pasó),
+no la de aprobación: el ranking de un rango puede cambiar mientras HyS siga
+aprobando reportes atrasados.
+_Avoid_: período (sugiere algo definido y guardado, que ya no existe).
 
-**Ranking** (de un período):
-Las personas con al menos un movimiento en el período, ordenadas por
+**Ranking** (de un rango):
+Las personas con al menos un movimiento en el rango, ordenadas por
 puntaje; los empates comparten puesto. Quien tiene 0 por +10 y −10 aparece;
 quien no tiene ningún movimiento, no. Un reporte desaprobado no genera
 movimiento.
 
 **Mis puntos**:
 Lo que cada persona ve de sí misma: sus reportes con estado, puntaje y
-comentario de HyS; sus movimientos del período, y las inspecciones que la
+comentario de HyS; sus movimientos del rango, y las inspecciones que la
 restaron (fecha, naturaleza, descripción y puntos), sin las fotos, sin quién
 de HyS la cargó y sin los otros involucrados. Ve además su **posición** en el
 ranking y los puntajes de quienes están delante, sin nombres. El ranking con

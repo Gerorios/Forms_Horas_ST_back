@@ -22,10 +22,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ReportesService } from './reportes.service';
 import { PuntosService } from './puntos.service';
-import { PeriodosService } from './periodos.service';
+import { InspectoresService } from './inspectores.service';
 import { Catalogo, CatalogosSeguridadService } from './catalogos-seguridad.service';
 import { AnularReporteDto, CalificarReporteDto, FiltrosPanelDto, FotoDto, ReporteDto } from './dto/reporte.dto';
-import { CatalogoDto, PeriodoDto, RangoDto } from './dto/config.dto';
+import { CatalogoDto, InspectorDto, RangoDto } from './dto/config.dto';
+import { hoyAr, rangoConsulta } from './reglas';
 
 /** La foto llega achicada desde el celular (~300 KB); 10 MB es el techo para
  * cuando el navegador no pudo achicarla. */
@@ -40,8 +41,9 @@ function catalogoValido(c: string): Catalogo {
 /**
  * Autogestión de la Seguridad (ADR-027). Es el primer módulo abierto a
  * TODOS los roles: los endpoints sin @Roles los usa cualquier usuario
- * logueado; el panel, el ranking con nombres y los períodos son de HyS y
- * Admin, y los catálogos, solo de Admin.
+ * logueado; el panel, el ranking con nombres y los inspectores son de HyS y
+ * Admin, y los catálogos, solo de Admin. Puntos, ranking y tableros se
+ * consultan por rango de fechas (por defecto, el año en curso).
  */
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('seguridad')
@@ -49,7 +51,7 @@ export class SeguridadController {
   constructor(
     private reportes: ReportesService,
     private puntos: PuntosService,
-    private periodos: PeriodosService,
+    private inspectores: InspectoresService,
     private catalogos: CatalogosSeguridadService,
   ) {}
 
@@ -59,9 +61,14 @@ export class SeguridadController {
 
   // ---------------------------------------------------------- todos
 
+  /** Catálogos del formulario, más si este usuario puede cargar inspecciones. */
   @Get('catalogos')
-  catalogosFormulario() {
-    return this.catalogos.paraFormulario();
+  async catalogosFormulario(@Request() req) {
+    const u = this.usuario(req);
+    return {
+      ...(await this.catalogos.paraFormulario()),
+      puedeInspeccionar: u.rol === 'HyS' || (await this.reportes.esInspector(u.cuil)),
+    };
   }
 
   @Post('reportes')
@@ -75,14 +82,8 @@ export class SeguridadController {
   }
 
   @Get('mis-puntos')
-  async misPuntos(@Query('periodoId') periodoId: string | undefined, @Request() req) {
-    const rango = await this.periodos.resolverRango({ periodoId: periodoId ? Number(periodoId) : undefined }, false);
-    return this.puntos.misPuntos(req.user.cuil, rango);
-  }
-
-  @Get('periodos')
-  listarPeriodos() {
-    return this.periodos.listar();
+  misPuntos(@Query() q: RangoDto, @Request() req) {
+    return this.puntos.misPuntos(req.user.cuil, rangoConsulta(q.desde, q.hasta, hoyAr()));
   }
 
   @Get('reportes/:id')
@@ -158,32 +159,40 @@ export class SeguridadController {
 
   @Get('ranking')
   @Roles('HyS', 'Admin')
-  async ranking(@Query() q: RangoDto) {
-    return this.puntos.ranking(await this.periodos.resolverRango(q, true));
+  ranking(@Query() q: RangoDto) {
+    return this.puntos.ranking(rangoConsulta(q.desde, q.hasta, hoyAr()));
   }
 
   @Get('tableros')
   @Roles('HyS', 'Admin')
-  async tableros(@Query() q: RangoDto) {
-    return this.puntos.tableros(await this.periodos.resolverRango(q, true));
+  tableros(@Query() q: RangoDto) {
+    return this.puntos.tableros(rangoConsulta(q.desde, q.hasta, hoyAr()));
   }
 
-  @Post('periodos')
+  /** HyS corrige un reporte ajeno (tipo, clasificación, texto), en cualquier
+   * estado salvo anulado; si estaba aprobado, se recalculan los puntos. */
+  @Patch('reportes/:id/corregir')
   @Roles('HyS', 'Admin')
-  crearPeriodo(@Body() dto: PeriodoDto, @Request() req) {
-    return this.periodos.crear(dto, req.user.cuil);
+  corregir(@Param('id', ParseIntPipe) id: number, @Body() dto: ReporteDto, @Request() req) {
+    return this.reportes.corregir(id, dto, this.usuario(req));
   }
 
-  @Patch('periodos/:id')
+  @Get('inspectores')
   @Roles('HyS', 'Admin')
-  editarPeriodo(@Param('id', ParseIntPipe) id: number, @Body() dto: PeriodoDto) {
-    return this.periodos.editar(id, dto);
+  listarInspectores() {
+    return this.inspectores.listar();
   }
 
-  @Delete('periodos/:id')
+  @Post('inspectores')
   @Roles('HyS', 'Admin')
-  borrarPeriodo(@Param('id', ParseIntPipe) id: number) {
-    return this.periodos.borrar(id);
+  habilitarInspector(@Body() dto: InspectorDto, @Request() req) {
+    return this.inspectores.habilitar(dto.cuil, req.user.cuil);
+  }
+
+  @Delete('inspectores/:cuil')
+  @Roles('HyS', 'Admin')
+  deshabilitarInspector(@Param('cuil') cuil: string) {
+    return this.inspectores.deshabilitar(cuil);
   }
 
   // ------------------------------------------------------------- Admin

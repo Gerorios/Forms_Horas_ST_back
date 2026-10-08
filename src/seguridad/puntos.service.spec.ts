@@ -11,7 +11,7 @@ describe('PuntosService', () => {
     snuempleados: { findMany: jest.fn() },
   };
   let service: PuntosService;
-  const RANGO = { periodo: { id: 1, nombre: '2º semestre 2026', desde: '2026-07-01', hasta: '2026-12-31' }, desde: '2026-07-01', hasta: '2026-12-31' };
+  const RANGO = { desde: '2026-07-01', hasta: '2026-12-31' };
 
   const empleado = (cuil: string, nombre: string) => ({ cuil, apellido_nombre: nombre, legajo: 1 });
 

@@ -13,7 +13,8 @@ describe('ReportesService', () => {
   const prismaMock: any = {
     segReporte: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     segReporteInvolucrado: { createMany: jest.fn(), deleteMany: jest.fn() },
-    segReporteFoto: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+    segReporteFoto: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
+    segInspector: { findUnique: jest.fn() },
     segMovimientoPuntos: { deleteMany: jest.fn(), createMany: jest.fn() },
     segNaturaleza: { findUnique: jest.fn() },
     segMotivoParalizacion: { findUnique: jest.fn() },
@@ -43,6 +44,9 @@ describe('ReportesService', () => {
     contratoId: 2,
     tareaId: 3,
     ubicacion: null,
+    latitud: null,
+    longitud: null,
+    errorMetros: null,
     descripcion: 'Zanja sin vallar',
     naturalezaId: 4,
     motivoParalizacionId: null,
@@ -84,6 +88,8 @@ describe('ReportesService', () => {
     prismaMock.tareaCatalogo.findUnique.mockResolvedValue({ contratoId: 2, activo: true, contrato: { activo: true } });
     prismaMock.segNaturaleza.findUnique.mockResolvedValue({ activo: true });
     prismaMock.segReporte.create.mockResolvedValue({ id: 7, tipo: 'aviso_riesgo' });
+    prismaMock.segReporte.update.mockImplementation(async ({ data }: any) => ({ ...reporte(), ...data }));
+    prismaMock.segInspector.findUnique.mockResolvedValue(null);
     storage.guardar.mockResolvedValue('2026/10/foto.jpg');
 
     const mod = await Test.createTestingModule({
@@ -115,10 +121,30 @@ describe('ReportesService', () => {
       });
     });
 
-    it('solo HyS carga inspecciones', async () => {
+    it('un operario no habilitado no carga inspecciones', async () => {
       const dto = { ...DTO, tipo: 'inspeccion' as const, involucrados: ['20444444444'] };
       await expect(service.crear(dto, OPERARIO)).rejects.toThrow(ForbiddenException);
       expect(prismaMock.segReporte.create).not.toHaveBeenCalled();
+    });
+
+    it('un supervisor habilitado como inspector sí', async () => {
+      prismaMock.segInspector.findUnique.mockResolvedValue({ cuil: '20666666666' });
+      prismaMock.snuempleados.findMany.mockResolvedValueOnce([{ cuil: '20444444444' }]);
+      prismaMock.segReporte.findUnique.mockResolvedValueOnce(reporte({ tipo: 'inspeccion', autorCuil: '20666666666' }));
+      const dto = { ...DTO, tipo: 'inspeccion' as const, involucrados: ['20444444444'] };
+      await service.crear(dto, { cuil: '20666666666', rol: 'Supervisor' });
+      expect(prismaMock.segReporte.create).toHaveBeenCalled();
+    });
+
+    it('la paralización sin punto GPS no se envía; con punto, se guarda', async () => {
+      const paral = { ...DTO, tipo: 'paralizacion' as const, naturalezaId: undefined, motivoParalizacionId: 3 };
+      prismaMock.segMotivoParalizacion.findUnique.mockResolvedValue({ activo: true });
+      await expect(service.crear(paral, OPERARIO)).rejects.toThrow('Falta tomar la ubicación');
+      prismaMock.segReporte.findUnique.mockResolvedValueOnce(reporte({ tipo: 'paralizacion' }));
+      await service.crear({ ...paral, latitud: -24.78, longitud: -65.41, errorMetros: 9.6 }, OPERARIO);
+      expect(prismaMock.segReporte.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ latitud: -24.78, longitud: -65.41, errorMetros: 10 }),
+      });
     });
 
     it('rechaza los campos que no corresponden al tipo', async () => {
@@ -263,6 +289,51 @@ describe('ReportesService', () => {
     it('un anulado no se califica', async () => {
       conReporte(reporte({ estado: 'anulado' }));
       await expect(service.calificar(7, { decision: 'aprobar', puntaje: 5 }, HYS1)).rejects.toThrow('anulado');
+    });
+  });
+
+  describe('corregir (HyS)', () => {
+    it('reclasifica un aviso como propuesta: descarta control y fotos del control', async () => {
+      const aviso = reporte({
+        fotos: [{ id: 1, grupo: 'control', origen: 'galeria', latitud: null, longitud: null, errorMetros: null, subidoEn: new Date() }],
+      });
+      conReporte(aviso, reporte({ tipo: 'propuesta_mejora' }));
+      const dto = { ...DTO, tipo: 'propuesta_mejora' as const, naturalezaId: undefined, controlRiesgo: undefined };
+      await service.corregir(7, dto, HYS1);
+      expect(prismaMock.segReporte.update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: expect.objectContaining({ tipo: 'propuesta_mejora', controlRiesgo: null, naturalezaId: null }),
+      });
+      expect(prismaMock.segReporteFoto.updateMany).toHaveBeenCalledWith({
+        where: { reporteId: 7, grupo: 'control', eliminadoEn: null },
+        data: expect.objectContaining({ eliminadoPorCuil: HYS1.cuil }),
+      });
+      expect(prismaMock.auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ accion: 'editar', campo: 'correccion_hys' }),
+      });
+    });
+
+    it('si estaba aprobado, recalcula los puntos en la misma transacción', async () => {
+      conReporte(reporte({ estado: 'aprobado', puntaje: 8 }), reporte({ tipo: 'inspeccion', estado: 'aprobado', puntaje: 8 }));
+      prismaMock.snuempleados.findMany.mockResolvedValueOnce([{ cuil: '20444444444' }]);
+      // HyS lo pasa a inspección: el autor deja de sumar 8 y el observado pierde 8.
+      await service.corregir(7, { ...DTO, tipo: 'inspeccion', involucrados: ['20444444444'] }, HYS1);
+      expect(prismaMock.segMovimientoPuntos.deleteMany).toHaveBeenCalledWith({ where: { reporteId: 7 } });
+      expect(prismaMock.segMovimientoPuntos.createMany).toHaveBeenCalledWith({
+        data: [{ reporteId: 7, cuil: '20444444444', fecha: new Date('2026-10-06T00:00:00Z'), puntos: -8 }],
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('un pendiente corregido no toca movimientos', async () => {
+      conReporte(reporte());
+      await service.corregir(7, DTO, HYS1);
+      expect(prismaMock.segMovimientoPuntos.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('un anulado no se corrige', async () => {
+      conReporte(reporte({ estado: 'anulado' }));
+      await expect(service.corregir(7, DTO, HYS1)).rejects.toThrow('anulado');
     });
   });
 
