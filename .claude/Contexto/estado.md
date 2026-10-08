@@ -2,12 +2,13 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-06**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-08**.
 
 ## En curso
 
-- **Rediseño completo del Frontend como ERP** (carril completo de `flujo-sertec`, fase 0: entrevista, arrancada el
-  2026-10-07): reordenar la arquitectura de información por módulos y la estética, con la skill impeccable. Insumos:
+- **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
+  nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
+  (aprobación del plan, "no aún"). Carril completo de `flujo-sertec`, entrevista arrancada el 2026-10-07: reordenar la arquitectura de información por módulos y la estética, con la skill impeccable. Insumos:
   `Frontend/PRODUCT.md`, `Frontend/DESIGN.md` (sin commitear, van al final) y la revisión del 2026-10-05 en
   `Frontend/.impeccable/critique/2026-10-05-revision-completa.md` (fuera de git). La "Tanda 1" de arreglos quedó en
   espera dentro de este rediseño.
@@ -72,19 +73,18 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-**Ramas nuevas (2026-10-07):** `main` = producción, `dev` = integración, creada en los dos repos desde `main`
-(`docs/flujo-de-ramas.md`). El rediseño va a `dev` (reemplaza a `rediseno-erp`). Congelado: en `main` del
-Frontend solo hotfixes mientras dure el rediseño. P9: Cargar primero en Facturación. Accidente no afecta
-presentismo (no se pregunta).
-
-Rediseño, fase 2 (aprobación): plan listo en `docs/superpowers/plans/2026-10-07-rediseno-erp.md` (brief:
-`2026-10-07-rediseno-erp-brief.md`; planificador Opus 5.5/max). 19 etapas (0 → 8) sobre `rediseno-erp`. Esperando
-OK del usuario ("no aún") y respuestas a las preguntas abiertas de §5 (P1-P7, P10-P12; cada una con default).
+1. Subir a GitHub la guía de ramas (`docs/flujo-de-ramas.md`, `main` = producción, `dev` = integración) para que
+   Rodrigo actualice su forma de trabajar.
+2. Rodrigo sube su PR (contra `dev`); lo revisamos juntos con el usuario y, si está bien, se mergea.
+3. Retomar el rediseño ERP sobre lo que hizo Rodrigo: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
+   (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
+   Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
+   Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra el trabajo de Rodrigo.
 
 ## Pendientes del usuario
 
-- **Hotfix §104 (Frontend #89):** está en `main` sin deployar; va a producción cuando diga "deployá". Reactivar a
-  SALAS MARIA JOSE en `testing` (quedó inactiva en la revisión del 2026-10-05).
+- **Hotfix §104 (deployado 2026-10-07):** probarlo en producción (confirmación al tocar "Activo"; Pendientes con
+  quincenas anteriores). Reactivar a SALAS MARIA JOSE en `testing` (quedó inactiva en la revisión del 2026-10-05).
 
 - **Baja de Operario (§103):** que HyS revise las 2 bajas que quedaron pendientes en su bandeja (últimos días
   trabajados 29/09 y 05/10) y las confirme o rechace. Probar la feature en producción.
