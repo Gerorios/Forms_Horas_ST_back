@@ -11,8 +11,10 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
   "Revisión 2026-10-08"): GPS del reporte obligatorio en paralización, HyS corrige en cualquier estado (recalcula
   puntos), inspectores habilitados por persona, rangos de fechas en vez de períodos, colores de aprobar/quitar, visor
   de fotos, ranking de quiénes más reportan e inspecciones HyS/inspectores. DDL aplicado en `testing`:
-  `2026-10-07-autogestion-seguridad.sql` y `2026-10-08-seguridad-ajustes.sql` (en `Horas_Sertec`, NINGUNO todavía:
-  van en ese orden en el release a `main`). Mapa de calor y metadatos de fotos de galería, descartados por ahora.
+  `2026-10-07-autogestion-seguridad.sql`, `2026-10-08-seguridad-ajustes.sql` y `2026-10-08-lanzamiento-de-modulos.sql`
+  (en `Horas_Sertec`, NINGUNO todavía: van en ese orden en el release a `main`, antes del backend). HyS lo aprobó
+  el 2026-10-08. Sale a producción en **prueba interna** (ADR-028: Lanzamiento de módulos, solo Admin, desde
+  Administración → Lanzamientos), con HyS en el piloto. Mapa de calor y metadatos de fotos de galería, descartados.
 
 - **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
   nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
