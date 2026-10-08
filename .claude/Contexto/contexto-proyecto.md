@@ -11,7 +11,8 @@
 
 ## 104. Hotfix: confirmar antes de desactivar + bandeja HyS con todas las pendientes; rama `dev` (2026-10-07)
 
-PR Frontend #89 (hotfix a `main`, merge `efda0f0`) y #90 (`main` → `dev`, `ae7225e`). **Sin deploy todavía.**
+PR Frontend #89 (hotfix a `main`, merge `efda0f0`) y #90 (`main` → `dev`, `ae7225e`). **Deployado el
+2026-10-07** (solo front; `docs/2026-10-07-hotfix-pastilla-bandeja-deploy.md`).
 Origen: revisión de diseño del 2026-10-05 (A1 y B2), arreglados ya por pedido del usuario.
 
 - **Pastilla "Activo"** (`features/admin/pill-activo.tsx`, 7 catálogos): un clic desactivaba (en la revisión dejó
