@@ -90,7 +90,8 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 1. Segunda vuelta de prueba de Autogestión de la Seguridad con HyS en local contra `testing`. Con el OK: PRs de
    back y front **contra `dev`** (`docs/flujo-de-ramas.md`), y doc de deploy (`SEGURIDAD_FOTOS_DIR` en la VPS dentro
-   del backup; los dos SQL en orden, antes del deploy del backend). Abierto con HyS: accidente y tolerancia 0; una
+   del backup; los tres SQL en orden, antes del deploy del backend: seguridad, ajustes, lanzamiento de módulos;
+   después del deploy, Admin habilita el piloto en Administración → Lanzamientos). Abierto con HyS: accidente y tolerancia 0; una
    pantalla de auditoría para ver las correcciones de HyS.
 2. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
