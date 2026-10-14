@@ -202,10 +202,16 @@ Los contratos en los que el usuario figura como jefe. Para Admin son todos.
 Definen qué puede aprobar y editar, y quiénes son sus operarios — nunca
 recortan las horas que se le muestran de esas personas.
 
+**Período del panel** (2026-10-14, ADR-030):
+Lo que consulta Control general: una quincena, un mes completo o un rango
+desde/hasta de hasta 12 meses. Lo que es por quincena (umbral de horas extra,
+comparación con la anterior, sin carga) solo se muestra con una quincena elegida.
+
 **Operario del jefe** (2026-09-03):
-Persona con al menos una carga en alguno de mis contratos en la quincena
-consultada. Los filtros del panel (contrato, provincia, operario) achican esta
-lista de personas, nunca sus horas. Es la única regla de inclusión del panel:
+Persona con al menos una carga en alguno de mis contratos en el período
+consultado. Los filtros del panel (contrato, provincia, tarea, operario) achican
+esta lista de personas, nunca sus horas — salvo en el Excel del Detalle diario,
+que exporta solo las filas que cumplen los filtros (ADR-030). Es la única regla de inclusión del panel:
 tiles, ranking, histórico, Detalle diario y zona de revisión la comparten.
 _Avoid_: operario de mi contrato, mi operario (sugiere que la persona es
 exclusiva del contrato; en la práctica trabaja para varios).

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { RegistrosHorasService } from './registros-horas.service';
 import { CreateRegistroHorasDto } from './dto/create-registro-horas.dto';
 import { CreateRegistroBatchDto } from './dto/create-registro-batch.dto';
@@ -10,11 +11,27 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { parseIds, parseLista } from '../common/quincena';
+import { PanelQueryDto } from './dto/panel-query.dto';
+import { resolverPeriodo } from './periodo-panel';
+import { ExportDetalleService } from './export-detalle.service';
+
+/** Filtros del panel desde la query (listas separadas por coma). */
+function filtrosDe(q: PanelQueryDto) {
+  return {
+    contratoIds: parseIds(q.contratoIds),
+    provinciaIds: parseIds(q.provinciaIds),
+    tareaIds: parseIds(q.tareaIds),
+    operarioCuils: parseLista(q.operarioCuils),
+  };
+}
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('registros-horas')
 export class RegistrosHorasController {
-  constructor(private service: RegistrosHorasService) {}
+  constructor(
+    private service: RegistrosHorasService,
+    private exportDetalle: ExportDetalleService,
+  ) {}
 
   @Post()
   @Roles('JefeCuadrilla', 'JefeContrato', 'Admin')
@@ -119,74 +136,53 @@ export class RegistrosHorasController {
     return this.service.misContratos({ cuil: req.user.cuil, rol: req.user.rol });
   }
 
+  @Get('mis-tareas')
+  @Roles('JefeContrato', 'Admin')
+  misTareas(@Request() req) {
+    return this.service.misTareas({ cuil: req.user.cuil, rol: req.user.rol });
+  }
+
   @Get('resumen-operarios')
   @Roles('JefeContrato', 'Admin')
-  resumenOperarios(
-    @Query('anio', ParseIntPipe) anio: number,
-    @Query('mes', ParseIntPipe) mes: number,
-    @Query('quincena', ParseIntPipe) quincena: number,
-    @Query('contratoIds') contratoIds: string | undefined,
-    @Query('provinciaIds') provinciaIds: string | undefined,
-    @Request() req,
-  ) {
-    return this.service.resumenOperarios({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
-      contratoIds: parseIds(contratoIds),
-      provinciaIds: parseIds(provinciaIds),
-    });
+  resumenOperarios(@Query() q: PanelQueryDto, @Request() req) {
+    // Ignora el filtro de operario: el resumen se filtra por operario en el
+    // cliente, porque su lista completa alimenta el selector de operarios.
+    return this.service.resumenOperarios({ cuil: req.user.cuil, rol: req.user.rol }, resolverPeriodo(q), filtrosDe(q));
   }
 
   @Get('historico-quincenas')
   @Roles('JefeContrato', 'Admin')
-  historicoQuincenas(
-    @Query('anio', ParseIntPipe) anio: number,
-    @Query('mes', ParseIntPipe) mes: number,
-    @Query('quincena', ParseIntPipe) quincena: number,
-    @Query('contratoIds') contratoIds: string | undefined,
-    @Query('provinciaIds') provinciaIds: string | undefined,
-    @Query('operarioCuils') operarioCuils: string | undefined,
-    @Request() req,
-  ) {
-    return this.service.historicoQuincenas({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
-      contratoIds: parseIds(contratoIds),
-      provinciaIds: parseIds(provinciaIds),
-      operarioCuils: parseLista(operarioCuils),
-    });
+  historicoQuincenas(@Query() q: PanelQueryDto, @Request() req) {
+    return this.service.historicoQuincenas({ cuil: req.user.cuil, rol: req.user.rol }, resolverPeriodo(q), filtrosDe(q));
   }
 
   @Get('detalle-diario')
   @Roles('JefeContrato', 'Admin')
-  detalleDiario(
-    @Query('anio', ParseIntPipe) anio: number,
-    @Query('mes', ParseIntPipe) mes: number,
-    @Query('quincena', ParseIntPipe) quincena: number,
-    @Query('contratoIds') contratoIds: string | undefined,
-    @Query('provinciaIds') provinciaIds: string | undefined,
-    @Query('operarioCuils') operarioCuils: string | undefined,
-    @Request() req,
-  ) {
-    return this.service.detalleDiario({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
-      contratoIds: parseIds(contratoIds),
-      provinciaIds: parseIds(provinciaIds),
-      operarioCuils: parseLista(operarioCuils),
+  detalleDiario(@Query() q: PanelQueryDto, @Request() req) {
+    return this.service.detalleDiario({ cuil: req.user.cuil, rol: req.user.rol }, resolverPeriodo(q), filtrosDe(q));
+  }
+
+  /** Excel del Detalle diario: solo las filas que cumplen los filtros, en mis
+   * contratos (ADR-030). */
+  @Get('detalle-diario/excel')
+  @Roles('JefeContrato', 'Admin')
+  async detalleDiarioExcel(@Query() q: PanelQueryDto, @Request() req, @Res() res: Response) {
+    const { buffer, filename } = await this.exportDetalle.generar(
+      { cuil: req.user.cuil, rol: req.user.rol },
+      resolverPeriodo(q),
+      filtrosDe(q),
+    );
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
     });
+    res.send(buffer);
   }
 
   @Get('control-diario')
   @Roles('JefeContrato', 'Admin')
-  controlDiario(
-    @Query('anio', ParseIntPipe) anio: number,
-    @Query('mes', ParseIntPipe) mes: number,
-    @Query('quincena', ParseIntPipe) quincena: number,
-    @Query('contratoIds') contratoIds: string | undefined,
-    @Query('provinciaIds') provinciaIds: string | undefined,
-    @Query('operarioCuils') operarioCuils: string | undefined,
-    @Request() req,
-  ) {
-    return this.service.controlDiario({ cuil: req.user.cuil, rol: req.user.rol }, anio, mes, quincena, {
-      contratoIds: parseIds(contratoIds),
-      provinciaIds: parseIds(provinciaIds),
-      operarioCuils: parseLista(operarioCuils),
-    });
+  controlDiario(@Query() q: PanelQueryDto, @Request() req) {
+    return this.service.controlDiario({ cuil: req.user.cuil, rol: req.user.rol }, resolverPeriodo(q), filtrosDe(q));
   }
 
   @Get('sin-carga')

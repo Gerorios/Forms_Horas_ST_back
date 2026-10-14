@@ -14,6 +14,7 @@ import { ResolverLoteDto } from './dto/resolver-lote.dto';
 import { CorregirLoteDto } from './dto/corregir-lote.dto';
 import { EmpleadosService } from '../empleados/empleados.service';
 import { rangoQuincena, quincenaAnterior, quincenasHaciaAtras } from '../common/quincena';
+import { PeriodoPanel, quincenaDeFecha } from './periodo-panel';
 import { duplicadosExactos } from '../common/duplicados';
 import {
   BajaOperario,
@@ -36,6 +37,22 @@ const UMBRAL_CONTROL_DIARIO = 13;
 // Horas extra por quincena (régimen jornalizado/fijo), ver ADR-009 — señal
 // distinta de la alerta diaria: acá interesa el acumulado del período.
 const UMBRAL_HORAS_EXTRA_QUINCENA = 88;
+
+/** Filtros del panel Control general. Ausente = sin filtro. En pantalla deciden
+ * qué personas entran, nunca recortan sus horas (glosario, "Operario del
+ * jefe"); el Excel del Detalle diario, en cambio, exporta solo las filas que
+ * los cumplen (ADR-030). */
+export type FiltrosPanel = {
+  contratoIds?: number[];
+  provinciaIds?: number[];
+  tareaIds?: number[];
+  operarioCuils?: string[];
+};
+
+/** Un registro tiene alguna de las tareas filtradas (sin filtro, siempre). */
+function pasaTareas(tareas: { tareaId: number }[], tareaIds?: number[]) {
+  return !tareaIds || tareas.some((t) => tareaIds.includes(t.tareaId));
+}
 
 const INCLUDE_BASICO = {
   operario: { select: { cuil: true, apellido_nombre: true } },
@@ -829,12 +846,10 @@ export class RegistrosHorasService {
    */
   async resumenOperarios(
     usuario: { cuil: string; rol: string },
-    anio: number,
-    mes: number,
-    quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[] } = {},
+    periodo: PeriodoPanel,
+    filtros: FiltrosPanel = {},
   ) {
-    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const { desde, hasta } = periodo;
 
     const contratos = await this.prisma.contrato.findMany({
       where:
@@ -854,9 +869,15 @@ export class RegistrosHorasService {
       : misContratoIds;
     if (contratoIdsEfectivos.length === 0) return [];
     const filtroProvincia = filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {};
+    const filtroTarea = filtros.tareaIds ? { tareas: { some: { tareaId: { in: filtros.tareaIds } } } } : {};
 
     const filas = await this.prisma.registroHoras.findMany({
-      where: { contratoId: { in: contratoIdsEfectivos }, ...filtroProvincia, fecha: { gte: desde, lte: hasta } },
+      where: {
+        contratoId: { in: contratoIdsEfectivos },
+        ...filtroProvincia,
+        ...filtroTarea,
+        fecha: { gte: desde, lte: hasta },
+      },
       select: { operarioCuil: true, horas: true, estado: true },
     });
 
@@ -922,18 +943,24 @@ export class RegistrosHorasService {
     // Horas aprobadas de la quincena anterior, mismo scope de "mis
     // contratos" (comparable con lo de arriba) — para ver si le estoy
     // aprobando de golpe mucho más (o algo por primera vez) a alguien, señal
-    // de un posible duplicado que el control diario no agarró.
-    const anterior = quincenaAnterior(anio, mes, quincena);
-    const { desde: desdeAnt, hasta: hastaAnt } = rangoQuincena(anterior.anio, anterior.mes, anterior.quincena);
-    const filasAnteriores = await this.prisma.registroHoras.findMany({
-      where: {
-        contratoId: { in: contratoIdsEfectivos },
-        ...filtroProvincia,
-        fecha: { gte: desdeAnt, lte: hastaAnt },
-        estado: 'aprobado',
-      },
-      select: { operarioCuil: true, horas: true },
-    });
+    // de un posible duplicado que el control diario no agarró. Solo cuando el
+    // período es una quincena (ADR-030): un mes o un rango no tienen "anterior".
+    const q = periodo.quincena;
+    let filasAnteriores: { operarioCuil: string; horas: unknown }[] = [];
+    if (q) {
+      const anterior = quincenaAnterior(q.anio, q.mes, q.quincena);
+      const { desde: desdeAnt, hasta: hastaAnt } = rangoQuincena(anterior.anio, anterior.mes, anterior.quincena);
+      filasAnteriores = await this.prisma.registroHoras.findMany({
+        where: {
+          contratoId: { in: contratoIdsEfectivos },
+          ...filtroProvincia,
+          ...filtroTarea,
+          fecha: { gte: desdeAnt, lte: hastaAnt },
+          estado: 'aprobado',
+        },
+        select: { operarioCuil: true, horas: true },
+      });
+    }
     const horasAprobadasAnteriorPorCuil = new Map<string, number>();
     for (const f of filasAnteriores) {
       horasAprobadasAnteriorPorCuil.set(
@@ -945,7 +972,7 @@ export class RegistrosHorasService {
     return cuils
       .map((cuil) => {
         const acc = porOperario.get(cuil)!;
-        const horasAprobadasAnterior = horasAprobadasAnteriorPorCuil.get(cuil) ?? 0;
+        const horasAprobadasAnterior = q ? (horasAprobadasAnteriorPorCuil.get(cuil) ?? 0) : null;
         const completas = horasCompletasPorCuil.get(cuil) ?? { total: acc.totalHoras, mias: acc.totalHoras };
         const totalHoras = Math.round(completas.total * 100) / 100;
         return {
@@ -954,10 +981,12 @@ export class RegistrosHorasService {
           ...acc,
           totalHoras,
           horasMisContratos: Math.round(completas.mias * 100) / 100,
-          superaHorasExtra: totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
+          // El umbral de horas extra es por quincena (ADR-009): con un mes o
+          // un rango libre no se evalúa.
+          superaHorasExtra: q !== null && totalHoras > UMBRAL_HORAS_EXTRA_QUINCENA,
           tieneAlertaCruzada: conAlertaCruzada.has(cuil),
           horasAprobadasAnterior,
-          deltaHorasAprobadas: acc.horasAprobadas - horasAprobadasAnterior,
+          deltaHorasAprobadas: horasAprobadasAnterior === null ? null : acc.horasAprobadas - horasAprobadasAnterior,
         };
       })
       .sort((a, b) => a.apellido_nombre.localeCompare(b.apellido_nombre));
@@ -1027,14 +1056,14 @@ export class RegistrosHorasService {
 
   /** Histórico de horas (pendientes + aprobadas) por quincena calendario, 24
    * quincenas (12 meses) terminando en la seleccionada — la vista "Horas Por
-   * Quincena" del viejo tablero Looker, scopeada a mis contratos. */
+   * Quincena" del viejo tablero Looker, scopeada a mis contratos. Si el
+   * período no es una quincena, termina en la que contiene su último día. */
   async historicoQuincenas(
     usuario: { cuil: string; rol: string },
-    anio: number,
-    mes: number,
-    quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+    periodo: PeriodoPanel,
+    filtros: FiltrosPanel = {},
   ) {
+    const { anio, mes, quincena } = periodo.quincena ?? quincenaDeFecha(periodo.hasta);
     const contratos = await this.prisma.contrato.findMany({
       where:
         usuario.rol === 'Admin' ? {} : { jefes: { some: { usuarioCuil: usuario.cuil } } },
@@ -1062,6 +1091,7 @@ export class RegistrosHorasService {
         contratoId: { in: contratoIdsEfectivos },
         ...(filtros.provinciaIds ? { provinciaId: { in: filtros.provinciaIds } } : {}),
         ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
+        ...(filtros.tareaIds ? { tareas: { some: { tareaId: { in: filtros.tareaIds } } } } : {}),
         fecha: { gte: desde, lte: hasta },
         estado: { not: 'desaprobado' },
       },
@@ -1107,10 +1137,8 @@ export class RegistrosHorasService {
    * Es solo visualización: aprobar sigue scopeado. */
   async detalleDiario(
     usuario: { cuil: string; rol: string },
-    anio: number,
-    mes: number,
-    quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+    periodo: PeriodoPanel,
+    filtros: FiltrosPanel = {},
   ) {
     const contratos = await this.prisma.contrato.findMany({
       where:
@@ -1123,7 +1151,7 @@ export class RegistrosHorasService {
       : misContratoIds;
     if (contratoIdsEfectivos.length === 0) return [];
 
-    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const { desde, hasta } = periodo;
     // Se traen TODAS las filas de la quincena (el filtro de contrato/provincia
     // no recorta acá: decide más abajo qué operarios entran). El de operario sí
     // va en el query, porque acota de qué personas hablamos.
@@ -1137,7 +1165,7 @@ export class RegistrosHorasService {
         observacion: true, provinciaId: true, createdAt: true, aprobadoEn: true,
         contrato: { select: { codigo: true } },
         operario: { select: { apellido_nombre: true } },
-        tareas: { select: { tarea: { select: { nombre: true } } } },
+        tareas: { select: { tareaId: true, tarea: { select: { nombre: true } } } },
         cargadoPor: { select: { cuil: true, nombreFueraNomina: true } },
         aprobadoPor: { select: { cuil: true, nombreFueraNomina: true } },
       },
@@ -1161,13 +1189,15 @@ export class RegistrosHorasService {
     const mios = new Set(misContratoIds);
     const delFiltro = new Set(contratoIdsEfectivos);
     // Un OPERARIO entra si tiene al menos una fila en mis contratos filtrados
-    // — y en la provincia filtrada, si hay filtro. Una vez adentro se muestra
-    // toda su quincena, incluidos los días 100% de contratos ajenos.
+    // — y en la provincia y con alguna de las tareas filtradas, si hay filtro.
+    // Una vez adentro se muestra todo su período, incluidos los días 100% de
+    // contratos ajenos.
     const operariosQueEntran = new Set<string>();
     for (const f of filas) {
       if (
         delFiltro.has(f.contratoId) &&
-        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId))
+        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId)) &&
+        pasaTareas(f.tareas, filtros.tareaIds)
       ) {
         operariosQueEntran.add(f.operarioCuil);
       }
@@ -1257,10 +1287,8 @@ export class RegistrosHorasService {
    * pero sí aparecen en el detalle (la historia completa del día). */
   async controlDiario(
     usuario: { cuil: string; rol: string },
-    anio: number,
-    mes: number,
-    quincena: number,
-    filtros: { contratoIds?: number[]; provinciaIds?: number[]; operarioCuils?: string[] } = {},
+    periodo: PeriodoPanel,
+    filtros: FiltrosPanel = {},
   ) {
     const contratos = await this.prisma.contrato.findMany({
       where:
@@ -1273,7 +1301,7 @@ export class RegistrosHorasService {
       : misContratoIds;
     if (contratoIdsEfectivos.length === 0) return [];
 
-    const { desde, hasta } = rangoQuincena(anio, mes, quincena);
+    const { desde, hasta } = periodo;
     // Totales por operario-día, SIN filtrar por contrato/provincia (el total
     // cruza todo); el filtro de operario sí va en el query.
     const filas = await this.prisma.registroHoras.findMany({
@@ -1282,7 +1310,10 @@ export class RegistrosHorasService {
         estado: { not: 'desaprobado' },
         ...(filtros.operarioCuils ? { operarioCuil: { in: filtros.operarioCuils } } : {}),
       },
-      select: { operarioCuil: true, fecha: true, horas: true, contratoId: true, provinciaId: true },
+      select: {
+        operarioCuil: true, fecha: true, horas: true, contratoId: true, provinciaId: true,
+        tareas: { select: { tareaId: true } },
+      },
     });
 
     type Dia = { operarioCuil: string; fecha: Date; total: number; entra: boolean };
@@ -1296,10 +1327,11 @@ export class RegistrosHorasService {
       }
       d.total += Number(f.horas);
       // El día entra si al menos una fila cae en mis contratos filtrados
-      // (y en la provincia filtrada, si hay filtro de provincia).
+      // (y en la provincia y con alguna de las tareas filtradas, si hay filtro).
       if (
         contratoIdsEfectivos.includes(f.contratoId) &&
-        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId))
+        (!filtros.provinciaIds || filtros.provinciaIds.includes(f.provinciaId)) &&
+        pasaTareas(f.tareas, filtros.tareaIds)
       )
         d.entra = true;
     }
@@ -1368,6 +1400,18 @@ export class RegistrosHorasService {
         };
       })
       .sort((a, b) => b.totalHoras - a.totalHoras || b.fecha.localeCompare(a.fecha));
+  }
+
+  /** Tareas de mis contratos (Admin: de todos) — opciones del filtro de tarea
+   * del panel Control general (ADR-030). Incluye las inactivas: un período
+   * viejo puede tener registros con tareas que hoy ya no se cargan. El mismo
+   * nombre puede repetirse en varios contratos con distinto id. */
+  async misTareas(usuario: { cuil: string; rol: string }) {
+    return this.prisma.tareaCatalogo.findMany({
+      where: usuario.rol === 'Admin' ? {} : { contrato: { jefes: { some: { usuarioCuil: usuario.cuil } } } },
+      select: { id: true, nombre: true, contratoId: true },
+      orderBy: { nombre: 'asc' },
+    });
   }
 
   /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
