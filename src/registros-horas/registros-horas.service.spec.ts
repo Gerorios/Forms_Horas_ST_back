@@ -9,6 +9,7 @@ const usuario = { cuil: '20-1-1', rol: 'Admin' };
 describe('RegistrosHorasService', () => {
   const prismaMock: any = {
     contrato: { findMany: jest.fn() },
+    tareaCatalogo: { findMany: jest.fn() },
     registroHoras: { findMany: jest.fn(), groupBy: jest.fn() },
     snuempleados: { findMany: jest.fn() },
     perfilLiquidacion: { findMany: jest.fn() },
@@ -948,6 +949,16 @@ describe('RegistrosHorasService', () => {
       expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.tareas).toEqual({
         some: { tareaId: { in: [7] } },
       });
+    });
+
+    it('mis tareas: las de mis contratos, incluidas las inactivas; Admin ve todas', async () => {
+      prismaMock.tareaCatalogo.findMany.mockResolvedValue([]);
+      await service.misTareas(jefe);
+      expect(prismaMock.tareaCatalogo.findMany.mock.calls[0][0].where).toEqual({
+        contrato: { jefes: { some: { usuarioCuil: '20-1-1' } } },
+      });
+      await service.misTareas({ cuil: '20-1-1', rol: 'Admin' });
+      expect(prismaMock.tareaCatalogo.findMany.mock.calls[1][0].where).toEqual({});
     });
   });
 });

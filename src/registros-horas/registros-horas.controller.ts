@@ -136,6 +136,12 @@ export class RegistrosHorasController {
     return this.service.misContratos({ cuil: req.user.cuil, rol: req.user.rol });
   }
 
+  @Get('mis-tareas')
+  @Roles('JefeContrato', 'Admin')
+  misTareas(@Request() req) {
+    return this.service.misTareas({ cuil: req.user.cuil, rol: req.user.rol });
+  }
+
   @Get('resumen-operarios')
   @Roles('JefeContrato', 'Admin')
   resumenOperarios(@Query() q: PanelQueryDto, @Request() req) {

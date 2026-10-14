@@ -1402,6 +1402,18 @@ export class RegistrosHorasService {
       .sort((a, b) => b.totalHoras - a.totalHoras || b.fecha.localeCompare(a.fecha));
   }
 
+  /** Tareas de mis contratos (Admin: de todos) — opciones del filtro de tarea
+   * del panel Control general (ADR-030). Incluye las inactivas: un período
+   * viejo puede tener registros con tareas que hoy ya no se cargan. El mismo
+   * nombre puede repetirse en varios contratos con distinto id. */
+  async misTareas(usuario: { cuil: string; rol: string }) {
+    return this.prisma.tareaCatalogo.findMany({
+      where: usuario.rol === 'Admin' ? {} : { contrato: { jefes: { some: { usuarioCuil: usuario.cuil } } } },
+      select: { id: true, nombre: true, contratoId: true },
+      orderBy: { nombre: 'asc' },
+    });
+  }
+
   /** Contratos del jefe (o todos los activos para Admin) — opciones del filtro
    * por contrato del panel Control general. */
   async misContratos(usuario: { cuil: string; rol: string }) {
