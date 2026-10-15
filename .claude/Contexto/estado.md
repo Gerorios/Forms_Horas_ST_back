@@ -78,6 +78,11 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
     pantalla real, no como estructuras nuevas sueltas.
   - Menú de dos niveles: sin ronda (ya decidido).
 
+- **Seguridad: punto del reporte marcado en el mapa** (ADR-027, revisión 2026-10-15), ramas
+  `feat/seguridad-punto-en-mapa` en back y front, PRs contra `dev`. DDL `docs/sql/2026-10-15-seguridad-punto-en-mapa.sql`
+  (columna `origen_punto`): aplicarlo en `testing` al mergear a `dev`; en `Horas_Sertec`, en el próximo release y
+  antes del back (`docs/2026-10-15-seguridad-punto-en-mapa-deploy.md`). Front suma `leaflet` y `react-leaflet`.
+
 ## Próximo paso
 
 1. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`

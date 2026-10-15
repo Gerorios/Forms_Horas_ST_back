@@ -399,7 +399,8 @@ baja) piden naturaleza y control del riesgo; **paralización de trabajos**
 pide motivo de paralización y control; **propuesta de mejora** es una idea,
 sin riesgo ni control. **Inspección de seguridad** la cargan HyS y los
 **inspectores** que habilite, con el mismo formulario, y resta puntos a sus
-involucrados. La paralización exige además el **punto GPS**. *Accidente* y
+involucrados. La paralización exige además el **punto del reporte** (GPS o
+marcado en el mapa). *Accidente* y
 *tolerancia 0* esperan definición de HyS (¿el accidente con baja va por acá?,
 ¿tolerancia 0 es un tipo o un caso de inspección?).
 
@@ -480,11 +481,15 @@ más adelante). Cada foto se saca **con la cámara** desde la app o se elige
 _Avoid_: adjunto, certificado (eso es de las novedades), registro fotográfico.
 
 **Punto del reporte** (en el mapa):
-La ubicación geográfica de lo reportado (latitud, longitud y error en
-metros), para saber de qué obra se trata y para un futuro mapa de calor.
-Manda el **punto GPS** que el autor toma con el botón "Tomar mi ubicación"
-(2026-10-08: obligatorio en la paralización, opcional en el resto); sin él,
-la foto sacada con la cámara desde la app con menor error. Si el celular no
+La ubicación geográfica de **dónde pasó** lo reportado (latitud, longitud y
+error en metros), para saber de qué obra se trata y para un futuro mapa de
+calor. Manda el punto propio del reporte (2026-10-08: obligatorio en la
+paralización, opcional en el resto), que tiene un **origen**: **GPS**, tomado
+con el botón "Tomar mi ubicación" estando en el lugar, o **mapa**, marcado a
+mano por quien carga el reporte más tarde o no tiene señal (2026-10-15; sin
+error en metros). Los dos valen igual. Una vez enviado, el pin del mapa solo lo
+corrige HyS (o Admin). Sin punto propio, vale la foto sacada con la cámara
+desde la app con menor error. Si el celular no
 consigue ubicación (sin señal GPS, permiso negado), la paralización igual se
 envía **sin ubicación**, con la referencia del lugar obligatoria: el reporte
 más urgente nunca queda trabado. Nunca sale del

@@ -74,6 +74,7 @@ function snapshot(r: {
   latitud: unknown;
   longitud: unknown;
   errorMetros: number | null;
+  origenPunto: string | null;
   descripcion: string;
   naturalezaId: number | null;
   motivoParalizacionId: number | null;
@@ -87,7 +88,7 @@ function snapshot(r: {
     contratoId: r.contratoId,
     tareaId: r.tareaId,
     ubicacion: r.ubicacion,
-    punto: r.latitud === null ? null : [Number(r.latitud), Number(r.longitud), r.errorMetros],
+    punto: r.latitud === null ? null : [Number(r.latitud), Number(r.longitud), r.errorMetros, r.origenPunto],
     descripcion: r.descripcion,
     naturalezaId: r.naturalezaId,
     motivoParalizacionId: r.motivoParalizacionId,
@@ -97,6 +98,16 @@ function snapshot(r: {
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+/** El punto del mapa que trae una edición es el que ya estaba guardado (el
+ * autor no lo movió). DECIMAL(9,6): se compara a 6 decimales. */
+function mismoPunto(
+  actual: { latitud: unknown; longitud: unknown; origenPunto: string | null },
+  nuevo: { latitud: number | null; longitud: number | null },
+): boolean {
+  const igual = (a: unknown, b: number | null) => a !== null && b !== null && Math.abs(Number(a) - b) < 5e-7;
+  return actual.origenPunto === 'mapa' && igual(actual.latitud, nuevo.latitud) && igual(actual.longitud, nuevo.longitud);
+}
 
 @Injectable()
 export class ReportesService {
@@ -145,7 +156,12 @@ export class ReportesService {
         controlRiesgo: r.controlRiesgo,
         involucrados: r.involucrados.map((i) => ({ cuil: i.cuil, nombre: nombres.get(i.cuil) ?? '' })),
         fotos: fotos.map(({ latitud, longitud, errorMetros, ...f }) => ({ ...f, conUbicacion: latitud !== null })),
-        punto: puntoDelReporte(fotos, { latitud: num(r.latitud), longitud: num(r.longitud), errorMetros: r.errorMetros }),
+        punto: puntoDelReporte(fotos, {
+          latitud: num(r.latitud),
+          longitud: num(r.longitud),
+          errorMetros: r.errorMetros,
+          origen: r.origenPunto,
+        }),
         puntaje: r.puntaje,
         comentarioHys: r.comentarioHys,
         calificadoPor: verCalificador && r.calificadoPorCuil ? { cuil: r.calificadoPorCuil, nombre: nombres.get(r.calificadoPorCuil) ?? '' } : null,
@@ -195,6 +211,8 @@ export class ReportesService {
     if (tienePunto && (dto.latitud === undefined || dto.longitud === undefined)) {
       throw new BadRequestException('La ubicación necesita latitud y longitud');
     }
+    // Un punto marcado en el mapa no tiene precisión de GPS: no lleva error.
+    const origenPunto = tienePunto ? (dto.origenPunto ?? 'gps') : null;
     const involucrados = [...new Set(dto.involucrados ?? [])];
     // Al corregir, HyS no está en la obra: no se le exige el punto GPS (si
     // pasa un aviso a paralización, el punto queda el que haya).
@@ -235,7 +253,8 @@ export class ReportesService {
         ubicacion: dto.ubicacion?.trim() || null,
         latitud: tienePunto ? dto.latitud! : null,
         longitud: tienePunto ? dto.longitud! : null,
-        errorMetros: tienePunto && dto.errorMetros !== undefined ? Math.round(dto.errorMetros) : null,
+        errorMetros: origenPunto === 'gps' && dto.errorMetros !== undefined ? Math.round(dto.errorMetros) : null,
+        origenPunto,
         descripcion: dto.descripcion.trim(),
         naturalezaId: dto.naturalezaId ?? null,
         motivoParalizacionId: dto.motivoParalizacionId ?? null,
@@ -266,6 +285,9 @@ export class ReportesService {
     const actual = await this.cargar(id);
     this.verificarEdicion(actual, usuario);
     const { data, involucrados } = await this.validar(dto, usuario);
+    if (data.origenPunto === 'mapa' && !mismoPunto(actual, data)) {
+      throw new ForbiddenException('Una vez enviado, el punto en el mapa solo lo corrige HyS');
+    }
     if (!CAMPOS_POR_TIPO[dto.tipo].fotosControl && actual.fotos.some((f) => f.grupo === 'control')) {
       throw new BadRequestException('Este tipo de reporte no lleva fotos del control: quitalas antes de cambiar el tipo');
     }

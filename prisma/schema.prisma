@@ -978,7 +978,7 @@ enum SegEstadoReporte {
 
 /// Reporte de Seguridad; la inspección de HyS es un tipo más. Qué campos
 /// pide cada tipo lo valida el código. `createdAt` es la fecha de envío.
-/// El punto del mapa no se guarda acá: sale de las fotos de cámara.
+/// El punto propio del reporte (latitud/longitud) manda sobre el de las fotos.
 model SegReporte {
   id                   Int              @id @default(autoincrement())
   tipo                 SegTipoReporte
@@ -989,10 +989,12 @@ model SegReporte {
   tareaId              Int              @map("tarea_id")
   ubicacion            String?          @db.VarChar(200)
   /// Punto GPS tomado con "Tomar mi ubicación" (ADR-027, revisión
-  /// 2026-10-08): manda sobre el de las fotos. Las tres juntas o vacías.
+  /// 2026-10-08) o marcado en el mapa (revisión 2026-10-15): manda sobre el
+  /// de las fotos. Van juntas o vacías; el del mapa no tiene error_metros.
   latitud              Decimal?         @db.Decimal(9, 6)
   longitud             Decimal?         @db.Decimal(9, 6)
   errorMetros          Int?             @map("error_metros") @db.UnsignedInt
+  origenPunto          SegOrigenPunto?  @map("origen_punto")
   descripcion          String           @db.Text
   naturalezaId         Int?             @map("naturaleza_id")
   motivoParalizacionId Int?             @map("motivo_paralizacion_id")
@@ -1047,6 +1049,13 @@ enum SegGrupoFoto {
 enum SegOrigenFoto {
   camara
   galeria
+}
+
+/// De dónde salió el punto propio del reporte: el GPS del celular en el
+/// lugar, o marcado a mano en el mapa (ADR-027, revisión 2026-10-15).
+enum SegOrigenPunto {
+  gps
+  mapa
 }
 
 /// Hasta 3 activas por grupo (lo valida el código). Baja lógica, como

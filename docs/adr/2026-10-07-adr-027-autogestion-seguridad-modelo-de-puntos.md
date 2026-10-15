@@ -129,3 +129,26 @@ Cambia cuatro decisiones de arriba:
   (`sth_seg_inspectores`) y no como columna de `sth_usuarios`, para no tocar
   la tabla de acceso compartida. Se descartó habilitar roles enteros: no sirve
   para "este supervisor sí y aquel no".
+
+## Revisión 2026-10-15 (punto marcado en el mapa)
+
+Cambia el "sin mapa para corregir el pin" de la revisión anterior:
+
+- **El punto también se marca en el mapa.** Lo que importa es dónde pasó, no
+  dónde está quien reporta: quien carga a la noche lo que vio a la mañana, o
+  está bajo techo sin señal, igual sabe el lugar. Al crear el reporte, al
+  lado de "Tomar mi ubicación" está "Marcarla en el mapa" (Leaflet +
+  OpenStreetMap, con búsqueda de direcciones en Nominatim; todo gratuito, sin
+  claves). El mapa arranca en la capital de la provincia del reporte, no en el
+  GPS de la persona.
+- **El punto guarda su origen** (`origen_punto`: `gps` o `mapa`) para que HyS
+  distinga en el panel lo tomado en el lugar de lo marcado a mano. El del mapa
+  no tiene `error_metros`. Los dos valen igual, también para la paralización.
+- **Una vez enviado, el pin del mapa solo lo mueve HyS (o Admin)**, desde la
+  corrección; queda en la auditoría. El autor, al editar su reporte pendiente,
+  puede retomar el GPS o quitar el punto, pero no moverlo en el mapa.
+- **Sin puntos extra por tener ubicación.** El formulario invita a marcarla
+  ("HyS llega más rápido a la obra y lo tiene en cuenta al calificar"); el
+  puntaje lo sigue decidiendo HyS al aprobar.
+
+Alternativa descartada: Google Maps (pide una clave con facturación).
