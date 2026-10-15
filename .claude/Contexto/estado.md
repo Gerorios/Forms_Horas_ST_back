@@ -80,16 +80,17 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-1. Release a `main` pendiente (Control general §105 y Seguridad §106, en `dev` sin deploy). Los tres SQL de
-   Seguridad van a `Horas_Sertec` en orden y antes del backend (`docs/2026-10-14-autogestion-seguridad-deploy.md`).
-   Abierto con HyS: accidente y tolerancia 0; una pantalla de auditoría para ver las correcciones de HyS.
-2. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
+1. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
    Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra Autogestión de la
    Seguridad (módulo nuevo, ADR-029 en vez de 027).
 
 ## Pendientes del usuario
+
+- **Release del 2026-10-15 (§105 y §106, deployado):** probar Control general (rango, filtro de tarea, Excel) y
+  Seguridad (entrar como HyS y cargar un reporte con foto; un usuario fuera del piloto no lo ve; Admin →
+  Lanzamientos). Abierto con HyS: accidente y tolerancia 0; pantalla de auditoría de sus correcciones.
 
 - **Hotfix §104 (deployado 2026-10-07):** probarlo en producción (confirmación al tocar "Activo"; Pendientes con
   quincenas anteriores). Reactivar a SALAS MARIA JOSE en `testing` (quedó inactiva en la revisión del 2026-10-05).

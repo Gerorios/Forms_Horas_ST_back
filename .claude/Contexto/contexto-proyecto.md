@@ -11,8 +11,10 @@
 
 ## 106. Autogestión de la Seguridad y Lanzamiento de módulos (2026-10-15)
 
-PRs de Rodrigo Carrazana: Backend #110 (merge `9b66e36`) y Frontend #91 (merge `f040db5`), **en `dev`, sin
-deploy**. ADR-027 (Autogestión de la Seguridad) y ADR-028 (Lanzamiento de módulos: prueba interna o para todos,
+PRs de Rodrigo Carrazana: Backend #110 (merge `9b66e36`) y Frontend #91 (merge `f040db5`). **Deployado el
+2026-10-15** en el release `dev` → `main` (Backend #113, Frontend #93), junto con Control general (§105): los 3 SQL
+en `Horas_Sertec` antes del back, carpeta de fotos y `SEGURIDAD_FOTOS_DIR`
+(`docs/2026-10-14-autogestion-seguridad-deploy.md`, sección "Ejecución 2026-10-15"). ADR-027 (Autogestión de la Seguridad) y ADR-028 (Lanzamiento de módulos: prueba interna o para todos,
 desde Administración → Lanzamientos). HyS lo aprobó el 2026-10-08, tras dos pruebas.
 
 **Qué hace:** reportes de seguridad (aviso de riesgo, incidente, paralización con GPS obligatorio, propuesta de
@@ -38,8 +40,8 @@ suite completa, pasan solos 42/42).
 
 ## 105. Control general: período libre, filtro de tarea y Excel del Detalle diario (2026-10-14)
 
-PRs de Rodrigo Carrazana: Backend #111 (merge `5ad1abb`) y Frontend #92 (merge `27e2265`), **en `dev`, sin
-deploy** (va con el próximo release). ADR-030 (`docs/adr/2026-10-14-adr-030-periodo-del-panel-y-exportacion.md`).
+PRs de Rodrigo Carrazana: Backend #111 (merge `5ad1abb`) y Frontend #92 (merge `27e2265`). **Deployado el
+2026-10-15** en el release con Seguridad (§106). ADR-030 (`docs/adr/2026-10-14-adr-030-periodo-del-panel-y-exportacion.md`).
 Primer trabajo que entró con el flujo de ramas nuevo.
 
 **Qué hace:** el panel acepta un rango desde/hasta (tope 12 meses) o un mes sin quincena; filtro por tarea (por
