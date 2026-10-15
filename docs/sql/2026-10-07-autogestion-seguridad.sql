@@ -30,10 +30,12 @@
 --   que un dato inválido dé error y no se guarde en silencio.
 --
 -- ROLLBACK (ninguna otra tabla depende de estas):
---   DROP TABLE sth_seg_movimientos_puntos, sth_seg_reporte_fotos,
+--   DROP TABLE IF EXISTS sth_seg_movimientos_puntos, sth_seg_reporte_fotos,
 --              sth_seg_reporte_involucrados, sth_seg_reportes,
 --              sth_seg_periodos, sth_seg_motivos_paralizacion,
 --              sth_seg_naturalezas;
+--   (IF EXISTS: sth_seg_periodos ya la borra 2026-10-08-seguridad-ajustes.sql;
+--   sin él, el DROP entero falla y no borra ninguna.)
 -- =====================================================================
 
 SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION';
