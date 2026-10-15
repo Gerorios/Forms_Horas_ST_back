@@ -6,18 +6,6 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## En curso
 
-- **Autogestión de la Seguridad** (rama `feat/autogestion-seguridad` en back y front, desde `dev` el 2026-10-08;
-  PRs Backend #110 y Frontend #91 contra `dev` el 2026-10-14, tras la segunda prueba con HyS, OK; revisados el
-  2026-10-14/15, 3 high arreglados en la rama, plan `docs/superpowers/plans/2026-10-14-revision-seguridad.md`): etapas 1–3 hechas y revisión del 2026-10-08 tras la primera prueba con HyS (ADR-027, sección
-  "Revisión 2026-10-08"): GPS del reporte obligatorio en paralización, HyS corrige en cualquier estado (recalcula
-  puntos), inspectores habilitados por persona, rangos de fechas en vez de períodos, colores de aprobar/quitar, visor
-  de fotos, ranking de quiénes más reportan e inspecciones HyS/inspectores. DDL aplicado en `testing`:
-  `2026-10-07-autogestion-seguridad.sql`, `2026-10-08-seguridad-ajustes.sql` y `2026-10-08-lanzamiento-de-modulos.sql`
-  (en `Horas_Sertec`, NINGUNO todavía: van en ese orden en el release a `main`, antes del backend). HyS lo aprobó
-  el 2026-10-08. Sale a producción en **prueba interna** (ADR-028: Lanzamiento de módulos, solo Admin, desde
-  Administración → Lanzamientos), con HyS en el piloto. Mapa de calor y metadatos de fotos de galería, descartados.
-  Deploy escrito, sin ejecutar: `docs/2026-10-14-autogestion-seguridad-deploy.md` (va en el release a `main`).
-
 - **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
   nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
   (aprobación del plan, "no aún"). Carril completo de `flujo-sertec`, entrevista arrancada el 2026-10-07: reordenar la arquitectura de información por módulos y la estética, con la skill impeccable. Insumos:
@@ -52,6 +40,8 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
   reporte y Mis reportes y puntos para todos; Panel, Ranking y tableros e Inspectores para HyS/Admin) y decidir qué
   pasa con su acceso directo en el Inicio ("¿Viste un riesgo en campo? → Reportar"), que choca con "sin
   tarjetas-enlace". Sus pantallas se hicieron sin impeccable: pasarlas por la skill (sobre todo la de celular).
+  Decidido el 2026-10-15: los gráficos del Ranking de Seguridad (barras por categoría y columnas apiladas por mes,
+  hechos con divs) pasan a Recharts en el rediseño; la barrita de proporción de la tarjeta queda (es un medidor).
 
   Estructuras elegidas con impeccable (`concept-seed`, modo operate; regla nueva: todo diseño del Front con la
   skill, ver `CLAUDE.md` raíz):
@@ -90,11 +80,10 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-1. Mergear Autogestión de la Seguridad a `dev` (Backend #110, Frontend #91) y, en el release a `main`, los tres SQL
-   en `Horas_Sertec` en orden antes del backend. Abierto con HyS: accidente y tolerancia 0; una pantalla de
-   auditoría para ver las correcciones de HyS.
-2. Releases a `main` pendientes: Control general (§105) está en `dev` sin deploy; va con el próximo release.
-3. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
+1. Release a `main` pendiente (Control general §105 y Seguridad §106, en `dev` sin deploy). Los tres SQL de
+   Seguridad van a `Horas_Sertec` en orden y antes del backend (`docs/2026-10-14-autogestion-seguridad-deploy.md`).
+   Abierto con HyS: accidente y tolerancia 0; una pantalla de auditoría para ver las correcciones de HyS.
+2. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
    Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra Autogestión de la
