@@ -2,12 +2,13 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-14**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-15**.
 
 ## En curso
 
 - **Autogestión de la Seguridad** (rama `feat/autogestion-seguridad` en back y front, desde `dev` el 2026-10-08;
-  PRs contra `dev` el 2026-10-14, tras la segunda prueba con HyS, OK): etapas 1–3 hechas y revisión del 2026-10-08 tras la primera prueba con HyS (ADR-027, sección
+  PRs Backend #110 y Frontend #91 contra `dev` el 2026-10-14, tras la segunda prueba con HyS, OK; revisados el
+  2026-10-14/15, 3 high arreglados en la rama, plan `docs/superpowers/plans/2026-10-14-revision-seguridad.md`): etapas 1–3 hechas y revisión del 2026-10-08 tras la primera prueba con HyS (ADR-027, sección
   "Revisión 2026-10-08"): GPS del reporte obligatorio en paralización, HyS corrige en cualquier estado (recalcula
   puntos), inspectores habilitados por persona, rangos de fechas en vez de períodos, colores de aprobar/quitar, visor
   de fotos, ranking de quiénes más reportan e inspecciones HyS/inspectores. DDL aplicado en `testing`:
@@ -16,14 +17,6 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
   el 2026-10-08. Sale a producción en **prueba interna** (ADR-028: Lanzamiento de módulos, solo Admin, desde
   Administración → Lanzamientos), con HyS en el piloto. Mapa de calor y metadatos de fotos de galería, descartados.
   Deploy escrito, sin ejecutar: `docs/2026-10-14-autogestion-seguridad-deploy.md` (va en el release a `main`).
-
-- **Exportación de tareas por período** (pedido de los jefes de contrato, 2026-10-14; plan aprobado, sin arrancar):
-  rama `feat/exportacion-tareas-periodo` desde `dev` en back y front, PR contra `dev`, sin DDL. Control general
-  con período año+mes+quincena opcional (sin quincena = mes completo) o desde/hasta (manda sobre el mes, tope 12
-  meses); filtros contrato, tarea (nuevo), provincia, operario y Limpiar filtros; +88hs, Sin carga y la comparación
-  con la anterior solo con quincena elegida. Excel del Detalle diario armado en el back (exceljs): solo lo filtrado
-  (mis contratos ∩ filtros, sin contratos ajenos), una fila por registro con las tareas juntas, con móviles y
-  observación. ADR corto del período del panel.
 
 - **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
   nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
@@ -97,9 +90,10 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-1. Revisión y merge de los PRs de Autogestión de la Seguridad a `dev`. Abierto con HyS: accidente y tolerancia 0;
-   una pantalla de auditoría para ver las correcciones de HyS.
-2. Exportación de tareas por período (ver En curso).
+1. Mergear Autogestión de la Seguridad a `dev` (Backend #110, Frontend #91) y, en el release a `main`, los tres SQL
+   en `Horas_Sertec` en orden antes del backend. Abierto con HyS: accidente y tolerancia 0; una pantalla de
+   auditoría para ver las correcciones de HyS.
+2. Releases a `main` pendientes: Control general (§105) está en `dev` sin deploy; va con el próximo release.
 3. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
