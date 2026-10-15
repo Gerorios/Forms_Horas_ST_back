@@ -20,6 +20,10 @@ const LIMITE_ARCHIVO_POR_RUTA: { prefijo: string; mensaje: string }[] = [
     prefijo: '/certificaciones/carga/preview',
     mensaje: 'El archivo supera el máximo permitido (20 MB). Achicá el Excel/PDF o dividilo en partes más chicas.',
   },
+  {
+    prefijo: '/seguridad/reportes',
+    mensaje: 'La foto supera el máximo permitido (10 MB). Sacala con menos calidad.',
+  },
 ];
 
 const MENSAJE_LIMIT_FILE_SIZE_DEFAULT =

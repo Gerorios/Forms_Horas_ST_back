@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CertificacionesModule } from '../certificaciones/certificaciones.module';
+import { LanzamientosModule } from '../lanzamientos/lanzamientos.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CertificacionesModule } from '../certificaciones/certificaciones.module
       inject: [ConfigService],
     }),
     CertificacionesModule,
+    LanzamientosModule,
   ],
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
   controllers: [AuthController],

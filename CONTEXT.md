@@ -22,11 +22,21 @@ empresa: **Operación** (reporte diario, mis registros, aprobaciones, control
 general, km por tantos, combustible), **Personas** (novedades, ausencias),
 **Resultados operativos** (liquidación con quincena, análisis, cierres,
 perfiles y tarifas; certificaciones y facturación) y **Administración**
-(usuarios y catálogos). El área da contexto al encabezado de cada módulo. No decide
+(usuarios y catálogos), y desde 2026-10-07 **Seguridad** (reportes, mis
+puntos, panel de HyS, ranking y períodos). El área da contexto al encabezado de cada módulo. No decide
 permisos: eso sigue siendo del rol; un área sin módulos visibles para la
 persona no se muestra.
 _Avoid_: sección, categoría del menú, "Dinero" (nombre descartado del área de
 resultados).
+
+**Lanzamiento** (de un módulo, 2026-10-08):
+Si un módulo nuevo está **interno** (lo ven Admin y los roles y personas que
+Admin habilita para probarlo) o **para todos**. Lo decide solo Admin, desde
+Administración → Lanzamientos, sin deploy. Decide si el módulo **se ve**; lo
+que cada uno puede hacer adentro lo siguen decidiendo los roles. Los módulos
+no registrados se ven como siempre. Ver ADR-028.
+_Avoid_: feature flag, beta (no son palabras del negocio), piloto como estado
+(el estado es "interno"; el piloto es la gente que lo prueba).
 
 ### Precios y liquidación
 
@@ -202,10 +212,16 @@ Los contratos en los que el usuario figura como jefe. Para Admin son todos.
 Definen qué puede aprobar y editar, y quiénes son sus operarios — nunca
 recortan las horas que se le muestran de esas personas.
 
+**Período del panel** (2026-10-14, ADR-030):
+Lo que consulta Control general: una quincena, un mes completo o un rango
+desde/hasta de hasta 12 meses. Lo que es por quincena (umbral de horas extra,
+comparación con la anterior, sin carga) solo se muestra con una quincena elegida.
+
 **Operario del jefe** (2026-09-03):
-Persona con al menos una carga en alguno de mis contratos en la quincena
-consultada. Los filtros del panel (contrato, provincia, operario) achican esta
-lista de personas, nunca sus horas. Es la única regla de inclusión del panel:
+Persona con al menos una carga en alguno de mis contratos en el período
+consultado. Los filtros del panel (contrato, provincia, tarea, operario) achican
+esta lista de personas, nunca sus horas — salvo en el Excel del Detalle diario,
+que exporta solo las filas que cumplen los filtros (ADR-030). Es la única regla de inclusión del panel:
 tiles, ranking, histórico, Detalle diario y zona de revisión la comparten.
 _Avoid_: operario de mi contrato, mi operario (sugiere que la persona es
 exclusiva del contrato; en la práctica trabaja para varios).
@@ -355,6 +371,202 @@ NOVEDADES. Se dio de baja por ADR-023 porque no se usaba. Los cierres ya
 emitidos la conservan congelada; los nuevos no la traen.
 _Avoid_: modalidad de hora extra (nombre viejo, ADR-011), "pago en B" como si
 fuera una configuración vigente.
+
+### Autogestión de la Seguridad (2026-10-07, en diseño)
+
+**Autogestión de la Seguridad**:
+Módulo para medir de forma individual la actitud ante la seguridad con
+**reportes de seguridad**: los que sube cualquier persona suman puntos a su
+autor, y las **inspecciones de seguridad** de HyS restan puntos a quienes
+observa. Es el primer módulo abierto a todos los usuarios, sin importar el
+rol.
+_Avoid_: "módulo de HyS" (HyS aprueba e inspecciona, pero lo usan todos),
+Métrica+ (nombre de un programa anterior de HyS del que sale este módulo).
+
+**Reporte de Seguridad**:
+Lo que sube cualquier usuario para informar algo de seguridad visto en campo.
+Tiene un **tipo** que decide qué campos pide, además de los comunes. Si HyS
+lo aprueba, el autor suma puntos; la **inspección de seguridad** es el único
+tipo que resta.
+_Avoid_: aviso de riesgo como nombre general (es uno de los tipos), novedad
+(la Novedad es otra cosa: ausencias, bajas, plus), incidente como nombre
+general (es otro de los tipos).
+
+**Tipo** (de un Reporte de Seguridad):
+Fijo, no un catálogo: cada tipo tiene campos y reglas propias, así que sumar
+uno siempre es desarrollo. **Aviso de riesgo** e **incidente** (evento sin
+baja) piden naturaleza y control del riesgo; **paralización de trabajos**
+pide motivo de paralización y control; **propuesta de mejora** es una idea,
+sin riesgo ni control. **Inspección de seguridad** la cargan HyS y los
+**inspectores** que habilite, con el mismo formulario, y resta puntos a sus
+involucrados. La paralización exige además el **punto GPS**. *Accidente* y
+*tolerancia 0* esperan definición de HyS (¿el accidente con baja va por acá?,
+¿tolerancia 0 es un tipo o un caso de inspección?).
+
+**Motivo de paralización**:
+Por qué se detuvo una tarea: catálogo de Admin (viento/clima, condición del
+área, interferencia con equipos, falta de personal, falta o falla de
+herramientas, procedimiento insuficiente, condición eléctrica, riesgo no
+previsto, falta de comunicación, cambio en las condiciones de trabajo). Es
+propio de la paralización, no una naturaleza.
+
+**Autor** (de un Reporte de Seguridad):
+El usuario que lo sube, tomado de la sesión. Es el único que suma los puntos
+del reporte: la medición es de su actitud. Nadie carga reportes a nombre de
+otro.
+_Avoid_: responsable del aviso (rótulo de la planilla de HyS; se confunde con
+el responsable del riesgo).
+
+**Fecha del reporte**:
+El día en que se vio la situación. La elige el autor y puede ser anterior a
+la **fecha de envío**, que es el momento (día y hora) en que lo subió y la
+registra el sistema.
+
+**Actividad** (de un Reporte de Seguridad):
+Qué se estaba haciendo: un contrato y una tarea de ese contrato, ambos
+obligatorios y elegidos de los mismos catálogos que la carga de horas. Lo que
+no es de un K va al contrato **OTROS** (Capacitación, Estructura, Taller
+Mecánico…). Se elige entre todos los contratos activos, no solo los
+habilitados del usuario: reportar no es imputar horas.
+_Avoid_: área / contrato (rótulo de la planilla de HyS), contrato habilitado
+(eso decide qué horas carga alguien, no dónde puede ver un riesgo).
+
+**Provincia** (de un Reporte de Seguridad):
+Donde pasó lo reportado, elegida siempre por el autor, sin precarga: no es
+la provincia de su domicilio (alguien de Tucumán puede reportar en Salta).
+_Avoid_: derivarla de `snuempleados.provincia` (eso es la zona de
+liquidación, otra cosa).
+
+**Ubicación** (de un Reporte de Seguridad):
+Dónde exactamente pasó ("Ruta 9 km 1580", "depósito Salta"), en texto libre
+y opcional. Se lee en el detalle, nunca se agrupa en tableros: para agrupar
+están la actividad, la provincia y la naturaleza.
+_Avoid_: área, lugar (sugieren un catálogo, que no existe).
+
+**Involucrados** (de un Reporte de Seguridad):
+Las personas de la nómina que estaban en la situación. En los tipos
+comunes son opcionales, no suman ni restan puntos y no ven el reporte: lo
+ven solo el autor, HyS y Admin. En una **inspección de seguridad** son las
+personas observadas, y cada una pierde los puntos de la inspección.
+_Avoid_: operario/s (rótulo de la planilla; se confunde con el autor y con
+el rol Operario).
+
+**Naturaleza** (de un Reporte de Seguridad):
+La clasificación del riesgo en un aviso de riesgo o incidente: una sola,
+elegida de un catálogo que
+mantiene únicamente Admin (Acto inseguro, Caída de objetos, Comunicación,
+Condición peligrosa, E.P.P, Herramientas y Maquinaria, Orden y limpieza,
+Señalización, Siniestro vial, Tropiezos). Una naturaleza en desuso se
+desactiva, nunca se borra.
+_Avoid_: tipo de riesgo, categoría, tipo (el tipo es del reporte, no del
+riesgo).
+
+**Control del riesgo** (de un Reporte de Seguridad):
+Lo que el autor hizo **él mismo** en campo para eliminar o reducir el
+riesgo (señalizar, vallar, sacar de uso, ordenar, corregir), en texto
+obligatorio. Es el corazón de la autogestión: elevar el problema a otro
+("avisé al supervisor") no es gestionarlo. Quien juzga si alcanzó es HyS, al
+aprobar o desaprobar: el autor no declara si el riesgo quedó controlado
+(2026-10-07, pedido de HyS).
+_Avoid_: acción correctiva (suena a un circuito con responsable y plazo, que
+no existe), solución, riesgo controlado sí/no (se descartó: no lo declara
+nadie).
+
+**Fotos del riesgo / fotos del control** (de un Reporte de Seguridad):
+Dos grupos de fotos: lo que se vio y lo que se hizo. Hasta 3 por grupo, solo
+imágenes, y por ahora ninguna es obligatoria (HyS puede exigir la del riesgo
+más adelante). Cada foto se saca **con la cámara** desde la app o se elige
+**de la galería**; solo las de cámara prueban que el autor estaba en el lugar.
+_Avoid_: adjunto, certificado (eso es de las novedades), registro fotográfico.
+
+**Punto del reporte** (en el mapa):
+La ubicación geográfica de lo reportado (latitud, longitud y error en
+metros), para saber de qué obra se trata y para un futuro mapa de calor.
+Manda el **punto GPS** que el autor toma con el botón "Tomar mi ubicación"
+(2026-10-08: obligatorio en la paralización, opcional en el resto); sin él,
+la foto sacada con la cámara desde la app con menor error. Si el celular no
+consigue ubicación (sin señal GPS, permiso negado), la paralización igual se
+envía **sin ubicación**, con la referencia del lugar obligatoria: el reporte
+más urgente nunca queda trabado. Nunca sale del
+momento de envío (se puede reportar desde casa algo visto ayer) ni de fotos
+de galería. El navegador pide el permiso una vez; la app nunca sigue a nadie,
+y el punto lo ven solo el autor, HyS y Admin.
+_Avoid_: ubicación (es el texto libre), geolocalización del usuario (no se
+ubica a la persona, se ubica el riesgo).
+
+**Calificación** (de un Reporte de Seguridad):
+HyS **aprueba** o **desaprueba** el reporte, y al aprobarlo le pone un
+puntaje de 0 a 10: son los **puntos** del autor. La aprobación depende de la
+gestión: un reporte completo sin nada gestionado se desaprueba y vale 0.
+Lleva un comentario opcional que el autor ve. HyS puede recalificar; queda
+quién calificó y cuándo.
+_Avoid_: nota, semáforo (el verde/rojo de HyS son los puntos que suman y los
+que restan, no un color por nota).
+
+**Estado** (de un Reporte de Seguridad):
+**Pendiente** (recién enviado), **aprobado** (con su puntaje),
+**desaprobado** (0 puntos, con motivo) o **anulado** (el autor lo retiró
+mientras estaba pendiente, con motivo: duplicado o error). Solo mientras está
+pendiente el autor puede editarlo; calificado, queda fijo para él. HyS puede
+**reabrirlo** (volver a pendiente), lo que borra su movimiento de puntos, y
+puede **corregirlo** en cualquier estado (2026-10-08: los operarios confunden,
+p. ej., un aviso con una propuesta): si estaba aprobado, sus movimientos se
+recalculan en el acto. Cada corrección queda en auditoría con el antes y el
+después.
+_Avoid_: descartado (desaprobar es una decisión de calidad; el error o el
+duplicado se anulan).
+
+**Alarma** (en el panel de HyS):
+Marca de un reporte pendiente de **paralización de trabajos**, el único tipo
+que habla de un riesgo inminente: va arriba de todo y suma al contador del
+menú. Se apaga cuando HyS
+lo califica. Es solo visual: lo urgente se sigue avisando por WhatsApp, y el
+reporte es el registro, no el canal de aviso.
+_Avoid_: notificación (el sistema no envía nada fuera de la app).
+
+**Inspección de seguridad**:
+Tipo de reporte que cargan en campo HyS y los **inspectores**, con el mismo
+formulario que cualquier otro. Sigue el mismo circuito: queda pendiente y HyS, ya en el
+panel, la aprueba poniéndole el puntaje a restar (0 a 10), que pierde cada
+involucrado. Quien la carga no suma nada. No tiene relación con los reportes de las personas
+observadas: alguien que nunca reportó nada puede tener puntos negativos.
+_Avoid_: descuento, sanción (suenan disciplinarios o de RRHH), observación.
+
+**Inspector** (de seguridad):
+Usuario que, sin ser HyS, puede cargar inspecciones porque HyS lo habilitó
+uno por uno (al 2026-10-08, algunos supervisores). HyS siempre puede. La
+habilitación es por persona, no por rol, y no le da acceso al panel: sus
+inspecciones las aprueba HyS.
+
+**Movimiento de puntos**:
+Cada vez que una persona gana o pierde puntos: un + para el autor de un
+reporte aprobado, un − para cada involucrado de una inspección aprobada. Lo
+genera el sistema al aprobar, recalificar o desaprobar, nunca se carga a
+mano. El **puntaje** de una persona en un período es la suma de sus
+movimientos; nunca se guarda un total.
+
+**Rango** (de los puntos):
+Las fechas desde/hasta con que se consultan puntos, ranking y tableros:
+cada uno elige el que quiere (mes, trimestre, semestre, año o libre), y por
+defecto es el año en curso. No hay períodos guardados (2026-10-08: se
+descartaron). Los puntos caen según la **fecha del reporte** (cuando pasó),
+no la de aprobación: el ranking de un rango puede cambiar mientras HyS siga
+aprobando reportes atrasados.
+_Avoid_: período (sugiere algo definido y guardado, que ya no existe).
+
+**Ranking** (de un rango):
+Las personas con al menos un movimiento en el rango, ordenadas por
+puntaje; los empates comparten puesto. Quien tiene 0 por +10 y −10 aparece;
+quien no tiene ningún movimiento, no. Un reporte desaprobado no genera
+movimiento.
+
+**Mis puntos**:
+Lo que cada persona ve de sí misma: sus reportes con estado, puntaje y
+comentario de HyS; sus movimientos del rango, y las inspecciones que la
+restaron (fecha, naturaleza, descripción y puntos), sin las fotos, sin quién
+de HyS la cargó y sin los otros involucrados. Ve además su **posición** en el
+ranking y los puntajes de quienes están delante, sin nombres. El ranking con
+nombres es solo de HyS y Admin.
 
 ### Maestros (Admin)
 

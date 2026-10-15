@@ -9,6 +9,53 @@
 > Hasta la §101, cada sección cerraba con sus **PENDIENTES**; desde la §102, los pendientes viven solo en
 > `estado.md`.
 
+## 106. Autogestión de la Seguridad y Lanzamiento de módulos (2026-10-15)
+
+PRs de Rodrigo Carrazana: Backend #110 (merge `9b66e36`) y Frontend #91 (merge `f040db5`), **en `dev`, sin
+deploy**. ADR-027 (Autogestión de la Seguridad) y ADR-028 (Lanzamiento de módulos: prueba interna o para todos,
+desde Administración → Lanzamientos). HyS lo aprobó el 2026-10-08, tras dos pruebas.
+
+**Qué hace:** reportes de seguridad (aviso de riesgo, incidente, paralización con GPS obligatorio, propuesta de
+mejora; inspección solo HyS), puntos por persona, panel y ranking para HyS/Admin, inspectores habilitados por
+persona y corrección de HyS en cualquier estado. Sale en **prueba interna** con HyS en el piloto.
+
+**DDL:** `2026-10-07-autogestion-seguridad.sql`, `2026-10-08-seguridad-ajustes.sql` y
+`2026-10-08-lanzamiento-de-modulos.sql`, aplicados en `testing`; en `Horas_Sertec` van en ese orden en el release,
+antes del back (`docs/2026-10-14-autogestion-seguridad-deploy.md`).
+
+**Revisión** (Standards + Spec + Permisos/seguridad, verificador; dos rondas por tocar login y permisos): 0 urgent,
+3 high arreglados sobre la rama, 11 minor (comentados en los dos PRs), 8 descartados. Permisos sin hallazgos:
+`ModuloGuard` a nivel de clase, sin IDOR. Arreglos, con test visto en rojo donde aplica:
+- R1 (`dc35f9c`): `GET /auth/perfil` daba 500 si fallaba la consulta de lanzamientos (back antes del SQL) y nadie
+  entraba; ahora devuelve módulos vacíos y el guard sigue cerrando.
+- R2 (`d17e28e`): el rollback del primer SQL fallaba entero; `DROP TABLE IF EXISTS`.
+- R3 (`a97f90b`): editar una paralización enviada sin GPS volvía a pedir la ubicación.
+Segunda ronda: 0 urgent, 0 high, 2 minor. Decisión del usuario: los gráficos del ranking hechos con divs pasan a
+Recharts en el rediseño. Plan: `docs/superpowers/plans/2026-10-14-revision-seguridad.md`.
+
+**Verificación:** back 864 tests, `tsc` y build; front `tsc`, build y Seguridad 105/105 (3 timeouts por carga en la
+suite completa, pasan solos 42/42).
+
+## 105. Control general: período libre, filtro de tarea y Excel del Detalle diario (2026-10-14)
+
+PRs de Rodrigo Carrazana: Backend #111 (merge `5ad1abb`) y Frontend #92 (merge `27e2265`), **en `dev`, sin
+deploy** (va con el próximo release). ADR-030 (`docs/adr/2026-10-14-adr-030-periodo-del-panel-y-exportacion.md`).
+Primer trabajo que entró con el flujo de ramas nuevo.
+
+**Qué hace:** el panel acepta un rango desde/hasta (tope 12 meses) o un mes sin quincena; filtro por tarea (por
+nombre, manda todos los ids); `GET /registros-horas/mis-tareas`; `GET /registros-horas/detalle-diario/excel`,
+filtrado estricto a mis contratos (excepción documentada a "horas completas"). Lo que se mide por quincena (+88hs,
+comparación, sin carga) queda en "—" si el período no es una quincena. Botones "Limpiar filtros" y "Exportar Excel".
+
+**Revisión** (Standards + Spec, verificador): 0 urgent, 1 high, 7 minor (comentados en los dos PRs), 7
+descartados. Permisos sin hallazgos. R1 (high, `11426d3` sobre la rama de Rodrigo): al elegir una tarea y después
+un contrato que no la tiene, el filtro decía "Tarea (1)" sin mandar ids; ahora se suelta. Test visto en rojo.
+Decisión del usuario: el rango de 12 meses con "horas completas" en pantalla queda como está.
+Plan: `docs/superpowers/plans/2026-10-14-revision-control-general.md`.
+
+**Verificación:** back 826 tests y `tsc`; front `tsc`, build y 42/42 de Control general (la suite completa tuvo
+8 timeouts por carga que pasan solos, 141/141).
+
 ## 104. Hotfix: confirmar antes de desactivar + bandeja HyS con todas las pendientes; rama `dev` (2026-10-07)
 
 PR Frontend #89 (hotfix a `main`, merge `efda0f0`) y #90 (`main` → `dev`, `ae7225e`). **Deployado el

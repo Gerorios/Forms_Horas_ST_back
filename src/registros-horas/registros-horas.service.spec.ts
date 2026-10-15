@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { RegistrosHorasService } from './registros-horas.service';
+import { periodoQuincena, resolverPeriodo } from './periodo-panel';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmpleadosService } from '../empleados/empleados.service';
 
@@ -8,6 +9,7 @@ const usuario = { cuil: '20-1-1', rol: 'Admin' };
 describe('RegistrosHorasService', () => {
   const prismaMock: any = {
     contrato: { findMany: jest.fn() },
+    tareaCatalogo: { findMany: jest.fn() },
     registroHoras: { findMany: jest.fn(), groupBy: jest.fn() },
     snuempleados: { findMany: jest.fn() },
     perfilLiquidacion: { findMany: jest.fn() },
@@ -157,7 +159,7 @@ describe('RegistrosHorasService', () => {
         { cuil: '20-2-2', apellido_nombre: 'Perez, Juan' },
       ]);
 
-      const r = await service.resumenOperarios(usuario, 2026, 8, 1);
+      const r = await service.resumenOperarios(usuario, periodoQuincena(2026, 8, 1));
 
       expect(r).toHaveLength(1);
       expect(r[0].tieneAlertaCruzada).toBe(false);
@@ -195,7 +197,7 @@ describe('RegistrosHorasService', () => {
         { cuil: '20-2-2', apellido_nombre: 'Perez, Juan' },
       ]);
 
-      const r = await service.resumenOperarios(usuario, 2026, 8, 1);
+      const r = await service.resumenOperarios(usuario, periodoQuincena(2026, 8, 1));
 
       expect(r).toHaveLength(1);
       expect(r[0].tieneAlertaCruzada).toBe(true);
@@ -233,7 +235,7 @@ describe('RegistrosHorasService', () => {
         { cuil: '20-2-2', apellido_nombre: 'Perez, Juan' },
       ]);
 
-      const r = await service.resumenOperarios(usuario, 2026, 8, 1);
+      const r = await service.resumenOperarios(usuario, periodoQuincena(2026, 8, 1));
 
       expect(r).toHaveLength(1);
       expect(r[0].tieneAlertaCruzada).toBe(false);
@@ -245,7 +247,7 @@ describe('RegistrosHorasService', () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
       prismaMock.snuempleados.findMany.mockResolvedValue([]);
-      await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         contratoIds: [2, 99],
         provinciaIds: [3],
       });
@@ -261,7 +263,7 @@ describe('RegistrosHorasService', () => {
 
     it('sin intersección de contratos devuelve [] sin tocar registros', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
-      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         contratoIds: [99],
       });
       expect(r).toEqual([]);
@@ -290,7 +292,7 @@ describe('RegistrosHorasService', () => {
         .mockResolvedValueOnce([]); // filasAnteriores
       prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20-2-2', apellido_nombre: 'Perez, Juan' }]);
 
-      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
 
       expect(r).toHaveLength(1);
       expect(r[0].totalHoras).toBe(95); // 40 + 10 + 45 (ajeno)
@@ -311,7 +313,7 @@ describe('RegistrosHorasService', () => {
         .mockResolvedValueOnce([]);
       prismaMock.snuempleados.findMany.mockResolvedValue([{ cuil: '20-2-2', apellido_nombre: 'Perez, Juan' }]);
 
-      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, { contratoIds: [1] });
+      const r = await service.resumenOperarios({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), { contratoIds: [1] });
 
       expect(r[0].totalHoras).toBe(18);
       expect(r[0].horasMisContratos).toBe(14); // 8 (K1) + 6 (K2, mío aunque filtrado)
@@ -335,7 +337,7 @@ describe('RegistrosHorasService', () => {
           { operarioCuil: 'B', fecha: new Date(2026, 6, 20), horas: 5 }, // B mío
           { operarioCuil: 'B', fecha: new Date(2026, 6, 22), horas: 3 }, // B ajeno → suma
         ]);
-      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(r[23]).toEqual({ anio: 2026, mes: 8, quincena: 1, horas: 12 });
       expect(r[22]).toEqual({ anio: 2026, mes: 7, quincena: 2, horas: 8 });
       const wheres = prismaMock.registroHoras.findMany.mock.calls.map((c) => c[0].where);
@@ -353,7 +355,7 @@ describe('RegistrosHorasService', () => {
         { fecha: new Date(2026, 7, 3), horas: 2.5 }, // 1ra ago
         { fecha: new Date(2026, 6, 20), horas: 4 }, // 2da jul
       ]);
-      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(r).toHaveLength(24);
       expect(r[23]).toEqual({ anio: 2026, mes: 8, quincena: 1, horas: 10.5 });
       expect(r[22]).toEqual({ anio: 2026, mes: 7, quincena: 2, horas: 4 });
@@ -365,7 +367,7 @@ describe('RegistrosHorasService', () => {
     it('filtra por operarioCuils cuando se pide', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
-      await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      await service.historicoQuincenas({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         operarioCuils: ['20-2-2', '20-3-3'],
       });
       const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
@@ -420,7 +422,7 @@ describe('RegistrosHorasService', () => {
           aprobadoPor: { cuil: '20-8-8', nombreFueraNomina: 'Jefe Higiene' },
         },
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       // Un renglón por operario-día, con el detalle adentro (formato
       // desplegable, decisión 2026-08-19).
       expect(r[0]).toMatchObject({
@@ -448,7 +450,7 @@ describe('RegistrosHorasService', () => {
     it('filtra por operarioCuils cuando se pide', async () => {
       prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.registroHoras.findMany.mockResolvedValue([]);
-      await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         operarioCuils: ['20-2-2'],
       });
       const where = prismaMock.registroHoras.findMany.mock.calls[0][0].where;
@@ -478,7 +480,7 @@ describe('RegistrosHorasService', () => {
         filaDe(10, 1, 'K5', new Date(2026, 7, 3)),
         filaDe(11, 9, 'K9', new Date(2026, 7, 3)), // ajena, mismo día
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(r).toHaveLength(1); // un solo renglón para el día
       expect(r[0].totalHoras).toBe(8); // 4 + 4: la jornada completa
       expect(r[0].contratos).toEqual(['K5', 'K9']);
@@ -496,7 +498,7 @@ describe('RegistrosHorasService', () => {
         filaDe(10, 1, 'K5', new Date(2026, 7, 3)),
         filaDe(20, 9, 'K9', new Date(2026, 7, 4)), // otro día, solo contrato ajeno
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(idsDe(r)).toEqual([10, 20]);
       const suelto = r.find((d) => d.fecha === '2026-08-04');
       expect(suelto?.registros[0].esMiContrato).toBe(false);
@@ -510,7 +512,7 @@ describe('RegistrosHorasService', () => {
         filaDe(12, 9, 'K9', new Date(2026, 7, 3)),
         filaDe(20, 2, 'K8', new Date(2026, 7, 5)), // día sin K5: entra igual, el operario es mío
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         contratoIds: [1],
       });
       expect(idsDe(r)).toEqual([10, 11, 12, 20]);
@@ -524,7 +526,7 @@ describe('RegistrosHorasService', () => {
         filaDe(10, 1, 'K5', new Date(2026, 7, 3), '20-2-2'),
         filaDe(30, 9, 'K9', new Date(2026, 7, 3), '20-9-9'), // otro operario, mismo día
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(idsDe(r)).toEqual([10]);
     });
 
@@ -534,7 +536,7 @@ describe('RegistrosHorasService', () => {
         filaDe(10, 1, 'K5', new Date(2026, 7, 3)),
         { ...filaDe(11, 1, 'K5', new Date(2026, 7, 3)), estado: 'desaprobado' },
       ]);
-      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.detalleDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(r[0].totalHoras).toBe(4);
       expect(r[0].registros).toHaveLength(2);
     });
@@ -582,7 +584,7 @@ describe('RegistrosHorasService', () => {
             aprobadoPor: { cuil: '20-8-8', nombreFueraNomina: 'Jefe Higiene' },
           },
         ]); // detalle de los días que superaron el umbral
-      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1);
+      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1));
       expect(r).toHaveLength(2);
       expect(r[0]).toMatchObject({
         operarioCuil: '20-3-3', operarioNombre: 'Alfa Pedro', fecha: '2026-08-04',
@@ -610,7 +612,7 @@ describe('RegistrosHorasService', () => {
         // 14hs pero todas en el contrato 2 — con filtro contratoIds=[1] el día no entra
         { operarioCuil: '20-2-2', fecha: new Date(2026, 7, 3), horas: 14, contratoId: 2, provinciaId: 1 },
       ]);
-      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, 2026, 8, 1, {
+      const r = await service.controlDiario({ cuil: '20-1-1', rol: 'JefeContrato' }, periodoQuincena(2026, 8, 1), {
         contratoIds: [1],
       });
       expect(r).toEqual([]);
@@ -727,6 +729,236 @@ describe('RegistrosHorasService', () => {
       prismaMock.novedad.findMany.mockResolvedValue(bajaConfirmada('2026-10-10'));
       const r = await service.sinCarga(2026, 10, 2);
       expect(r.map((e) => e.cuil)).toEqual(['20-2-2']);
+    });
+  });
+
+  describe('período y filtro de tarea (ADR-030)', () => {
+    const jefe = { cuil: '20-1-1', rol: 'JefeContrato' };
+
+    it('resumen con el mes completo: no evalúa +88hs ni compara con la quincena anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 100, estado: 'aprobado' }]) // filas
+        .mockResolvedValueOnce([
+          { id: 1, operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 100, contratoId: 1, tareas: [], moviles: [] },
+        ]); // filas del período completo
+      const r = await service.resumenOperarios(jefe, resolverPeriodo({ anio: 2026, mes: 9 }));
+      expect(r[0]).toMatchObject({
+        totalHoras: 100,
+        superaHorasExtra: false,
+        horasAprobadasAnterior: null,
+        deltaHorasAprobadas: null,
+      });
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledTimes(2); // sin consulta de la anterior
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.fecha).toEqual({
+        gte: new Date(2026, 8, 1),
+        lte: new Date(2026, 8, 30),
+      });
+    });
+
+    it('resumen con quincena sigue evaluando +88hs y la anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 90, estado: 'aprobado' }])
+        .mockResolvedValueOnce([
+          { id: 1, operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 90, contratoId: 1, tareas: [], moviles: [] },
+        ])
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 40 }]); // anterior
+      const r = await service.resumenOperarios(jefe, periodoQuincena(2026, 9, 1));
+      expect(r[0]).toMatchObject({ superaHorasExtra: true, horasAprobadasAnterior: 40, deltaHorasAprobadas: 50 });
+    });
+
+    it('resumen filtra por tarea en la consulta de inclusión y en la anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 4, estado: 'aprobado' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      await service.resumenOperarios(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      const wheres = prismaMock.registroHoras.findMany.mock.calls.map((c) => c[0].where);
+      expect(wheres[0].tareas).toEqual({ some: { tareaId: { in: [7] } } });
+      expect(wheres[2].tareas).toEqual({ some: { tareaId: { in: [7] } } });
+    });
+
+    it('detalle: con filtro de tarea entra quien tiene esa tarea en mis contratos, con toda su jornada', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      const base = {
+        horas: 4, estado: 'pendiente', observacion: null, provinciaId: 1,
+        createdAt: new Date(2026, 8, 3, 18), aprobadoEn: null,
+        cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super' }, aprobadoPor: null,
+      };
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { ...base, id: 1, fecha: new Date(2026, 8, 3), contratoId: 1, operarioCuil: 'A',
+          contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'A' },
+          tareas: [{ tareaId: 7, tarea: { nombre: 'Poda' } }] },
+        // A en un contrato ajeno, otra tarea: se muestra igual (jornada completa)
+        { ...base, id: 2, fecha: new Date(2026, 8, 3), contratoId: 9, operarioCuil: 'A',
+          contrato: { codigo: 'K9' }, operario: { apellido_nombre: 'A' },
+          tareas: [{ tareaId: 8, tarea: { nombre: 'Limpieza' } }] },
+        // B en mi contrato pero sin la tarea filtrada: no entra
+        { ...base, id: 3, fecha: new Date(2026, 8, 3), contratoId: 1, operarioCuil: 'B',
+          contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'B' },
+          tareas: [{ tareaId: 8, tarea: { nombre: 'Limpieza' } }] },
+      ]);
+      const r = await service.detalleDiario(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      expect(r.map((d) => d.operarioCuil)).toEqual(['A']);
+      expect(r[0].registros.map((x) => x.id)).toEqual([1, 2]);
+    });
+
+    it('detalle con rango libre consulta exactamente ese rango', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      await service.detalleDiario(jefe, resolverPeriodo({ desde: '2026-03-05', hasta: '2026-06-20' }));
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.fecha).toEqual({
+        gte: new Date(2026, 2, 5),
+        lte: new Date(2026, 5, 20),
+      });
+    });
+
+    it('control diario: el filtro de tarea decide qué días entran', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          { operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 14, contratoId: 1, provinciaId: 1,
+            tareas: [{ tareaId: 8 }] },
+        ])
+        .mockResolvedValueOnce([]);
+      const r = await service.controlDiario(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      expect(r).toEqual([]);
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledTimes(1); // ningún día entra: no busca detalle
+    });
+
+    it('histórico de un período que no es quincena termina en la quincena de su último día', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      const r = await service.historicoQuincenas(jefe, resolverPeriodo({ desde: '2026-07-01', hasta: '2026-09-10' }), {
+        tareaIds: [7],
+      });
+      expect(r).toHaveLength(24);
+      expect(r[23]).toMatchObject({ anio: 2026, mes: 9, quincena: 1 });
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.tareas).toEqual({
+        some: { tareaId: { in: [7] } },
+      });
+    });
+  });
+
+  describe('período y filtro de tarea (ADR-030)', () => {
+    const jefe = { cuil: '20-1-1', rol: 'JefeContrato' };
+
+    it('resumen con el mes completo: no evalúa +88hs ni compara con la quincena anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 100, estado: 'aprobado' }]) // filas
+        .mockResolvedValueOnce([
+          { id: 1, operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 100, contratoId: 1, tareas: [], moviles: [] },
+        ]); // filas del período completo
+      const r = await service.resumenOperarios(jefe, resolverPeriodo({ anio: 2026, mes: 9 }));
+      expect(r[0]).toMatchObject({
+        totalHoras: 100,
+        superaHorasExtra: false,
+        horasAprobadasAnterior: null,
+        deltaHorasAprobadas: null,
+      });
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledTimes(2); // sin consulta de la anterior
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.fecha).toEqual({
+        gte: new Date(2026, 8, 1),
+        lte: new Date(2026, 8, 30),
+      });
+    });
+
+    it('resumen con quincena sigue evaluando +88hs y la anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 90, estado: 'aprobado' }])
+        .mockResolvedValueOnce([
+          { id: 1, operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 90, contratoId: 1, tareas: [], moviles: [] },
+        ])
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 40 }]); // anterior
+      const r = await service.resumenOperarios(jefe, periodoQuincena(2026, 9, 1));
+      expect(r[0]).toMatchObject({ superaHorasExtra: true, horasAprobadasAnterior: 40, deltaHorasAprobadas: 50 });
+    });
+
+    it('resumen filtra por tarea en la consulta de inclusión y en la anterior', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([{ operarioCuil: 'A', horas: 4, estado: 'aprobado' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      await service.resumenOperarios(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      const wheres = prismaMock.registroHoras.findMany.mock.calls.map((c) => c[0].where);
+      expect(wheres[0].tareas).toEqual({ some: { tareaId: { in: [7] } } });
+      expect(wheres[2].tareas).toEqual({ some: { tareaId: { in: [7] } } });
+    });
+
+    it('detalle: con filtro de tarea entra quien tiene esa tarea en mis contratos, con toda su jornada', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      const base = {
+        horas: 4, estado: 'pendiente', observacion: null, provinciaId: 1,
+        createdAt: new Date(2026, 8, 3, 18), aprobadoEn: null,
+        cargadoPor: { cuil: '20-9-9', nombreFueraNomina: 'Super' }, aprobadoPor: null,
+      };
+      prismaMock.registroHoras.findMany.mockResolvedValue([
+        { ...base, id: 1, fecha: new Date(2026, 8, 3), contratoId: 1, operarioCuil: 'A',
+          contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'A' },
+          tareas: [{ tareaId: 7, tarea: { nombre: 'Poda' } }] },
+        // A en un contrato ajeno, otra tarea: se muestra igual (jornada completa)
+        { ...base, id: 2, fecha: new Date(2026, 8, 3), contratoId: 9, operarioCuil: 'A',
+          contrato: { codigo: 'K9' }, operario: { apellido_nombre: 'A' },
+          tareas: [{ tareaId: 8, tarea: { nombre: 'Limpieza' } }] },
+        // B en mi contrato pero sin la tarea filtrada: no entra
+        { ...base, id: 3, fecha: new Date(2026, 8, 3), contratoId: 1, operarioCuil: 'B',
+          contrato: { codigo: 'K5' }, operario: { apellido_nombre: 'B' },
+          tareas: [{ tareaId: 8, tarea: { nombre: 'Limpieza' } }] },
+      ]);
+      const r = await service.detalleDiario(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      expect(r.map((d) => d.operarioCuil)).toEqual(['A']);
+      expect(r[0].registros.map((x) => x.id)).toEqual([1, 2]);
+    });
+
+    it('detalle con rango libre consulta exactamente ese rango', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      await service.detalleDiario(jefe, resolverPeriodo({ desde: '2026-03-05', hasta: '2026-06-20' }));
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.fecha).toEqual({
+        gte: new Date(2026, 2, 5),
+        lte: new Date(2026, 5, 20),
+      });
+    });
+
+    it('control diario: el filtro de tarea decide qué días entran', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany
+        .mockResolvedValueOnce([
+          { operarioCuil: 'A', fecha: new Date(2026, 8, 3), horas: 14, contratoId: 1, provinciaId: 1,
+            tareas: [{ tareaId: 8 }] },
+        ])
+        .mockResolvedValueOnce([]);
+      const r = await service.controlDiario(jefe, periodoQuincena(2026, 9, 1), { tareaIds: [7] });
+      expect(r).toEqual([]);
+      expect(prismaMock.registroHoras.findMany).toHaveBeenCalledTimes(1); // ningún día entra: no busca detalle
+    });
+
+    it('histórico de un período que no es quincena termina en la quincena de su último día', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([{ id: 1 }]);
+      prismaMock.registroHoras.findMany.mockResolvedValue([]);
+      const r = await service.historicoQuincenas(jefe, resolverPeriodo({ desde: '2026-07-01', hasta: '2026-09-10' }), {
+        tareaIds: [7],
+      });
+      expect(r).toHaveLength(24);
+      expect(r[23]).toMatchObject({ anio: 2026, mes: 9, quincena: 1 });
+      expect(prismaMock.registroHoras.findMany.mock.calls[0][0].where.tareas).toEqual({
+        some: { tareaId: { in: [7] } },
+      });
+    });
+
+    it('mis tareas: las de mis contratos, incluidas las inactivas; Admin ve todas', async () => {
+      prismaMock.tareaCatalogo.findMany.mockResolvedValue([]);
+      await service.misTareas(jefe);
+      expect(prismaMock.tareaCatalogo.findMany.mock.calls[0][0].where).toEqual({
+        contrato: { jefes: { some: { usuarioCuil: '20-1-1' } } },
+      });
+      await service.misTareas({ cuil: '20-1-1', rol: 'Admin' });
+      expect(prismaMock.tareaCatalogo.findMany.mock.calls[1][0].where).toEqual({});
     });
   });
 });
