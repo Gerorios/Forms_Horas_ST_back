@@ -31,6 +31,21 @@ export class AuthService {
     }
   }
 
+  // Igual que cert: el perfil jamás se rompe. Si la tabla de lanzamientos falta
+  // (back deployado antes de su DDL) o la consulta falla, no se ve ningún módulo
+  // con lanzamiento y el resto del sistema sigue entrando; ModuloGuard igual
+  // cierra esos módulos en el back.
+  private async resolverModulos(cuil: string, rol: string) {
+    try {
+      return await this.lanzamientos.visibles({ cuil, rol });
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron resolver los módulos de ${cuil}: ${error instanceof Error ? error.message : error}`,
+      );
+      return {};
+    }
+  }
+
   async login(dto: LoginDto) {
     const usuario = await this.prisma.usuario.findUnique({
       where: { email: dto.email },
@@ -87,7 +102,7 @@ export class AuthService {
     const cert = await this.resolverCert(cuil);
     // Módulos con lanzamiento (ADR-028): cuáles ve esta persona. Los no
     // registrados no aparecen y se muestran como siempre.
-    const modulos = await this.lanzamientos.visibles({ cuil, rol: usuario.rol.nombre });
+    const modulos = await this.resolverModulos(cuil, usuario.rol.nombre);
 
     const { nombreFueraNomina, ...resto } = usuario;
     return {

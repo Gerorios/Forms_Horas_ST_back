@@ -97,4 +97,15 @@ describe('AuthService.perfil', () => {
       expect.objectContaining({ cert: { nivel: 'lectura', ks: [], inc: true } }),
     );
   });
+
+  it('si falla la consulta de lanzamientos, el perfil igual responde (modulos vacío)', async () => {
+    const { service } = buildService(null);
+    (service as any).lanzamientos.visibles = jest
+      .fn()
+      .mockRejectedValue(new Error("Table 'sth_lanzamientos' doesn't exist"));
+
+    const resultado = await service.perfil(usuarioPerfil.cuil);
+
+    expect(resultado).toEqual(expect.objectContaining({ modulos: {} }));
+  });
 });
