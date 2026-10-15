@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { AccesosService } from '../certificaciones/accesos.service';
+import { LanzamientosService } from '../lanzamientos/lanzamientos.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private accesosService: AccesosService,
+    private lanzamientos: LanzamientosService,
   ) {}
 
   // El acceso al módulo de certificaciones se degrada (cert: null) si
@@ -26,6 +28,21 @@ export class AuthService {
         `No se pudo resolver el acceso a certificaciones de ${cuil}: ${error instanceof Error ? error.message : error}`,
       );
       return null;
+    }
+  }
+
+  // Igual que cert: el perfil jamás se rompe. Si la tabla de lanzamientos falta
+  // (back deployado antes de su DDL) o la consulta falla, no se ve ningún módulo
+  // con lanzamiento y el resto del sistema sigue entrando; ModuloGuard igual
+  // cierra esos módulos en el back.
+  private async resolverModulos(cuil: string, rol: string) {
+    try {
+      return await this.lanzamientos.visibles({ cuil, rol });
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron resolver los módulos de ${cuil}: ${error instanceof Error ? error.message : error}`,
+      );
+      return {};
     }
   }
 
@@ -83,11 +100,15 @@ export class AuthService {
     });
 
     const cert = await this.resolverCert(cuil);
+    // Módulos con lanzamiento (ADR-028): cuáles ve esta persona. Los no
+    // registrados no aparecen y se muestran como siempre.
+    const modulos = await this.resolverModulos(cuil, usuario.rol.nombre);
 
     const { nombreFueraNomina, ...resto } = usuario;
     return {
       ...resto,
       cert,
+      modulos,
       empleado: empleado ?? {
         apellido_nombre: nombreFueraNomina ?? '',
         legajo: null,

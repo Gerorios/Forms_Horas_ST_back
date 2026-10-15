@@ -2,9 +2,21 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-08**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-15**.
 
 ## En curso
+
+- **Autogestión de la Seguridad** (rama `feat/autogestion-seguridad` en back y front, desde `dev` el 2026-10-08;
+  PRs Backend #110 y Frontend #91 contra `dev` el 2026-10-14, tras la segunda prueba con HyS, OK; revisados el
+  2026-10-14/15, 3 high arreglados en la rama, plan `docs/superpowers/plans/2026-10-14-revision-seguridad.md`): etapas 1–3 hechas y revisión del 2026-10-08 tras la primera prueba con HyS (ADR-027, sección
+  "Revisión 2026-10-08"): GPS del reporte obligatorio en paralización, HyS corrige en cualquier estado (recalcula
+  puntos), inspectores habilitados por persona, rangos de fechas en vez de períodos, colores de aprobar/quitar, visor
+  de fotos, ranking de quiénes más reportan e inspecciones HyS/inspectores. DDL aplicado en `testing`:
+  `2026-10-07-autogestion-seguridad.sql`, `2026-10-08-seguridad-ajustes.sql` y `2026-10-08-lanzamiento-de-modulos.sql`
+  (en `Horas_Sertec`, NINGUNO todavía: van en ese orden en el release a `main`, antes del backend). HyS lo aprobó
+  el 2026-10-08. Sale a producción en **prueba interna** (ADR-028: Lanzamiento de módulos, solo Admin, desde
+  Administración → Lanzamientos), con HyS en el piloto. Mapa de calor y metadatos de fotos de galería, descartados.
+  Deploy escrito, sin ejecutar: `docs/2026-10-14-autogestion-seguridad-deploy.md` (va en el release a `main`).
 
 - **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
   nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
@@ -34,7 +46,12 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
      `testing`; a `Horas_Sertec` recién con el merge final.
   Módulos: Operación, Personal, Liquidación (Quincenas, Cierres, Perfiles, Tarifas, Tablero de costos), Facturación
   (Certificaciones con Incidencia de MO; Tablero de certificaciones), Flota, Administración. Vocabulario nuevo →
-  ADR-027 (reemplaza las áreas del ADR-025) y `CONTEXT.md` ("Área", "Grupo de novedad").
+  **ADR-029** (reemplaza las áreas del ADR-025; era "ADR-027"; el 027 es Autogestión de la Seguridad y el 028, Lanzamiento de
+  módulos, que entran antes) y `CONTEXT.md` ("Área", "Grupo de novedad").
+  **Al retomar, sumar el módulo Seguridad** (área `seguridad` de la rama `feat/autogestion-seguridad`: Nuevo
+  reporte y Mis reportes y puntos para todos; Panel, Ranking y tableros e Inspectores para HyS/Admin) y decidir qué
+  pasa con su acceso directo en el Inicio ("¿Viste un riesgo en campo? → Reportar"), que choca con "sin
+  tarjetas-enlace". Sus pantallas se hicieron sin impeccable: pasarlas por la skill (sobre todo la de celular).
 
   Estructuras elegidas con impeccable (`concept-seed`, modo operate; regla nueva: todo diseño del Front con la
   skill, ver `CLAUDE.md` raíz):
@@ -73,13 +90,15 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Próximo paso
 
-1. Subir a GitHub la guía de ramas (`docs/flujo-de-ramas.md`, `main` = producción, `dev` = integración) para que
-   Rodrigo actualice su forma de trabajar.
-2. Rodrigo sube su PR (contra `dev`); lo revisamos juntos con el usuario y, si está bien, se mergea.
-3. Retomar el rediseño ERP sobre lo que hizo Rodrigo: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
+1. Mergear Autogestión de la Seguridad a `dev` (Backend #110, Frontend #91) y, en el release a `main`, los tres SQL
+   en `Horas_Sertec` en orden antes del backend. Abierto con HyS: accidente y tolerancia 0; una pantalla de
+   auditoría para ver las correcciones de HyS.
+2. Releases a `main` pendientes: Control general (§105) está en `dev` sin deploy; va con el próximo release.
+3. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
-   Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra el trabajo de Rodrigo.
+   Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra Autogestión de la
+   Seguridad (módulo nuevo, ADR-029 en vez de 027).
 
 ## Pendientes del usuario
 

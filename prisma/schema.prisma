@@ -50,6 +50,7 @@ model Rol {
   id       Int       @id @default(autoincrement())
   nombre   String    @unique
   usuarios Usuario[]
+  modulosPiloto ModuloPilotoRol[]
 
   @@map("sth_roles")
 }
@@ -87,6 +88,16 @@ model Usuario {
   // Módulo Certificaciones (unificación de sistemas, etapa 1 — ver ADR pendiente)
   certificacionAcceso    CertificacionAcceso?
   certificacionContratos CertificacionContratoHabilitado[]
+
+  // Autogestión de la Seguridad (ADR-027)
+  reportesSeguridad   SegReporte[] @relation("SegReporteAutor")
+  reportesCalificados SegReporte[] @relation("SegReporteCalificador")
+  inspectorSeguridad  SegInspector?  @relation("SegInspector")
+  inspectoresHabilitados SegInspector[] @relation("SegInspectorHabilitador")
+
+  // Lanzamiento de módulos (ADR-028)
+  modulosPiloto       ModuloPilotoUsuario[]
+  modulosActualizados ModuloLanzamiento[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -176,6 +187,8 @@ model Contrato {
   // Módulo Certificaciones (unificación de sistemas, etapa 1)
   certificacionUsuarios CertificacionContratoHabilitado[]
 
+  reportesSeguridad SegReporte[]
+
   @@map("sth_contratos")
 }
 
@@ -188,6 +201,7 @@ model TareaCatalogo {
   contrato           Contrato                @relation(fields: [contratoId], references: [id])
   registros          RegistroTarea[]
   cargasCombustible  CargaCombustibleTarea[]
+  reportesSeguridad  SegReporte[]
 
   @@map("sth_tareas_catalogo")
 }
@@ -210,6 +224,7 @@ model Provincia {
 
   registros          RegistroHoras[]
   cargasCombustible  CargaCombustible[]
+  reportesSeguridad  SegReporte[]
 
   @@map("sth_provincias")
 }
@@ -915,4 +930,226 @@ model CertCargaLog {
   @@index([periodo], map: "idx_periodo")
   @@index([archivoNombre], map: "idx_archivo")
   @@map("sth_cert_cargas_log")
+}
+
+// ------------------------------------------------------------
+// AUTOGESTIÓN DE LA SEGURIDAD (ADR-027; DDL manual en
+// docs/sql/2026-10-07-autogestion-seguridad.sql)
+// ------------------------------------------------------------
+
+/// Catálogo de Admin. Una entrada en desuso se desactiva, nunca se borra.
+model SegNaturaleza {
+  id        Int      @id @default(autoincrement())
+  nombre    String   @unique(map: "uq_seg_naturaleza_nombre") @db.VarChar(80)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  reportes SegReporte[]
+
+  @@map("sth_seg_naturalezas")
+}
+
+/// Catálogo de Admin, propio de la paralización de trabajos.
+model SegMotivoParalizacion {
+  id        Int      @id @default(autoincrement())
+  nombre    String   @unique(map: "uq_seg_motivo_nombre") @db.VarChar(80)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  reportes SegReporte[]
+
+  @@map("sth_seg_motivos_paralizacion")
+}
+
+enum SegTipoReporte {
+  aviso_riesgo
+  incidente
+  paralizacion
+  propuesta_mejora
+  inspeccion
+}
+
+enum SegEstadoReporte {
+  pendiente
+  aprobado
+  desaprobado
+  anulado
+}
+
+/// Reporte de Seguridad; la inspección de HyS es un tipo más. Qué campos
+/// pide cada tipo lo valida el código. `createdAt` es la fecha de envío.
+/// El punto del mapa no se guarda acá: sale de las fotos de cámara.
+model SegReporte {
+  id                   Int              @id @default(autoincrement())
+  tipo                 SegTipoReporte
+  autorCuil            String           @map("autor_cuil") @db.Char(13)
+  fechaReporte         DateTime         @map("fecha_reporte") @db.Date
+  provinciaId          Int              @map("provincia_id")
+  contratoId           Int              @map("contrato_id")
+  tareaId              Int              @map("tarea_id")
+  ubicacion            String?          @db.VarChar(200)
+  /// Punto GPS tomado con "Tomar mi ubicación" (ADR-027, revisión
+  /// 2026-10-08): manda sobre el de las fotos. Las tres juntas o vacías.
+  latitud              Decimal?         @db.Decimal(9, 6)
+  longitud             Decimal?         @db.Decimal(9, 6)
+  errorMetros          Int?             @map("error_metros") @db.UnsignedInt
+  descripcion          String           @db.Text
+  naturalezaId         Int?             @map("naturaleza_id")
+  motivoParalizacionId Int?             @map("motivo_paralizacion_id")
+  controlRiesgo        String?          @map("control_riesgo") @db.Text
+  estado               SegEstadoReporte @default(pendiente)
+  /// 0 a 10, solo con estado = aprobado (CHECK en la base).
+  puntaje              Int?             @db.UnsignedTinyInt
+  comentarioHys        String?          @map("comentario_hys") @db.Text
+  calificadoPorCuil    String?          @map("calificado_por_cuil") @db.Char(13)
+  calificadoEn         DateTime?        @map("calificado_en") @db.DateTime(3)
+  motivoAnulacion      String?          @map("motivo_anulacion") @db.Text
+  anuladoEn            DateTime?        @map("anulado_en") @db.DateTime(3)
+  createdAt            DateTime         @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime         @updatedAt @map("updated_at") @db.DateTime(3)
+
+  autor              Usuario                @relation("SegReporteAutor", fields: [autorCuil], references: [cuil], map: "fk_seg_reporte_autor")
+  calificadoPor      Usuario?               @relation("SegReporteCalificador", fields: [calificadoPorCuil], references: [cuil], map: "fk_seg_reporte_calificador")
+  provincia          Provincia              @relation(fields: [provinciaId], references: [id], map: "fk_seg_reporte_provincia")
+  contrato           Contrato               @relation(fields: [contratoId], references: [id], map: "fk_seg_reporte_contrato")
+  tarea              TareaCatalogo          @relation(fields: [tareaId], references: [id], map: "fk_seg_reporte_tarea")
+  naturaleza         SegNaturaleza?         @relation(fields: [naturalezaId], references: [id], map: "fk_seg_reporte_naturaleza")
+  motivoParalizacion SegMotivoParalizacion? @relation(fields: [motivoParalizacionId], references: [id], map: "fk_seg_reporte_motivo")
+
+  involucrados SegReporteInvolucrado[]
+  fotos        SegReporteFoto[]
+  movimientos  SegMovimientoPuntos[]
+
+  @@index([estado, tipo], map: "idx_seg_reporte_estado")
+  @@index([fechaReporte], map: "idx_seg_reporte_fecha")
+  @@index([autorCuil, fechaReporte], map: "idx_seg_reporte_autor")
+  @@map("sth_seg_reportes")
+}
+
+/// Personas de la nómina en la situación; en la inspección pierden los
+/// puntos. Sin FK a snuempleados a propósito (ADR-008).
+model SegReporteInvolucrado {
+  reporteId Int    @map("reporte_id")
+  cuil      String @db.Char(13)
+
+  reporte SegReporte @relation(fields: [reporteId], references: [id], map: "fk_seg_involucrado_reporte")
+
+  @@id([reporteId, cuil])
+  @@index([cuil], map: "idx_seg_involucrado_cuil")
+  @@map("sth_seg_reporte_involucrados")
+}
+
+enum SegGrupoFoto {
+  riesgo
+  control
+}
+
+enum SegOrigenFoto {
+  camara
+  galeria
+}
+
+/// Hasta 3 activas por grupo (lo valida el código). Baja lógica, como
+/// NovedadAdjunto. Solo una foto de cámara lleva ubicación (CHECK).
+model SegReporteFoto {
+  id               Int           @id @default(autoincrement())
+  reporteId        Int           @map("reporte_id")
+  grupo            SegGrupoFoto
+  origen           SegOrigenFoto
+  path             String        @db.VarChar(255)
+  mimetype         String        @db.VarChar(64)
+  latitud          Decimal?      @db.Decimal(9, 6)
+  longitud         Decimal?      @db.Decimal(9, 6)
+  errorMetros      Int?          @map("error_metros") @db.UnsignedInt
+  subidoPorCuil    String        @map("subido_por_cuil") @db.Char(13)
+  subidoEn         DateTime      @default(now()) @map("subido_en") @db.DateTime(3)
+  eliminadoEn      DateTime?     @map("eliminado_en") @db.DateTime(3)
+  eliminadoPorCuil String?       @map("eliminado_por_cuil") @db.Char(13)
+
+  reporte SegReporte @relation(fields: [reporteId], references: [id], map: "fk_seg_foto_reporte")
+
+  @@index([reporteId, eliminadoEn], map: "idx_seg_foto_vigente")
+  @@map("sth_seg_reporte_fotos")
+}
+
+/// Puntos ganados (+) o perdidos (−) por una persona en un reporte. Los
+/// escribe SOLO el servicio de calificación, en la misma transacción.
+/// `fecha` copia la fecha del reporte: decide el período (ADR-027).
+model SegMovimientoPuntos {
+  id        Int      @id @default(autoincrement())
+  reporteId Int      @map("reporte_id")
+  cuil      String   @db.Char(13)
+  fecha     DateTime @db.Date
+  puntos    Int      @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  reporte SegReporte @relation(fields: [reporteId], references: [id], map: "fk_seg_movimiento_reporte")
+
+  @@unique([reporteId, cuil], map: "uq_seg_movimiento")
+  @@index([fecha, cuil], map: "idx_seg_movimiento_ranking")
+  @@index([cuil, fecha], map: "idx_seg_movimiento_persona")
+  @@map("sth_seg_movimientos_puntos")
+}
+
+/// Usuario que, sin ser HyS, puede cargar inspecciones (lo habilita HyS, uno
+/// por uno). Tabla propia para no tocar sth_usuarios (ADR-027, 2026-10-08).
+model SegInspector {
+  cuil              String   @id @db.Char(13)
+  habilitadoPorCuil String   @map("habilitado_por_cuil") @db.Char(13)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  usuario       Usuario @relation("SegInspector", fields: [cuil], references: [cuil], map: "fk_seg_inspector_usuario")
+  habilitadoPor Usuario @relation("SegInspectorHabilitador", fields: [habilitadoPorCuil], references: [cuil], map: "fk_seg_inspector_habilitador")
+
+  @@map("sth_seg_inspectores")
+}
+
+// ------------------------------------------------------------
+// LANZAMIENTO DE MÓDULOS (ADR-028; DDL manual en
+// docs/sql/2026-10-08-lanzamiento-de-modulos.sql)
+// ------------------------------------------------------------
+
+enum EstadoLanzamiento {
+  interno
+  todos
+}
+
+/// Un módulo con lanzamiento: interno (lo ven Admin y el piloto) o para
+/// todos. Los módulos que no tienen fila acá se ven como siempre.
+model ModuloLanzamiento {
+  /// Clave del código: @Modulo('seguridad') y `modulo` en NAV_ITEMS.
+  modulo             String            @id @db.VarChar(40)
+  nombre             String            @db.VarChar(80)
+  estado             EstadoLanzamiento @default(interno)
+  actualizadoPorCuil String?           @map("actualizado_por_cuil") @db.Char(13)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.DateTime(3)
+
+  actualizadoPor Usuario?              @relation(fields: [actualizadoPorCuil], references: [cuil], map: "fk_modulo_actualizado_por")
+  roles          ModuloPilotoRol[]
+  usuarios       ModuloPilotoUsuario[]
+
+  @@map("sth_modulos_lanzamiento")
+}
+
+model ModuloPilotoRol {
+  modulo String @db.VarChar(40)
+  rolId  Int    @map("rol_id")
+
+  lanzamiento ModuloLanzamiento @relation(fields: [modulo], references: [modulo], map: "fk_piloto_rol_modulo")
+  rol         Rol               @relation(fields: [rolId], references: [id], map: "fk_piloto_rol_rol")
+
+  @@id([modulo, rolId])
+  @@map("sth_modulos_piloto_roles")
+}
+
+model ModuloPilotoUsuario {
+  modulo String @db.VarChar(40)
+  cuil   String @db.Char(13)
+
+  lanzamiento ModuloLanzamiento @relation(fields: [modulo], references: [modulo], map: "fk_piloto_usuario_modulo")
+  usuario     Usuario           @relation(fields: [cuil], references: [cuil], map: "fk_piloto_usuario_cuil")
+
+  @@id([modulo, cuil])
+  @@map("sth_modulos_piloto_usuarios")
 }

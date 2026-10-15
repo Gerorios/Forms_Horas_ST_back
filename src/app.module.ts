@@ -10,6 +10,8 @@ import { CatalogosModule } from './catalogos/catalogos.module';
 import { LiquidacionModule } from './liquidacion/liquidacion.module';
 import { CargasCombustibleModule } from './cargas-combustible/cargas-combustible.module';
 import { CertificacionesModule } from './certificaciones/certificaciones.module';
+import { SeguridadModule } from './seguridad/seguridad.module';
+import { LanzamientosModule } from './lanzamientos/lanzamientos.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { CertificacionesModule } from './certificaciones/certificaciones.module'
     LiquidacionModule,
     CargasCombustibleModule,
     CertificacionesModule,
+    SeguridadModule,
+    LanzamientosModule,
   ],
 })
 export class AppModule {}
