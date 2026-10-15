@@ -80,6 +80,48 @@ describe('PuntosService', () => {
     expect(m.movimientos[0].reporteId).toBeNull();
   });
 
+  describe('mapa', () => {
+    const base = {
+      estado: 'aprobado',
+      fechaReporte: new Date('2026-10-05T00:00:00Z'),
+      puntaje: 7,
+      latitud: null,
+      longitud: null,
+      errorMetros: null,
+      origenPunto: null,
+      provincia: { nombre: 'Salta' },
+      contrato: { codigo: 'K2' },
+      tarea: { nombre: 'Conexión' },
+      naturaleza: { nombre: 'E.P.P' },
+      motivoParalizacion: null,
+      fotos: [],
+    };
+
+    it('un punto por reporte con ubicación, con su origen; sin anulados ni reportes sin punto', async () => {
+      prismaMock.segReporte.findMany.mockResolvedValue([
+        { ...base, id: 1, tipo: 'paralizacion', latitud: '-24.780000', longitud: '-65.410000', origenPunto: 'mapa' },
+        { ...base, id: 2, tipo: 'aviso_riesgo', fotos: [{ origen: 'camara', latitud: '-26.2', longitud: '-65.1', errorMetros: 9 }] },
+        { ...base, id: 3, tipo: 'incidente' },
+      ]);
+      const r = await service.mapa(RANGO);
+      expect(prismaMock.segReporte.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ estado: { not: 'anulado' } }) }),
+      );
+      expect(r.map((p) => [p.id, p.punto.origen])).toEqual([
+        [1, 'mapa'],
+        [2, 'foto'],
+      ]);
+      expect(r[0]).toMatchObject({
+        tipo: 'paralizacion',
+        fechaReporte: '2026-10-05',
+        contrato: 'K2',
+        punto: { latitud: -24.78, longitud: -65.41, errorMetros: null },
+      });
+      // La ficha no lleva texto libre.
+      expect(r[0]).not.toHaveProperty('descripcion');
+    });
+  });
+
   describe('tableros', () => {
     const rep = (autorCuil: string, tipo: string, estado: string, puntaje: number | null = null) => ({
       tipo,

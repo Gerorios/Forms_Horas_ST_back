@@ -137,10 +137,16 @@ Cambia el "sin mapa para corregir el pin" de la revisión anterior:
 - **El punto también se marca en el mapa.** Lo que importa es dónde pasó, no
   dónde está quien reporta: quien carga a la noche lo que vio a la mañana, o
   está bajo techo sin señal, igual sabe el lugar. Al crear el reporte, al
-  lado de "Tomar mi ubicación" está "Marcarla en el mapa" (Leaflet +
-  OpenStreetMap, con búsqueda de direcciones en Nominatim; todo gratuito, sin
-  claves). El mapa arranca en la capital de la provincia del reporte, no en el
-  GPS de la persona.
+  lado de "Tomar mi ubicación" está "Marcarla en el mapa" (Leaflet; todo
+  gratuito, sin claves). El mapa arranca en la capital de la provincia del
+  reporte, no en el GPS de la persona, y en **vista satelital** (Esri World
+  Imagery con rutas y nombres encima): en una ruta o en el campo el lugar se
+  reconoce por la vegetación; un botón cambia a la vista de calles
+  (OpenStreetMap). El buscador **sugiere mientras se escribe** con Photon; si
+  Photon no responde, "Buscar" usa Nominatim (que no permite autocompletar);
+  si fallan los dos, el punto se marca a mano. No se monta un servidor de
+  mapas propio: es mucha infraestructura para un buscador que es solo una
+  ayuda.
 - **El punto guarda su origen** (`origen_punto`: `gps` o `mapa`) para que HyS
   distinga en el panel lo tomado en el lugar de lo marcado a mano. El del mapa
   no tiene `error_metros`. Los dos valen igual, también para la paralización.
@@ -150,5 +156,14 @@ Cambia el "sin mapa para corregir el pin" de la revisión anterior:
 - **Sin puntos extra por tener ubicación.** El formulario invita a marcarla
   ("HyS llega más rápido a la obra y lo tiene en cuenta al calificar"); el
   puntaje lo sigue decidiendo HyS al aprobar.
+
+- **Mapa de reportes en Ranking y tableros** (HyS y Admin, `GET
+  /seguridad/mapa`): un pin por reporte del rango con punto (propio o de foto),
+  del color de su tipo, agrupados con la cantidad cuando están cerca; la ficha
+  muestra solo campos cerrados (tipo, fecha, estado y puntaje, contrato,
+  tarea, naturaleza o motivo, origen del punto) y un link al reporte. Se
+  puede cambiar a **mapa de calor**, pensado para el estudio de fin de
+  período: con pocos datos cada reporte suelto parece una zona caliente, y la
+  pantalla lo avisa.
 
 Alternativa descartada: Google Maps (pide una clave con facturación).

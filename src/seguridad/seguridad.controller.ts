@@ -172,6 +172,13 @@ export class SeguridadController {
     return this.puntos.tableros(rangoConsulta(q.desde, q.hasta, hoyAr()));
   }
 
+  /** Mapa de reportes: un punto por reporte del rango con ubicación. */
+  @Get('mapa')
+  @Roles('HyS', 'Admin')
+  mapa(@Query() q: RangoDto) {
+    return this.puntos.mapa(rangoConsulta(q.desde, q.hasta, hoyAr()));
+  }
+
   /** HyS corrige un reporte ajeno (tipo, clasificación, texto), en cualquier
    * estado salvo anulado; si estaba aprobado, se recalculan los puntos. */
   @Patch('reportes/:id/corregir')
