@@ -111,10 +111,9 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
 
 ## Pendientes del usuario
 
-- **Punto en el mapa (§107, en `dev`, sin release):** va a producción en el próximo release `dev` → `main`, con el
-  DDL en dos pasos en `Horas_Sertec` (columna antes del back, CHECK después del reinicio; doc
-  `docs/2026-10-15-seguridad-punto-en-mapa-deploy.md`). En `testing` quedan 39 reportes `[DEMO mapa]`: borrarlos
-  cuando ya no hagan falta. La carpeta local `Frontend/` necesita `npm ci` (dependencias de Leaflet) para levantar `dev`.
+- **Punto en el mapa (§107, deployado 2026-10-16):** probarlo en producción como HyS (marcar un punto en el mapa,
+  Ranking y tableros → Ver en el mapa). En `testing` quedan 39 reportes `[DEMO mapa]`: el usuario los deja por
+  ahora; borrarlos cuando lo pida.
 
 - **Release del 2026-10-15 (§105 y §106, deployado):** probar Control general (rango, filtro de tarea, Excel) y
   Seguridad (entrar como HyS y cargar un reporte con foto; un usuario fuera del piloto no lo ve; Admin →
