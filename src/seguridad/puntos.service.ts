@@ -123,6 +123,66 @@ export class PuntosService {
     };
   }
 
+  /**
+   * Mapa de reportes de HyS (ADR-027, revisión 2026-10-15): un punto por
+   * reporte del rango que tenga ubicación (la propia, GPS o mapa, o la de su
+   * foto de cámara). Sin anulados. Solo campos cerrados para la ficha: nada de
+   * texto libre ni nombres de personas.
+   */
+  async mapa(rango: Rango) {
+    const reportes = await this.prisma.segReporte.findMany({
+      where: { estado: { not: 'anulado' }, fechaReporte: filtroFecha(rango) },
+      select: {
+        id: true,
+        tipo: true,
+        estado: true,
+        fechaReporte: true,
+        puntaje: true,
+        latitud: true,
+        longitud: true,
+        errorMetros: true,
+        origenPunto: true,
+        provincia: { select: { nombre: true } },
+        contrato: { select: { codigo: true } },
+        tarea: { select: { nombre: true } },
+        naturaleza: { select: { nombre: true } },
+        motivoParalizacion: { select: { nombre: true } },
+        fotos: {
+          where: { eliminadoEn: null, origen: 'camara', latitud: { not: null } },
+          select: { origen: true, latitud: true, longitud: true, errorMetros: true },
+        },
+      },
+      orderBy: { fechaReporte: 'asc' },
+    });
+    return reportes.flatMap((r) => {
+      const punto = puntoDelReporte(
+        r.fotos.map((f) => ({ ...f, latitud: Number(f.latitud), longitud: Number(f.longitud) })),
+        {
+          latitud: r.latitud === null ? null : Number(r.latitud),
+          longitud: r.longitud === null ? null : Number(r.longitud),
+          errorMetros: r.errorMetros,
+          origen: r.origenPunto,
+        },
+      );
+      if (!punto) return [];
+      return [
+        {
+          id: r.id,
+          tipo: r.tipo,
+          estado: r.estado,
+          fechaReporte: dateADia(r.fechaReporte),
+          puntaje: r.puntaje,
+          provincia: r.provincia.nombre,
+          contrato: r.contrato.codigo,
+          tarea: r.tarea.nombre,
+          naturaleza: r.naturaleza?.nombre ?? null,
+          motivoParalizacion: r.motivoParalizacion?.nombre ?? null,
+          punto,
+        },
+      ];
+    });
+  }
+
   /** Tableros de HyS. Cada corte sale de un campo cerrado, nunca de texto
    * libre. Los anulados no cuentan para nada. */
   async tableros(rango: Rango) {

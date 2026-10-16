@@ -191,6 +191,12 @@ describe('reglas de Autogestión de la Seguridad', () => {
       expect(puntoDelReporte([camara(-26.2, 3)], { latitud: null, longitud: null, errorMetros: null })?.origen).toBe('foto');
     });
 
+    it('el punto marcado en el mapa también manda, y conserva su origen', () => {
+      expect(
+        puntoDelReporte([camara(-26.2, 3)], { latitud: -24.7, longitud: -65.4, errorMetros: null, origen: 'mapa' }),
+      ).toEqual({ latitud: -24.7, longitud: -65.4, errorMetros: null, origen: 'mapa' });
+    });
+
     it('ignora las de galería aunque traigan coordenadas', () => {
       expect(
         puntoDelReporte([{ origen: 'galeria', latitud: -24, longitud: -65, errorMetros: 1 }, camara(-26.8, 40)]),

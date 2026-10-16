@@ -15,8 +15,8 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { TIPOS_REPORTE, PUNTAJE_MAXIMO } from '../reglas';
-import type { TipoReporte } from '../reglas';
+import { ORIGENES_PUNTO, TIPOS_REPORTE, PUNTAJE_MAXIMO } from '../reglas';
+import type { OrigenPunto, TipoReporte } from '../reglas';
 
 /** Alta y edición (mientras está pendiente) de un Reporte de Seguridad. Qué
  * campos pide cada tipo lo valida `erroresDeCampos` en el servicio: acá solo
@@ -52,6 +52,12 @@ export class ReporteDto {
 
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   errorMetros?: number;
+
+  /** De dónde salió el punto: 'gps' (en el lugar) o 'mapa' (marcado a mano,
+   * sin errorMetros). Sin este campo, un punto se toma como GPS (revisión
+   * 2026-10-15). */
+  @IsOptional() @IsIn(ORIGENES_PUNTO)
+  origenPunto?: OrigenPunto;
 
   /** No se pudo tomar la ubicación: reemplaza al punto GPS obligatorio de la
    * paralización si viene la referencia del lugar (`ubicacion`). */

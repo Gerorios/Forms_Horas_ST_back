@@ -78,6 +78,14 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
     pantalla real, no como estructuras nuevas sueltas.
   - Menú de dos niveles: sin ronda (ya decidido).
 
+- **Seguridad: punto en el mapa y mapa de reportes** (ADR-027, revisión 2026-10-15), ramas
+  `feat/seguridad-punto-en-mapa`, PRs back #116 y front #94 contra `dev`, **en revisión de Gero**. Incluye el pin en
+  el mapa al reportar (satélite + sugerencias), la corrección del pin por HyS y el Mapa de reportes de Ranking y
+  tableros (pines, calor, pantalla completa). DDL `docs/sql/2026-10-15-seguridad-punto-en-mapa.sql`: en `testing` ya
+  está la columna `origen_punto`, **falta el CHECK** al mergear; en `Horas_Sertec`, en el release y antes del back
+  (`docs/2026-10-15-seguridad-punto-en-mapa-deploy.md`). **En `testing` hay 39 reportes `[DEMO mapa]`** para mostrar
+  el mapa a los encargados: borrarlos después.
+
 ## Próximo paso
 
 1. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
