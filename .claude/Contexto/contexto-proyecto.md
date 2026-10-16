@@ -11,8 +11,10 @@
 
 ## 107. Seguridad: punto en el mapa y mapa de reportes (2026-10-16)
 
-PRs de Rodrigo Carrazana: Backend #116 (merge `38ea643`) y Frontend #94 (merge `cbd82f3`), a `dev`. **Sin release
-todavía.** ADR-027, revisión 2026-10-15. Probado por el usuario en local contra `testing` antes del merge.
+PRs de Rodrigo Carrazana: Backend #116 (merge `38ea643`) y Frontend #94 (merge `cbd82f3`), a `dev`. **Deployado el
+2026-10-16** en el release `dev` → `main` (Backend #118, Frontend #95), con el DDL en dos pasos en `Horas_Sertec`
+(`docs/2026-10-15-seguridad-punto-en-mapa-deploy.md`, "Ejecución 2026-10-16"). ADR-027, revisión 2026-10-15.
+Probado por el usuario en local contra `testing` antes del merge.
 
 **Qué hace:** el autor marca el punto del reporte en el mapa además del GPS (`origen_punto` `gps`/`mapa`); el autor
 no puede mover después un pin del mapa (403) y HyS lo corrige con auditoría; mapas en satélite (Esri) con calles

@@ -1,7 +1,7 @@
 # Deploy — Seguridad: punto en el mapa y mapa de reportes (ADR-027, revisión 2026-10-15)
 
-**Estado:** pendiente. Entra a `dev` con los PRs de `feat/seguridad-punto-en-mapa` (back #116, front #94) y a
-producción en el próximo release `dev` → `main`. Con cambio de API: back y front se deployan juntos.
+**Estado:** deployado el 2026-10-16 (release `dev` → `main`: Backend #118, Frontend #95). Entró a `dev` con los PRs de
+`feat/seguridad-punto-en-mapa` (back #116, front #94). Con cambio de API: back y front se deployan juntos.
 
 Qué entra:
 
@@ -24,7 +24,7 @@ Dos scripts, porque la columna y el CHECK van a momentos distintos del deploy:
    correrlo, `SELECT COUNT(*) FROM sth_seg_reportes WHERE latitud IS NOT NULL AND origen_punto IS NULL` tiene que
    dar 0; si no, rellenar con `'gps'` (el script trae la sentencia).
 
-- **`testing`: el paso 1 se aplicó el 2026-10-15**; falta el paso 2, al mergear a `dev`.
+- **`testing`:** paso 1 el 2026-10-15, paso 2 el 2026-10-16 al mergear a `dev`.
 - `Horas_Sertec`: el paso 1 en el release antes del back y el paso 2 después del `pm2 restart` (ver Procedimiento).
 
 ## ⚠ Datos de demo en `testing`
@@ -63,3 +63,16 @@ involucrados, fotos y auditoría de esos reportes, y después los reportes.
 
 Si se aplicó el paso 2, `ALTER TABLE sth_seg_reportes DROP CHECK chk_seg_reporte_origen_punto;`; después
 `ALTER TABLE sth_seg_reportes DROP COLUMN origen_punto;` y volver back y front a los commits anotados.
+
+## Ejecución 2026-10-16
+
+- Release: Backend #118 (`main` `60ee096`), Frontend #95 (`main` `659f6e9`). Puntos de rollback: back `29715e4`,
+  front `10208f5`.
+- Antes: `Horas_Sertec` sin la columna `origen_punto`; 4 reportes, 3 con punto. Respaldo en
+  `/var/www/backups/seguridad-punto-pre-ddl-2026-10-16.json` (600, 4 filas).
+- Back: `git pull`, DDL paso 1 "Script executed successfully"; sin cambios en `package.json`; `prisma generate`,
+  build y restart → "Nest application successfully started".
+- DDL paso 2 con el back nuevo: 0 reportes con punto sin origen; CHECK "Script executed successfully".
+- Front: `git pull`, `npm ci` (784 paquetes, Leaflet incluido), build y restart.
+- Verificado: `origen_punto` = `gps` en 3 y NULL en 1 (el que no tiene punto); `chk_seg_reporte_origen_punto`
+  existe; back y front `online`; `/` y `/login` 200; `/api/seguridad/mapa` 401 sin sesión (la ruta existe).
