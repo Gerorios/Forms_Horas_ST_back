@@ -8,6 +8,14 @@ Worktrees (misma convención que el rediseño del 2026-09-21): `Frontend/.claude
 
 > **Actualización 2026-10-07 (usuario):** la rama de integración es **`dev`** (ya creada en los dos repos desde `main`), no `dev`. Flujo general en `Backend/docs/flujo-de-ramas.md`. Donde este plan dice `dev`, leé `dev`; el release final es el PR `dev` → `main`. Los dos arreglos urgentes (pastilla "Activo" y bandeja de HyS) salieron del plan como **hotfix** a `main` (P8 = sí) y se traen a `dev`. Decisiones: P9 = Cargar primero en Facturación; P14 = congelar features de Frontend en `main` (solo hotfixes); P16 confirmado: Accidente no afecta presentismo y no se pregunta al justificar. El resto de las preguntas sigue abierto.
 
+> **Actualización 2026-10-15 (al retomar, sobre lo que entró de Rodrigo):** entraron Seguridad (ADR-027), Lanzamiento de módulos (ADR-028) y Control general con período libre (ADR-030), deployados el 2026-10-15. El ADR del rediseño sigue siendo el **029** (está libre). Cambios al plan:
+> - **Séptimo módulo, Seguridad**, entre Personal y Liquidación: Nuevo reporte, Mis reportes y puntos (todos los roles), Panel de reportes, Ranking y tableros, Inspectores (HyS y Admin). En `nav.ts` cada pantalla conserva `modulo: 'seguridad'` y la regla de lanzamiento de `navForRole` (en prueba interna solo la ve el piloto) se porta a `navPorModulo` con su caso en `nav.test.ts` (1b.1).
+> - **Administración** suma Catálogos de seguridad (`/admin/seguridad`) y Lanzamientos (`/admin/lanzamientos`). Lanzamientos no es un catálogo (tarjetas por módulo): queda con su forma, estilo nuevo, en la 7a.
+> - **1a.2:** `features/seguridad/confirmar-dialog.tsx` (`ConfirmarDialog`, de Rodrigo) ya cumple casi todo lo pedido para `ConfirmDialog` (verbo, afectados, ocupado, sobre `ui/dialog`). Se **mueve a `components/`** y se completa (`puedeConfirmar`, foco de vuelta, tests), en vez de crear otro. Los 5 que lo usan cambian el import.
+> - **Inicio (Etapa 5):** el acceso directo "¿Viste un riesgo en campo? Reportar" (`page.tsx:192-205`) es una acción, no una tarjeta de módulo: **se conserva** en "Mi trabajo" (con su condición de lanzamiento). "Paralizaciones sin calificar" pasa a ser un pendiente de HyS en `pendientes.ts`. Ver P20.
+> - **Etapa 3d nueva — Seguridad (Frontend, M):** misma forma, estilo nuevo; los gráficos del Ranking (barras por categoría y columnas apiladas por mes, hechos con divs) pasan a **Recharts** (decisión del 2026-10-15); la barrita de proporción de la tarjeta queda (es un medidor); el visor de fotos (`visor-fotos.tsx`, `fixed inset-0`) pasa a `Dialogo`; `impeccable critique` sobre las 5 pantallas a 1280 y 390 px. 1 ronda. Depende de 1b; en paralelo con 3b/3c.
+> - **3c:** `control-general/page.tsx` creció a 807 líneas (rango, filtro de tarea, Excel); las líneas citadas para C1 se re-ubican con `grep` al ejecutar. "Limpiar filtros" y "Exportar Excel" se conservan.
+
 ---
 
 ## 1. Qué se pide
@@ -802,7 +810,7 @@ Además:
 | 7b | BE+FE | M | 7a | 6a, 6b |
 | 8 | ambos | M | todas | — |
 
-Orden recomendado con un solo orquestador: 0 → 1a → 2-B → 1b → 2-F → 3a → 3b → 3c → 4a → 4b → 4c → 4d → 5-B → 5-F → 6a → 6b → 7a → 7b → 8.
+Orden recomendado con un solo orquestador: 0 → 1a → 2-B → 1b → 2-F → 3a → 3b → 3c → 3d → 4a → 4b → 4c → 4d → 5-B → 5-F → 6a → 6b → 7a → 7b → 8.
 
 Los tramos del backend (2-B, 4a, 5-B, 7b-B) pueden adelantarse mientras una etapa del Frontend espera revisión.
 
@@ -878,6 +886,8 @@ Cada pregunta trae lo que se asume si nadie contesta.
 - **P10 (antes de la 3a).** ¿El historial de cargas aprobadas y rechazadas queda en Aprobaciones como vista secundaria "Resueltas"? *Default: sí.*
 - **P11 (antes de la 4b).** "N registros sin aprobar →": el Liquidador no puede abrir Aprobaciones (403). *Default: lo lleva al detalle de la quincena. Abrirle Aprobaciones sería un cambio de permisos: fuera de alcance.*
 - **P12 (antes de la 4b).** Quincenas abiertas de hace más de 3 meses (probablemente anteriores a que existieran los cierres): colapsadas, sin detalle. *Default: así.*
+- **P20 (antes de la 5).** ¿El acceso directo "Reportar" de Seguridad se queda en el Inicio "Mi trabajo"? *Default: sí, como acción (no es una tarjeta de módulo), solo para quien ve el módulo.*
+- **P21 (antes de la 1b).** ¿Dónde va Seguridad en el menú? *Default: módulo propio entre Personal y Liquidación, como hoy.*
 - **P14 (ahora).** ¿Se congelan las features de Frontend en `main` mientras dure el rediseño? *Default: sí; lo urgente se hace en `main` y se trae con el bloque S.*
 
 ### Menores: se sigue con el default

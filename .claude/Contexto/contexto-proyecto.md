@@ -9,6 +9,33 @@
 > Hasta la §101, cada sección cerraba con sus **PENDIENTES**; desde la §102, los pendientes viven solo en
 > `estado.md`.
 
+## 107. Seguridad: punto en el mapa y mapa de reportes (2026-10-16)
+
+PRs de Rodrigo Carrazana: Backend #116 (merge `38ea643`) y Frontend #94 (merge `cbd82f3`), a `dev`. **Sin release
+todavía.** ADR-027, revisión 2026-10-15. Probado por el usuario en local contra `testing` antes del merge.
+
+**Qué hace:** el autor marca el punto del reporte en el mapa además del GPS (`origen_punto` `gps`/`mapa`); el autor
+no puede mover después un pin del mapa (403) y HyS lo corrige con auditoría; mapas en satélite (Esri) con calles
+(OSM) y sugerencias (Photon, respaldo Nominatim); `GET /seguridad/mapa` (HyS/Admin) con el Mapa de reportes en
+Ranking y tableros: pines por tipo agrupados, mapa de calor y pantalla completa. Dependencias nuevas del front:
+`leaflet`, `react-leaflet`, `leaflet.markercluster`, `leaflet.heat`.
+
+**DDL en dos pasos** (R1): `2026-10-15-seguridad-punto-en-mapa.sql` (columna + backfill, antes del back) y
+`2026-10-15-seguridad-punto-en-mapa-check.sql` (CHECK, después del reinicio). En `testing`: el paso 1 lo aplicó
+Rodrigo el 2026-10-15; el paso 2 se aplicó el 2026-10-16 al mergear, con 0 reportes con punto sin origen (27 gps,
+15 mapa, 7 sin punto). `Horas_Sertec`: en el release. Quedan 39 reportes `[DEMO mapa]` en `testing`.
+
+**Revisión** (Standards + Spec + Permisos/privacidad, verificador): 0 urgent, 1 high arreglado, 7 minor (comentados
+en los dos PRs), 8 descartados. R1 (`4250916` sobre la rama de Rodrigo, solo docs/SQL): el CHECK iba en el mismo
+script que la columna, antes de reiniciar el back; la columna no tiene default, el back viejo guardaba los puntos
+sin origen y el CHECK los rechazaba (500 en reportes con punto, incluida la paralización con GPS). El "bloqueo del
+pin" que marcaron tres revisores no es un agujero: el ADR permite retomar el GPS y el origen `gps` lo declara el
+cliente (minor: aclararlo en el ADR). Las sugerencias tardan 1,5-2 s: 500 ms de espera + la respuesta de Photon.
+Plan: `docs/superpowers/plans/2026-10-16-revision-punto-en-mapa.md`.
+
+**Verificación:** back 907 tests (9 omitidos), `tsc` y `nest build` (también compilación limpia aparte); front
+1009/1009, `tsc` y `next build`.
+
 ## 106. Autogestión de la Seguridad y Lanzamiento de módulos (2026-10-15)
 
 PRs de Rodrigo Carrazana: Backend #110 (merge `9b66e36`) y Frontend #91 (merge `f040db5`). **Deployado el
