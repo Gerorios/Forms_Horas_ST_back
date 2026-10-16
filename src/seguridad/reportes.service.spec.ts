@@ -47,6 +47,7 @@ describe('ReportesService', () => {
     latitud: null,
     longitud: null,
     errorMetros: null,
+    origenPunto: null,
     descripcion: 'Zanja sin vallar',
     naturalezaId: 4,
     motivoParalizacionId: null,
@@ -143,7 +144,25 @@ describe('ReportesService', () => {
       prismaMock.segReporte.findUnique.mockResolvedValueOnce(reporte({ tipo: 'paralizacion' }));
       await service.crear({ ...paral, latitud: -24.78, longitud: -65.41, errorMetros: 9.6 }, OPERARIO);
       expect(prismaMock.segReporte.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ latitud: -24.78, longitud: -65.41, errorMetros: 10 }),
+        data: expect.objectContaining({ latitud: -24.78, longitud: -65.41, errorMetros: 10, origenPunto: 'gps' }),
+      });
+    });
+
+    it('quien carga más tarde marca el punto en el mapa: vale para la paralización y no lleva error', async () => {
+      const paral = { ...DTO, tipo: 'paralizacion' as const, naturalezaId: undefined, motivoParalizacionId: 3 };
+      prismaMock.segMotivoParalizacion.findUnique.mockResolvedValue({ activo: true });
+      prismaMock.segReporte.findUnique.mockResolvedValueOnce(reporte({ tipo: 'paralizacion' }));
+      await service.crear({ ...paral, latitud: -24.78, longitud: -65.41, errorMetros: 40, origenPunto: 'mapa' }, OPERARIO);
+      expect(prismaMock.segReporte.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ latitud: -24.78, longitud: -65.41, errorMetros: null, origenPunto: 'mapa' }),
+      });
+    });
+
+    it('sin punto, el origen queda vacío aunque venga en el pedido', async () => {
+      prismaMock.segReporte.findUnique.mockResolvedValueOnce(reporte());
+      await service.crear({ ...DTO, origenPunto: 'mapa' }, OPERARIO);
+      expect(prismaMock.segReporte.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ latitud: null, origenPunto: null }),
       });
     });
 
@@ -177,6 +196,24 @@ describe('ReportesService', () => {
     it('calificado, queda fijo para el autor', async () => {
       conReporte(reporte({ estado: 'aprobado', puntaje: 8 }));
       await expect(service.editar(7, DTO, OPERARIO)).rejects.toThrow(BadRequestException);
+    });
+
+    it('el autor no mueve el pin del mapa una vez enviado: eso lo corrige HyS', async () => {
+      const guardado = reporte({ latitud: '-24.780000', longitud: '-65.410000', origenPunto: 'mapa' });
+      conReporte(guardado);
+      await expect(
+        service.editar(7, { ...DTO, latitud: -24.9, longitud: -65.41, origenPunto: 'mapa' }, OPERARIO),
+      ).rejects.toThrow('solo lo corrige HyS');
+      expect(prismaMock.segReporte.update).not.toHaveBeenCalled();
+    });
+
+    it('editar sin tocar el punto del mapa, o retomarlo con GPS, sí se puede', async () => {
+      const guardado = reporte({ latitud: '-24.780000', longitud: '-65.410000', origenPunto: 'mapa' });
+      conReporte(guardado);
+      await service.editar(7, { ...DTO, latitud: -24.78, longitud: -65.41, origenPunto: 'mapa' }, OPERARIO);
+      conReporte(guardado);
+      await service.editar(7, { ...DTO, latitud: -24.9, longitud: -65.4, errorMetros: 8, origenPunto: 'gps' }, OPERARIO);
+      expect(prismaMock.segReporte.update).toHaveBeenCalledTimes(2);
     });
 
     it('anular deja el reporte guardado con su motivo', async () => {
@@ -329,6 +366,18 @@ describe('ReportesService', () => {
       conReporte(reporte());
       await service.corregir(7, DTO, HYS1);
       expect(prismaMock.segMovimientoPuntos.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('HyS corrige el punto en el mapa y la auditoría guarda el antes y el después', async () => {
+      conReporte(reporte({ latitud: '-24.780000', longitud: '-65.410000', errorMetros: 12, origenPunto: 'gps' }));
+      await service.corregir(7, { ...DTO, latitud: -24.8, longitud: -65.42, origenPunto: 'mapa' }, HYS1);
+      expect(prismaMock.segReporte.update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: expect.objectContaining({ latitud: -24.8, longitud: -65.42, errorMetros: null, origenPunto: 'mapa' }),
+      });
+      const aud = prismaMock.auditoria.create.mock.calls[0][0].data;
+      expect(JSON.parse(aud.valorAnterior).punto).toEqual([-24.78, -65.41, 12, 'gps']);
+      expect(JSON.parse(aud.valorNuevo).punto).toEqual([-24.8, -65.42, null, 'mapa']);
     });
 
     it('un anulado no se corrige', async () => {

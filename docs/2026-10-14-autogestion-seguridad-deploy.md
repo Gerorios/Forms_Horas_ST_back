@@ -1,7 +1,7 @@
 # Deploy — Autogestión de la Seguridad (ADR-027) y Lanzamiento de módulos (ADR-028)
 
-**Estado:** procedimiento escrito el 2026-10-14, **sin ejecutar**. Se ejecuta en el
-release `dev` → `main` (`docs/flujo-de-ramas.md`), no al mergear a `dev`.
+**Estado:** **ejecutado el 2026-10-15** en el release `dev` → `main` (Backend #113, `29715e4`; Frontend #93,
+`10208f5`), junto con Control general (§105). Resultado en "Ejecución 2026-10-15", al final.
 
 Rama `feat/autogestion-seguridad` en back y front, PRs contra `dev`. HyS aprobó la
 feature el 2026-10-08 y la segunda vuelta de prueba el 2026-10-14. Con cambio de
@@ -68,3 +68,22 @@ DDL (los tres ya aplicados en `testing`; en `Horas_Sertec`, ninguno):
 - **DDL**: el bloque ROLLBACK de cada archivo, en orden inverso (lanzamiento →
   ajustes → seguridad). Borra los reportes y puntos cargados: solo antes de que
   haya datos reales del piloto, y con el OK del usuario.
+
+## Ejecución 2026-10-15
+
+- Puntos de rollback: back `5b701cc`, front `efda0f0`.
+- Precondición en `Horas_Sertec`: ninguna tabla `sth_seg_*` / `sth_modulos_*`; rol HyS id 4. Guardada en
+  `/var/www/backups/seguridad-pre-ddl-2026-10-15.json` (600).
+- `.env` del back respaldado en `.env.bak-20261015`; sumado `SEGURIDAD_FOTOS_DIR=/var/www/storage/seguridad`
+  (carpeta root:root, 750; pm2 corre como root). El back lo lee con `dotenv/config` en `main.ts`.
+- DDL en orden, los tres "Script executed successfully". Verificado: 7 tablas `sth_seg_*` y 3 `sth_modulos_*`, todas
+  `utf8mb4_unicode_ci`; 10 naturalezas y 10 motivos; `latitud`/`longitud` en `sth_seg_reportes`; Seguridad
+  `interno` con HyS.
+- Back: `prisma generate`, build y restart → "Nest application successfully started". Front: build y restart → Ready.
+  Sin cambios en `package.json`: no hizo falta `npm install`.
+- Humo por el dominio público: `/` y `/login` 200; `/api/auth/perfil`, `/api/seguridad/catalogos`,
+  `/api/admin/lanzamientos` y `/api/registros-horas/mis-tareas` 401 sin sesión (las rutas existen). Log de errores
+  del back sin entradas nuevas.
+- **Falta (usuario):** entrar como HyS, ver Seguridad y cargar un reporte con foto; entrar con un usuario fuera del
+  piloto y confirmar que no lo ve; Admin → Lanzamientos. Sumar a las fotos de `/var/www/storage/seguridad` al
+  backup cuando se arme.

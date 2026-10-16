@@ -171,24 +171,30 @@ export interface FotoConUbicacion {
   errorMetros: number | null;
 }
 
+/** Origen del punto propio del reporte: el GPS del celular en el lugar, o
+ * marcado a mano en el mapa (revisión 2026-10-15: quien carga más tarde
+ * igual sabe dónde pasó). */
+export const ORIGENES_PUNTO = ['gps', 'mapa'] as const;
+export type OrigenPunto = (typeof ORIGENES_PUNTO)[number];
+
 export interface Punto {
   latitud: number;
   longitud: number;
   errorMetros: number | null;
-  /** De dónde salió: el botón GPS del reporte o una foto de cámara. */
-  origen: 'gps' | 'foto';
+  /** De dónde salió: el punto propio del reporte (GPS o mapa) o una foto de cámara. */
+  origen: OrigenPunto | 'foto';
 }
 
-/** Punto del reporte: manda el GPS que el autor tomó con el botón; si no
- * hay, la foto de CÁMARA con menor error. Las de galería no cuentan (pueden
- * ser de otro día y otro lugar). Sin error informado, va después de las que
- * sí lo informan. */
+/** Punto del reporte: manda el que el autor tomó con el botón o marcó en el
+ * mapa; si no hay, la foto de CÁMARA con menor error. Las de galería no
+ * cuentan (pueden ser de otro día y otro lugar). Sin error informado, va
+ * después de las que sí lo informan. */
 export function puntoDelReporte(
   fotos: FotoConUbicacion[],
-  propio?: { latitud: number | null; longitud: number | null; errorMetros: number | null },
+  propio?: { latitud: number | null; longitud: number | null; errorMetros: number | null; origen?: OrigenPunto | null },
 ): Punto | null {
   if (propio && propio.latitud !== null && propio.longitud !== null) {
-    return { latitud: propio.latitud, longitud: propio.longitud, errorMetros: propio.errorMetros, origen: 'gps' };
+    return { latitud: propio.latitud, longitud: propio.longitud, errorMetros: propio.errorMetros, origen: propio.origen ?? 'gps' };
   }
   const candidatas = fotos.filter((f) => f.origen === 'camara' && f.latitud !== null && f.longitud !== null);
   if (candidatas.length === 0) return null;

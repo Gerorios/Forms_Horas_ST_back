@@ -2,9 +2,10 @@
 
 Solo lo vivo: lo que está en curso, el próximo paso, lo que espera al usuario y lo que quedó para más adelante.
 Lo entregado no va acá: su cierre está en `contexto-proyecto.md` (la bitácora, la más reciente arriba). La regla
-está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-15**.
+está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). Última actualización: **2026-10-16**.
 
 ## En curso
+
 
 - **Rediseño completo del Frontend como ERP — PAUSADO el 2026-10-08** (pedido del usuario: Rodrigo tiene trabajo
   nuevo; primero entra su PR y el rediseño arranca después, sobre lo que él hizo). Quedó en la fase 2
@@ -78,18 +79,46 @@ está en el `CLAUDE.md` de la raíz `Formulario_Horas` ("Estado del trabajo"). �
     pantalla real, no como estructuras nuevas sueltas.
   - Menú de dos niveles: sin ronda (ya decidido).
 
+- **Roles armables por pantalla — fase 0, entrevista PAUSADA el 2026-10-16 en P4** (el usuario frenó para revisar
+  el PR de Rodrigo "punto en el mapa", Backend #116 / Frontend #94). El usuario trajo el esquema del otro sistema
+  (informe `Downloads/2026-10-15-usuarios-y-roles.md`: Rol = conjunto de permisos Ver/Editar por Pantalla, varios
+  roles por persona, Admin aparte, roles armados desde Administración, migración con test de equivalencia). Acá el
+  rol fijo mezcla **acceso a pantallas** con **alcance de datos** (lo mío / lo que cargué / mis contratos / todo:
+  22 chequeos `usuario.rol ===` en servicios, 58 `@Roles` en 11 controllers) y hay accesos sueltos que se
+  unificarían (claim `cert` lectura/carga/admin, `puedeCargarKmPorTantos`, inspectores de Seguridad). Propuesta
+  presentada: proyecto aparte con su entrevista y ADR, después de la Etapa 1b del rediseño (que arma el catálogo
+  módulo → pantallas). **Aceptado el 2026-10-15:** dos capas, el Rol armable (pantalla + Ver/Editar) y el
+  **Alcance** aparte (lo propio / lo que cargué / mis contratos / todo, reglas fijas programadas). Entrevista en
+  curso. **P1 cerrada: alcance por módulo dentro del rol** (hoy JefeContrato tiene "mis contratos" en Horas y
+  Combustible pero "todo" en Novedades). Propuesto: 4 alcances fijos en código (lo propio, lo que cargué, mis
+  contratos, todo), cada módulo admite solo algunos; el Admin elige por rol y módulo; las pantallas "Mis …" son
+  personales por definición y no llevan selector. **P2 cerrada: un solo rol por persona** (distinto del otro
+  sistema; no hay suma de permisos ni de alcances). **P3 cerrada: Admin = rol del sistema fijo**
+  (no editable ni borrable, todo en Editar con alcance Todo, incluso pantallas futuras; nunca cero admins activos);
+  los otros 6 roles pasan a armables, copiados del acceso de hoy. En curso P4: hay TRES listas de contratos por
+  persona (`ContratoJefe` aprueba/ve, `ContratoHabilitado` dónde carga, `CertificacionContratoHabilitado` Ks que
+  certifica); propuesto mantenerlas separadas y nombrar el alcance por módulo. Pendiente: tipos de novedad
+  habilitados.
+
 ## Próximo paso
 
-1. Release a `main` pendiente (Control general §105 y Seguridad §106, en `dev` sin deploy). Los tres SQL de
-   Seguridad van a `Horas_Sertec` en orden y antes del backend (`docs/2026-10-14-autogestion-seguridad-deploy.md`).
-   Abierto con HyS: accidente y tolerancia 0; una pantalla de auditoría para ver las correcciones de HyS.
-2. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
+1. Retomar el rediseño ERP sobre lo que entró: plan en `docs/superpowers/plans/2026-10-07-rediseno-erp.md`
    (brief `2026-10-07-rediseno-erp-brief.md`), en fase 2; la rama de integración es `dev` (no `rediseno-erp`).
    Faltan el OK y las preguntas abiertas de §5 (P1-P7, P10-P12, con default). Decidido: P9 Cargar primero en
-   Facturación; un Accidente no afecta presentismo (no se pregunta). Revisar el plan contra Autogestión de la
-   Seguridad (módulo nuevo, ADR-029 en vez de 027).
+   Facturación; un Accidente no afecta presentismo (no se pregunta). Plan ya revisado contra lo de Rodrigo el
+   2026-10-15 ("Actualización 2026-10-15" arriba del plan: módulo Seguridad, Etapa 3d, `ConfirmarDialog` reusado,
+   P20-P21). Presentado al usuario; espera su OK y las respuestas (o los defaults). Al aprobar: Etapa 0.
 
 ## Pendientes del usuario
+
+- **Punto en el mapa (§107, en `dev`, sin release):** va a producción en el próximo release `dev` → `main`, con el
+  DDL en dos pasos en `Horas_Sertec` (columna antes del back, CHECK después del reinicio; doc
+  `docs/2026-10-15-seguridad-punto-en-mapa-deploy.md`). En `testing` quedan 39 reportes `[DEMO mapa]`: borrarlos
+  cuando ya no hagan falta. La carpeta local `Frontend/` necesita `npm ci` (dependencias de Leaflet) para levantar `dev`.
+
+- **Release del 2026-10-15 (§105 y §106, deployado):** probar Control general (rango, filtro de tarea, Excel) y
+  Seguridad (entrar como HyS y cargar un reporte con foto; un usuario fuera del piloto no lo ve; Admin →
+  Lanzamientos). Abierto con HyS: accidente y tolerancia 0; pantalla de auditoría de sus correcciones.
 
 - **Hotfix §104 (deployado 2026-10-07):** probarlo en producción (confirmación al tocar "Activo"; Pendientes con
   quincenas anteriores). Reactivar a SALAS MARIA JOSE en `testing` (quedó inactiva en la revisión del 2026-10-05).
